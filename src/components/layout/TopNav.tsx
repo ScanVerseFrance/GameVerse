@@ -18,6 +18,7 @@ import { useDownloadStore } from '@/stores/download.store'
 import { useSocialStore } from '@/stores/social.store'
 import { Username } from '@/components/common/Username'
 import { NotificationBell } from '@/components/layout/NotificationBell'
+import { CloudStatusBadge } from '@/components/cloud/CloudStatusBadge'
 import { cn } from '@/utils/cn'
 
 interface NavTab {
@@ -193,6 +194,11 @@ export function TopNav() {
         <Monitor className="w-3.5 h-3.5" />
         <span className="hidden lg:inline">Big Picture</span>
       </button>
+
+      {/* Nexus Cloud connection chip — green dot when authenticated +
+          live, grey when not signed in, orange when the WebSocket
+          dropped. Clicking opens login or a small popover. */}
+      <CloudStatusBadge />
 
       {/* In-app notifications (bell + dropdown). Available whether or
           not the user is signed in — guest sessions still get download

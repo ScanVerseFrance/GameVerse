@@ -463,9 +463,51 @@ export default function JsonGamePage() {
       title: "Choisir l'exécutable du jeu",
       filters: [{ name: 'Executables', extensions: ['exe'] }],
     })
-    if (res.ok && res.path) {
-      await updateLibraryGame(installedGame.id, { executablePath: res.path })
+    if (!res.ok || !res.path) return
+    // Client-side guard so the user doesn't pick `setup.exe` /
+    // `installer.exe` / a Unity crash handler / etc. by mistake. The
+    // main process ALSO refuses these (isHelperExe), but rejecting
+    // here lets us show a contextual error string the user can act
+    // on — "Tu as choisi le setup, lance-le plutôt" — instead of a
+    // silent clear that would look like the picker did nothing.
+    const base = res.path.split(/[\\/]/).pop() ?? ''
+    // Mirror of electron/services/library.service.ts EXE_NAME_BLOCKLIST.
+    // Kept in lockstep so the user gets a friendly error string at pick
+    // time, not just a silent null in the DB. Extend BOTH when you add
+    // a new pattern.
+    const looksLikeSetup =
+      /^uninst/i.test(base) ||
+      /^unins\d*/i.test(base) ||
+      /setup/i.test(base) ||
+      /install/i.test(base) ||
+      /^redist/i.test(base) ||
+      /vcredist/i.test(base) ||
+      /^dxsetup/i.test(base) ||
+      /unitycrashhandler/i.test(base) ||
+      /crashreporter/i.test(base) ||
+      /crashpad/i.test(base) ||
+      /dotnetfx/i.test(base) ||
+      /vc_redist/i.test(base) ||
+      /directxsetup/i.test(base) ||
+      /createdump/i.test(base) ||
+      /python.*\.exe$/i.test(base) ||
+      /^node\.exe$/i.test(base) ||
+      /quicksfv/i.test(base) ||
+      /^sfx/i.test(base) ||
+      /^7z[a-z]*\.exe$/i.test(base) ||
+      /^aria2c?\.exe$/i.test(base) ||
+      /dotnet[-_]?(?:core)?updater/i.test(base) ||
+      /chrome_elf/i.test(base) ||
+      /googlecrashhandler/i.test(base) ||
+      /epicwebhelper/i.test(base) ||
+      /eossdk-win.*\.exe$/i.test(base)
+    if (looksLikeSetup) {
+      setLaunchError(
+        `"${base}" est un installeur ou un helper — pas le binaire du jeu. Lance-le via "Setup" puis l'exécutable réel sera auto-détecté.`
+      )
+      return
     }
+    await updateLibraryGame(installedGame.id, { executablePath: res.path })
   }
 
   async function handleAutoDetectExe() {

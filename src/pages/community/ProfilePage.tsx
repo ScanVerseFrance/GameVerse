@@ -25,7 +25,6 @@ import { cn } from '@/utils/cn'
 import { useAuthStore } from '@/stores/auth.store'
 import { useSocialStore } from '@/stores/social.store'
 import { Card } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
 import { ActivityFeedItem } from '@/components/community/ActivityFeedItem'
 import { PlaytimeHeatmap } from '@/components/community/PlaytimeHeatmap'
 import { ProfileCustomiseDialog } from '@/components/community/ProfileCustomiseDialog'
@@ -404,19 +403,58 @@ export default function ProfilePage() {
           <ArrowLeft className="w-3.5 h-3.5" /> Retour
         </button>
 
-        {/* Banner change button — owner-only, appears on hover (always visible
-            on touch). Matches the ScanVerse pattern: floats top-right of the
-            banner with a camera icon. */}
-        {isSelf && (
-          <button
-            onClick={() => void handlePickBanner()}
-            className="absolute top-4 right-10 z-10 inline-flex items-center gap-1.5 text-sm text-white bg-black/40 hover:bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-sm border border-white/10 transition-colors"
-            title="Importer une bannière (max 10 Mo, PNG / JPG / GIF / WEBP)"
-          >
-            <Camera className="w-3.5 h-3.5" />
-            Changer la bannière
-          </button>
-        )}
+        {/* Top-right action cluster — sits on the banner so the identity
+            row below never has to make room. This is the third revision
+            of the "Modifier le profil" placement: an earlier version
+            inlined the button as a flex sibling of the avatar/identity
+            (would get clipped at narrow widths or push past the
+            max-w-6xl gutter), and the one before that absolute-positioned
+            it at the very top of the banner (felt too detached from the
+            identity). The current banner-right anchor stays anchored
+            relative to the page (right-10 matches the content padding)
+            and never clips: Modifier le profil + Changer la bannière
+            (owner) OR Add/Remove friend (visitor). */}
+        <div className="absolute top-4 right-10 z-10 flex flex-wrap items-center gap-2 justify-end max-w-[min(70%,640px)]">
+          {isSelf ? (
+            <>
+              <Link to={`/community/profile/${profile.id}/edit`}>
+                <button
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-accent-gradient hover:shadow-glow px-3.5 py-1.5 rounded-md transition-shadow"
+                  title="Modifier nom, bio, plaque, décoration, musique…"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Modifier le profil
+                </button>
+              </Link>
+              <button
+                onClick={() => void handlePickBanner()}
+                className="inline-flex items-center gap-1.5 text-sm text-white bg-black/40 hover:bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-sm border border-white/10 transition-colors"
+                title="Importer une bannière (max 10 Mo, PNG / JPG / GIF / WEBP)"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                Changer la bannière
+              </button>
+            </>
+          ) : isFriend ? (
+            <button
+              onClick={() => void handleRemoveFriend()}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 text-sm text-white bg-black/40 hover:bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-sm border border-white/10 transition-colors disabled:opacity-60"
+            >
+              <UserMinus className="w-3.5 h-3.5" />
+              Retirer cet ami
+            </button>
+          ) : (
+            <button
+              onClick={() => void handleAddFriend()}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-accent-gradient hover:shadow-glow px-3.5 py-1.5 rounded-md transition-shadow disabled:opacity-60"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              Ajouter en ami
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="px-10 pt-6 pb-10 max-w-6xl mx-auto -mt-32">
@@ -462,13 +500,17 @@ export default function ProfilePage() {
               />
               {/* Decoration overlay — square PNG positioned ABOVE the avatar
                   with pointer-events disabled so the button below stays
-                  clickable. Sized at 125% of the avatar (Discord canonical).
+                  clickable. Sized at 115% of the avatar — the user
+                  reported 125% (the "Discord canonical" number) was
+                  visually too aggressive on a 128 px avatar (the orange
+                  ring then sat ~16 px outside the mushroom on each side,
+                  dominating the hero). 115% lands the ring ~10 px outside,
+                  closer to the proportion the PNGs were authored for.
                   ⚠️ maxWidth/maxHeight: 'none' bypasses Tailwind's preflight
                   `img { max-width: 100%; height: auto }` — without this
-                  override, the width: 125% gets clamped to 100% of the
-                  parent while height: 125% expands → squashed tall-and-
-                  narrow rendering (Bug of Schrödinger). Tested at 124% which
-                  matches ScanVerse / yapper.shop / Discord exactly. */}
+                  override, the width: 115% gets clamped to 100% of the
+                  parent while height: 115% expands → squashed tall-and-
+                  narrow rendering. */}
               {decoration.file && (
                 <img
                   src={decoration.file}
@@ -480,7 +522,7 @@ export default function ProfilePage() {
                     maxHeight: 'none',
                     willChange: 'transform',
                   }}
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[125%] h-[125%] object-contain pointer-events-none select-none"
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[115%] h-[115%] object-contain pointer-events-none select-none"
                 />
               )}
               {/* Owner-only action popup, anchored to the right of the avatar. */}
@@ -576,33 +618,6 @@ export default function ProfilePage() {
               </p>
             </div>
 
-            {/* Actions row — ScanVerse pattern: separate flex sibling
-                so it aligns with the identity column on desktop
-                (items-end → bottom-aligned with the avatar) and wraps
-                to a full-width row below the identity on narrow screens
-                (flex-wrap on parent + w-full sm:w-auto here). */}
-            <div className="flex gap-2 flex-wrap shrink-0 pb-2 w-full sm:w-auto justify-center sm:justify-start">
-              {isSelf ? (
-                <Link to={`/community/profile/${profile.id}/edit`}>
-                  <Button leftIcon={<Pencil className="w-4 h-4" />}>
-                    Modifier le profil
-                  </Button>
-                </Link>
-              ) : isFriend ? (
-                <Button
-                  variant="outline"
-                  leftIcon={<UserMinus className="w-4 h-4" />}
-                  onClick={handleRemoveFriend}
-                  loading={busy}
-                >
-                  Retirer cet ami
-                </Button>
-              ) : (
-                <Button leftIcon={<UserPlus className="w-4 h-4" />} onClick={handleAddFriend} loading={busy}>
-                  Ajouter en ami
-                </Button>
-              )}
-            </div>
           </div>
 
           {profile.bio && (

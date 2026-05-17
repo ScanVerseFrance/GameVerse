@@ -42,6 +42,20 @@ import type {
   Review,
 } from './social.types'
 import type {
+  CloudActivity,
+  CloudConnectResult,
+  CloudConnectionStatus,
+  CloudMessage,
+  CloudPresence,
+  CloudPublicUser,
+  CloudQuota,
+  CloudRichPresence,
+  CloudSaveArtifact,
+  CloudThreadPreview,
+  CloudUser,
+  CloudWsEnvelope,
+} from './cloud.types'
+import type {
   AppSettings,
   SessionInfo,
   StorageUsage,
@@ -469,6 +483,161 @@ export interface NexusAPI {
     ) => Promise<{ ok: boolean; error?: string; unlocked?: number; total?: number }>
     onUnlocked: (
       cb: (data: { userId: string; steamAppId: number; apiName: string; unlockedAt: number }) => void
+    ) => () => void
+  }
+  cloud: {
+    // Connection
+    bootConnect: () => Promise<CloudConnectResult>
+    status: () => Promise<{
+      status: CloudConnectionStatus
+      user: CloudUser | null
+      apiUrl: string
+    }>
+    reconnect: () => Promise<CloudConnectResult>
+    logout: () => Promise<{ ok: boolean }>
+    login: (
+      username: string,
+      password: string
+    ) =>
+      | Promise<{ ok: true; status: CloudConnectionStatus; user: CloudUser }>
+      | Promise<{ ok: false; error: string; code?: string }>
+    register: (payload: {
+      username: string
+      password: string
+      email?: string | null
+      displayName?: string | null
+    }) =>
+      | Promise<{ ok: true; status: CloudConnectionStatus; user: CloudUser }>
+      | Promise<{ ok: false; error: string; code?: string }>
+    setApiUrl: (url: string) => Promise<{ ok: boolean; apiUrl?: string; error?: string }>
+    // Account
+    getMe: () => Promise<
+      | { ok: true; user: CloudUser }
+      | { ok: false; error: string }
+    >
+    updateMe: (patch: Partial<CloudUser>) => Promise<
+      | { ok: true; user: CloudUser }
+      | { ok: false; error: string }
+    >
+    // Friends
+    listFriends: () => Promise<
+      | { ok: true; friends: CloudPublicUser[] }
+      | { ok: false; error: string; friends: [] }
+    >
+    addFriend: (username: string) => Promise<
+      | { ok: true; friend: CloudPublicUser }
+      | { ok: false; error: string }
+    >
+    removeFriend: (friendId: string) => Promise<{ ok: boolean; error?: string }>
+    // Presence
+    patchPresence: (body: {
+      status: CloudPresence['status']
+      hostname?: string | null
+      richPresence?: CloudRichPresence | null
+    }) => Promise<{ ok: boolean; presence?: CloudPresence; error?: string }>
+    friendPresences: () => Promise<
+      | { ok: true; presences: CloudPresence[] }
+      | { ok: false; error: string; presences: [] }
+    >
+    // Messages
+    listMessages: (withUserId: string, limit?: number) => Promise<
+      | { ok: true; messages: CloudMessage[] }
+      | { ok: false; error: string; messages: [] }
+    >
+    listThreads: () => Promise<
+      | { ok: true; threads: CloudThreadPreview[] }
+      | { ok: false; error: string; threads: [] }
+    >
+    sendMessage: (recipientId: string, content: string) => Promise<
+      | { ok: true; message: CloudMessage }
+      | { ok: false; error: string }
+    >
+    markRead: (peerId: string) => Promise<
+      | { ok: true; markedCount: number }
+      | { ok: false; error: string }
+    >
+    // Activity
+    postActivity: (kind: string, payload: unknown) => Promise<
+      | { ok: true; activity: CloudActivity }
+      | { ok: false; error: string }
+    >
+    activityFeed: (limit?: number) => Promise<
+      | { ok: true; items: CloudActivity[] }
+      | { ok: false; error: string; items: [] }
+    >
+    // Saves
+    saveQuota: () => Promise<
+      | ({ ok: true } & CloudQuota)
+      | { ok: false; error: string }
+    >
+    listArtifacts: (shop: string, objectId: string) => Promise<
+      | { ok: true; artifacts: CloudSaveArtifact[] }
+      | { ok: false; error: string; artifacts: [] }
+    >
+    listAllArtifacts: () => Promise<
+      | { ok: true; artifacts: CloudSaveArtifact[] }
+      | { ok: false; error: string; artifacts: [] }
+    >
+    deleteArtifact: (id: string) => Promise<{ ok: boolean; error?: string }>
+    // Push channels
+    onEvent: (cb: (envelope: CloudWsEnvelope) => void) => () => void
+    onStatusChange: (
+      cb: (data: {
+        status: CloudConnectionStatus
+        user: CloudUser | null
+        reason?: string
+      }) => void
+    ) => () => void
+  }
+  cloudSave: {
+    preview: (libraryGameId: string) => Promise<
+      | { ok: true; fileCount: number; totalBytes: number; games: string[] }
+      | { ok: false; error: string }
+    >
+    upload: (
+      libraryGameId: string,
+      label?: string
+    ) => Promise<{
+      ok: boolean
+      artifactId?: string
+      sizeBytes?: number
+      fileCount?: number
+      skipped?: boolean
+      skipReason?: string
+      error?: string
+    }>
+    restore: (
+      libraryGameId: string,
+      artifactId: string
+    ) => Promise<{ ok: boolean; filesRestored?: number; error?: string }>
+    checkConflict: (libraryGameId: string) => Promise<
+      | {
+          ok: true
+          cloudIsNewer: boolean
+          latestArtifact: {
+            id: string
+            sizeBytes: number
+            label: string | null
+            hostname: string | null
+            createdAt: string
+          } | null
+          localMtime: number | null
+          fromDifferentHost: boolean
+        }
+      | { ok: false; error: string }
+    >
+    onEvent: (
+      cb: (data: {
+        libraryGameId: string
+        kind: 'upload' | 'restore'
+        ok: boolean
+        artifactId?: string
+        sizeBytes?: number
+        fileCount?: number
+        skipped?: boolean
+        skipReason?: string
+        error?: string
+      }) => void
     ) => () => void
   }
   appSettings: {

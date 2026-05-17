@@ -199,6 +199,78 @@ const api = {
       ipcRenderer.invoke('achievements:progress', userId, steamAppId),
     onUnlocked: (cb: (data: unknown) => void) => subscribe('achievements:unlocked', cb),
   },
+  cloud: {
+    // ── Connection ──────────────────────────────────────────────
+    bootConnect: () => ipcRenderer.invoke('cloud:bootConnect'),
+    status: () => ipcRenderer.invoke('cloud:status'),
+    reconnect: () => ipcRenderer.invoke('cloud:reconnect'),
+    logout: () => ipcRenderer.invoke('cloud:logout'),
+    login: (username: string, password: string) =>
+      ipcRenderer.invoke('cloud:login', username, password),
+    register: (payload: unknown) => ipcRenderer.invoke('cloud:register', payload),
+    setApiUrl: (url: string) => ipcRenderer.invoke('cloud:setApiUrl', url),
+    // ── Account ─────────────────────────────────────────────────
+    getMe: () => ipcRenderer.invoke('cloud:getMe'),
+    updateMe: (patch: unknown) => ipcRenderer.invoke('cloud:updateMe', patch),
+    // ── Friends ─────────────────────────────────────────────────
+    listFriends: () => ipcRenderer.invoke('cloud:listFriends'),
+    addFriend: (username: string) =>
+      ipcRenderer.invoke('cloud:addFriend', username),
+    removeFriend: (friendId: string) =>
+      ipcRenderer.invoke('cloud:removeFriend', friendId),
+    // ── Presence ────────────────────────────────────────────────
+    patchPresence: (body: unknown) =>
+      ipcRenderer.invoke('cloud:patchPresence', body),
+    friendPresences: () => ipcRenderer.invoke('cloud:friendPresences'),
+    // ── Messages ────────────────────────────────────────────────
+    listMessages: (withUserId: string, limit?: number) =>
+      ipcRenderer.invoke('cloud:listMessages', withUserId, limit),
+    listThreads: () => ipcRenderer.invoke('cloud:listThreads'),
+    sendMessage: (recipientId: string, content: string) =>
+      ipcRenderer.invoke('cloud:sendMessage', recipientId, content),
+    markRead: (peerId: string) => ipcRenderer.invoke('cloud:markRead', peerId),
+    // ── Activity ────────────────────────────────────────────────
+    postActivity: (kind: string, payload: unknown) =>
+      ipcRenderer.invoke('cloud:postActivity', kind, payload),
+    activityFeed: (limit?: number) =>
+      ipcRenderer.invoke('cloud:activityFeed', limit),
+    // ── Saves ───────────────────────────────────────────────────
+    saveQuota: () => ipcRenderer.invoke('cloud:saveQuota'),
+    listArtifacts: (shop: string, objectId: string) =>
+      ipcRenderer.invoke('cloud:listArtifacts', shop, objectId),
+    listAllArtifacts: () => ipcRenderer.invoke('cloud:listAllArtifacts'),
+    deleteArtifact: (id: string) =>
+      ipcRenderer.invoke('cloud:deleteArtifact', id),
+    // ── Live events from the server (broadcast via cloud:event) ─
+    onEvent: (cb: (env: unknown) => void) => subscribe('cloud:event', cb),
+    onStatusChange: (
+      cb: (data: { status: string; user: unknown; reason?: string }) => void
+    ) => subscribe('cloud:status', cb),
+  },
+  cloudSave: {
+    preview: (libraryGameId: string) =>
+      ipcRenderer.invoke('cloudSave:preview', libraryGameId),
+    upload: (libraryGameId: string, label?: string) =>
+      ipcRenderer.invoke('cloudSave:upload', libraryGameId, label),
+    restore: (libraryGameId: string, artifactId: string) =>
+      ipcRenderer.invoke('cloudSave:restore', libraryGameId, artifactId),
+    checkConflict: (libraryGameId: string) =>
+      ipcRenderer.invoke('cloudSave:checkConflict', libraryGameId),
+    /** Toasts emitted by the post-exit auto-upload pipeline. */
+    onEvent: (
+      cb: (data: {
+        libraryGameId: string
+        kind: 'upload' | 'restore'
+        ok: boolean
+        artifactId?: string
+        sizeBytes?: number
+        fileCount?: number
+        skipped?: boolean
+        skipReason?: string
+        error?: string
+      }) => void
+    ) => subscribe('library:cloudSave', cb),
+  },
   appSettings: {
     get: () => ipcRenderer.invoke('app:getSettings'),
     update: (patch: unknown) => ipcRenderer.invoke('app:updateSettings', patch),

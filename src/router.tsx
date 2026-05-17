@@ -21,6 +21,7 @@ const CommunityPage = lazy(() => import('./pages/community/CommunityPage'))
 const ProfilePage = lazy(() => import('./pages/community/ProfilePage'))
 const ProfileEditPage = lazy(() => import('./pages/community/ProfileEditPage'))
 const FriendsPage = lazy(() => import('./pages/community/FriendsPage'))
+const ChatPage = lazy(() => import('./pages/community/ChatPage'))
 const BigPicturePage = lazy(() => import('./pages/big-picture/BigPicturePage'))
 
 function FullScreenBoot() {
@@ -86,6 +87,8 @@ export const router = createHashRouter([
       { path: 'community/friends', element: lazyElement(FriendsPage) },
       { path: 'community/profile/:userId', element: lazyElement(ProfilePage) },
       { path: 'community/profile/:userId/edit', element: lazyElement(ProfileEditPage) },
+      { path: 'community/chat', element: lazyElement(ChatPage) },
+      { path: 'community/chat/:peerId', element: lazyElement(ChatPage) },
       { path: 'big-picture', element: lazyElement(BigPicturePage) },
       { path: 'addons', element: lazyElement(AddonsPage) },
       { path: 'themes', element: lazyElement(ThemesPage) },

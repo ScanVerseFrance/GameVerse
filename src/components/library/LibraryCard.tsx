@@ -25,6 +25,9 @@ type InstallState = 'ready-to-play' | 'has-setup' | 'needs-config' | 'not-instal
 
 function getInstallState(game: LibraryGame, setupDetected: boolean): InstallState {
   if (!game.installPath) return 'not-installed'
+  // executable_path is sanitised in main (rowToGame nulls out
+  // installer-shaped basenames so this branch never fires for a
+  // setup.exe). See electron/services/library.service.ts isHelperExe.
   if (game.executablePath) return 'ready-to-play'
   if (setupDetected) return 'has-setup'
   return 'needs-config'

@@ -8,6 +8,8 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ActivityFeedItem } from '@/components/community/ActivityFeedItem'
 import { UserCard } from '@/components/community/UserCard'
+import { FriendsNowPlaying } from '@/components/community/FriendsNowPlaying'
+import { MessageSquare } from 'lucide-react'
 import type { ActivityItem, ActivityScope } from '@/types/social.types'
 import { cn } from '@/utils/cn'
 
@@ -61,11 +63,27 @@ export default function CommunityPage() {
               Ton profil
             </Button>
           </Link>
+          <Link to="/community/chat">
+            <Button variant="outline" leftIcon={<MessageSquare className="w-4 h-4" />}>
+              Chat
+            </Button>
+          </Link>
           <Link to="/community/friends">
             <Button leftIcon={<UserPlus className="w-4 h-4" />}>Amis</Button>
           </Link>
         </div>
       </motion.div>
+
+      {/* Friend now-playing strip — only visible when cloud is
+          connected and at least one friend has an active in_game
+          rich presence. Empty / disconnected variants are rendered
+          by the component itself, so we can drop it in unconditionally. */}
+      <div className="mb-6">
+        <p className="text-xs font-mono uppercase tracking-wider text-fg-muted mb-2">
+          Mes amis en jeu
+        </p>
+        <FriendsNowPlaying />
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">

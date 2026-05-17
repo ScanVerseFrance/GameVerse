@@ -20,8 +20,19 @@ import { useDownloadStore } from '@/stores/download.store'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { Username } from '@/components/common/Username'
 import { cn } from '@/utils/cn'
+import { parseGameTitle } from '@/utils/title-parse'
 import type { LibraryGame } from '@/types/library.types'
 import type { DownloadRecord } from '@/types/download.types'
+
+/** Hydra-style repack titles cram the version into the title field
+ *  ("Hollow Knight Silksong - v1.0.28324"). The repack title parser
+ *  already strips that into a separate `version` slot for game-detail
+ *  pages; reusing it here keeps the home hero / carousel tiles clean
+ *  so the H1 reads "Hollow Knight Silksong" instead of leaking build
+ *  numbers into the headline. */
+function cleanTitle(raw: string): string {
+  return parseGameTitle(raw).name || raw
+}
 
 function formatPlaytime(seconds: number): string {
   if (!seconds) return 'Jamais joué'
@@ -185,7 +196,7 @@ function FeaturedHero({ game, onLaunch }: { game: LibraryGame; onLaunch: () => v
             ★ Dernière partie
           </p>
           <h1 className="font-display font-black text-5xl lg:text-6xl text-white leading-[1.02] mb-5 drop-shadow-[0_4px_24px_rgba(0,0,0,0.85)]">
-            {game.title}
+            {cleanTitle(game.title)}
           </h1>
           <div className="flex items-center gap-4 text-sm text-fg-secondary mb-7 flex-wrap">
             <span className="inline-flex items-center gap-1.5">
@@ -213,7 +224,7 @@ function FeaturedHero({ game, onLaunch }: { game: LibraryGame; onLaunch: () => v
                 'hover:shadow-glow transition-shadow',
                 'disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none'
               )}
-              title={!game.executablePath ? 'Aucun exécutable configuré' : undefined}
+              title={!game.executablePath ? 'Aucun exécutable configuré' : cleanTitle(game.title)}
             >
               <Play className="w-4 h-4 fill-white" />
               {game.isRunning ? 'Déjà lancé' : 'Lancer'}
@@ -302,7 +313,7 @@ function Tile({ game, onLaunch }: { game: LibraryGame; onLaunch: () => void }) {
   return (
     <div className="relative aspect-[3/4] w-[160px] lg:w-[180px] shrink-0 snap-start rounded-md overflow-hidden bg-bg-tertiary group/tile border border-glass-border hover:border-accent-primary/60 hover:scale-[1.03] transition-all duration-200">
       {href ? (
-        <Link to={href} className="block w-full h-full" title={game.title}>
+        <Link to={href} className="block w-full h-full" title={cleanTitle(game.title)}>
           {game.coverUrl ? (
             <img
               src={game.coverUrl}
@@ -325,8 +336,8 @@ function Tile({ game, onLaunch }: { game: LibraryGame; onLaunch: () => void }) {
       )}
 
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/65 to-transparent translate-y-1 opacity-0 group-hover/tile:opacity-100 group-hover/tile:translate-y-0 transition-all p-2.5">
-        <h3 className="text-xs font-bold text-white truncate" title={game.title}>
-          {game.title}
+        <h3 className="text-xs font-bold text-white truncate" title={cleanTitle(game.title)}>
+          {cleanTitle(game.title)}
         </h3>
         <p className="text-[10px] text-white/70 font-mono mt-0.5">
           {formatPlaytime(game.totalPlaytimeSeconds)}
@@ -491,11 +502,11 @@ function AllGamesStrip({ games }: { games: LibraryGame[] }) {
             </div>
           )
           return href ? (
-            <Link key={g.id} to={href} title={g.title}>
+            <Link key={g.id} to={href} title={cleanTitle(g.title)}>
               {inner}
             </Link>
           ) : (
-            <div key={g.id} title={g.title}>
+            <div key={g.id} title={cleanTitle(g.title)}>
               {inner}
             </div>
           )

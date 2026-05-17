@@ -22,6 +22,9 @@ import { registerAchievementsIpc } from './ipc/achievements.ipc'
 import { initAchievements } from './services/achievements.service'
 import { shutdownAchievementWatcher } from './services/achievement-watcher.service'
 import { initSocial } from './services/social.service'
+import { initCloud, shutdownCloud } from './services/cloud.service'
+import { registerCloudIpc } from './ipc/cloud.ipc'
+import { registerCloudSaveIpc } from './ipc/cloud-save.ipc'
 import { registerProfileIpc } from './ipc/profile.ipc'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
@@ -104,13 +107,15 @@ void app.whenReady().then(async () => {
     return
   }
   initAppSettings()
-  // Drop ALL artwork cache (not just negatives) so the new SGDB-first
-  // strategy re-resolves every game. Without this, games that earlier
-  // wrongly matched Steam without a working cover stay cached as Steam.
-  try {
-    const db = (await import('./services/database.service')).getDatabase()
-    db.prepare('DELETE FROM game_artwork').run()
-  } catch { /* schema not ready */ }
+  // Only wipe the *negative* artwork rows on boot (entries cached as
+  // "no match" with a 1-hour TTL). Previously we wiped the entire
+  // artwork table on every launch because the SGDB-first strategy was
+  // still being tuned — that's now stable, and the unconditional wipe
+  // was forcing the renderer to re-resolve thousands of catalogue
+  // entries on every restart, hammering the SGDB free tier and leaving
+  // ~70% of Discover tiles blank until the rate-limit window cleared.
+  // Keeping successful lookups across launches is exactly what the
+  // 30-day positive TTL is for.
   clearNegativeArtworkCache()
   // Library must init before downloads so that the download backfill (which
   // scans completed downloads and upserts library rows) finds the library
@@ -119,6 +124,7 @@ void app.whenReady().then(async () => {
   initDownloads(() => mainWindow)
   initAchievements(() => mainWindow)
   initSocial(() => mainWindow)
+  initCloud(() => mainWindow)
   registerWindowIpc()
   registerAuthIpc()
   registerThemesIpc()
@@ -135,6 +141,8 @@ void app.whenReady().then(async () => {
   registerArtworkIpc()
   registerAchievementsIpc()
   registerProfileIpc()
+  registerCloudIpc()
+  registerCloudSaveIpc()
   createWindow()
 
   app.on('activate', () => {
@@ -146,6 +154,7 @@ app.on('window-all-closed', () => {
   shutdownDownloads()
   shutdownLibrary()
   shutdownAchievementWatcher()
+  shutdownCloud()
   closeDatabase()
   if (process.platform !== 'darwin') app.quit()
 })
@@ -154,5 +163,6 @@ app.on('before-quit', () => {
   shutdownDownloads()
   shutdownLibrary()
   shutdownAchievementWatcher()
+  shutdownCloud()
   closeDatabase()
 })

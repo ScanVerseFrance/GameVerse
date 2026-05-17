@@ -95,11 +95,152 @@ async function notifyWatcherGameStopped(libraryGameId: string): Promise<void> {
     /* watcher unavailable — nothing to clean up */
   }
 }
+
+/**
+ * RPC Nexus broadcast — pushes a rich-presence payload to the cloud
+ * so friends see "Kazu joue à Hollow Knight Silksong" in their
+ * friend strip / status badge popover. Cleared (richPresence: null)
+ * when the game exits.
+ *
+ * Fire-and-forget; the cloud service silently no-ops when not
+ * connected, so a long offline session never accumulates queued
+ * presence updates.
+ */
+async function broadcastRichPresenceForGame(
+  game: LibraryGame,
+  launching: boolean
+): Promise<void> {
+  try {
+    const { passthroughJson, getStatus } = await import('./cloud.service')
+    if (getStatus() !== 'connected') return
+    await passthroughJson('/v1/presence', {
+      method: 'PATCH',
+      body: {
+        // Game-running takes precedence over focus/idle. When the
+        // game exits we drop back to 'online' so the user's own
+        // local heartbeat can manage the away/online dance.
+        status: launching ? 'in_game' : 'online',
+        richPresence: launching
+          ? {
+              gameTitle: game.title,
+              coverUrl: game.coverUrl,
+              libraryGameId: game.id,
+              gameId: game.sourceGameId ?? undefined,
+              since: Date.now(),
+            }
+          : null,
+      },
+    })
+  } catch {
+    /* offline / network blip — non-fatal */
+  }
+}
+
+/**
+ * Mirror a local activity event to the cloud feed so friends see it
+ * (game launches, status changes, achievement unlocks…). The local
+ * postActivity writer keeps writing for the offline case; this just
+ * adds a parallel cloud write when connected.
+ */
+async function mirrorActivityToCloud(
+  kind: string,
+  payload: unknown
+): Promise<void> {
+  try {
+    const { passthroughJson, getStatus } = await import('./cloud.service')
+    if (getStatus() !== 'connected') return
+    await passthroughJson('/v1/activity', {
+      method: 'POST',
+      body: { kind, payload },
+    })
+  } catch {
+    /* not connected / network blip — non-fatal */
+  }
+}
+
+/**
+ * After-exit hook: tar + upload the save folder via Ludusavi.
+ * Skips when:
+ *   - session was very short (< 10s — probably a crash, no save changed)
+ *   - cloud isn't connected (handled inside uploadGameSave)
+ *   - Ludusavi finds no save files for this game
+ *
+ * Sends a 'library:cloudSave' event to the renderer with the result
+ * so a toast / notification can surface success or error. Errors are
+ * never thrown (a failed upload should never block the launcher's
+ * post-exit cleanup path).
+ */
+async function autoUploadAfterExit(
+  libraryGameId: string,
+  sessionSeconds: number
+): Promise<void> {
+  if (sessionSeconds < 10) return
+  try {
+    const game = getLibraryGame(libraryGameId)
+    if (!game) return
+    const { uploadGameSave } = await import('./cloud-save.service')
+    const res = await uploadGameSave(game, {
+      label: `Auto · ${new Date().toLocaleString('fr-FR')}`,
+    })
+    emit('library:cloudSave', {
+      libraryGameId,
+      kind: 'upload',
+      ...res,
+    })
+  } catch (e) {
+    console.warn(
+      '[library] auto cloud upload failed for',
+      libraryGameId,
+      (e as Error).message
+    )
+  }
+}
 let getMainWindow: (() => BrowserWindow | null) | null = null
 
 export function initLibrary(getMain: () => BrowserWindow | null): void {
   getMainWindow = getMain
-  // One-shot heal: early versions of the backfill stored the PARENT
+  // One-shot heal #2: clear `executable_path` entries that point at a
+  // setup / installer / helper binary. These rows produce the wrong
+  // CTA ("Jouer" instead of "Setup") because LibraryCard interprets
+  // any executable_path as "ready to play". Two real-world causes
+  // produced these:
+  //   - Early versions of the auto-detect ran BEFORE the EXE blocklist
+  //     was tightened, so a FitGirl folder containing only `setup.exe`
+  //     would mistakenly assign it as the game binary.
+  //   - The "Choisir l'exe" file picker had no client-side validation;
+  //     a user could pick `setup.exe` by hand without realising it
+  //     would block the future Setup CTA.
+  // Both leave the row stuck on "Jouer" → launch setup.exe → FitGirl
+  // installer opens again, instead of the game. We sweep here so old
+  // installs heal on the next launcher start; new patches are guarded
+  // in updateLibraryGame() below.
+  try {
+    const stuck = getDatabase()
+      .prepare(
+        "SELECT id, executable_path FROM library_games WHERE executable_path IS NOT NULL"
+      )
+      .all() as Array<{ id: string; executable_path: string }>
+    const clear = getDatabase().prepare(
+      'UPDATE library_games SET executable_path = NULL, updated_at = ? WHERE id = ?'
+    )
+    let cleared = 0
+    for (const row of stuck) {
+      if (isHelperExe(row.executable_path)) {
+        clear.run(Date.now(), row.id)
+        cleared++
+      }
+    }
+    if (cleared > 0) {
+      console.log(
+        '[library] cleared',
+        cleared,
+        'library row(s) whose executable_path pointed at a setup / installer / helper exe — Setup CTA will be re-offered'
+      )
+    }
+  } catch {
+    // schema not ready — first boot path
+  }
+  // One-shot heal #1: early versions of the backfill stored the PARENT
   // downloads folder as install_path (which would have caused "Désinstaller
   // + supprimer fichiers" to try to wipe `Downloads\Nexus Launcher` whole).
   // For each library row whose install_path is a directory containing
@@ -160,6 +301,16 @@ function safeParseStringArray(raw: string | null): string[] {
 }
 
 function rowToGame(row: LibraryRow): LibraryGame {
+  // Sanitise executable_path at read time: even if a stale DB row or a
+  // future bug stuck a setup / installer / helper exe in here, the
+  // renderer should never see it as a launchable game binary. The
+  // boot heal in initLibrary() clears these rows permanently on the
+  // next start, but we also gate at read so the current session
+  // doesn't keep offering the wrong CTA until then.
+  const exe =
+    row.executable_path && !isHelperExe(row.executable_path)
+      ? row.executable_path
+      : null
   return {
     id: row.id,
     userId: row.user_id,
@@ -173,7 +324,7 @@ function rowToGame(row: LibraryRow): LibraryGame {
     publisher: row.publisher,
     releaseDate: row.release_date,
     sizeBytes: row.size_bytes,
-    executablePath: row.executable_path,
+    executablePath: exe,
     installPath: row.install_path,
     launchOptions: row.launch_options,
     sourceAddonId: row.source_addon_id,
@@ -382,8 +533,24 @@ export function updateLibraryGame(id: string, patch: UpdateLibraryParams): Libra
     values.push(patch.title)
   }
   if (patch.executablePath !== undefined) {
-    fields.push('executable_path = ?')
-    values.push(patch.executablePath)
+    // Guard: reject setup / installer / helper exes BEFORE writing.
+    // The user (or a buggy auto-detect path) trying to set this row's
+    // game binary to e.g. `setup.exe` would otherwise produce the
+    // "Jouer launches the installer again" UX. We silently downgrade
+    // to null so the Setup CTA re-appears — the alternative (error)
+    // would surface as a generic dialog the user couldn't act on.
+    if (typeof patch.executablePath === 'string' && isHelperExe(patch.executablePath)) {
+      console.warn(
+        '[library] refused executable_path =',
+        patch.executablePath,
+        '— matches the setup / installer blocklist, clearing instead'
+      )
+      fields.push('executable_path = ?')
+      values.push(null)
+    } else {
+      fields.push('executable_path = ?')
+      values.push(patch.executablePath)
+    }
   }
   if (patch.installPath !== undefined) {
     fields.push('install_path = ?')
@@ -547,6 +714,20 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
     // purple "playing" on their profile + on every friend's nav avatar.
     updatePresence(game.userId, 'in_game')
 
+    // RPC Nexus — push rich presence to the cloud so friends see
+    // "Kazu joue à Hollow Knight Silksong" in their friend strip.
+    // Fire-and-forget; gracefully no-ops when cloud is disconnected.
+    void broadcastRichPresenceForGame(game, true)
+
+    // Activity feed mirror to cloud — same payload as the local
+    // postActivity above so friends see the game_launched event
+    // on their cloud feed without needing a separate writer.
+    void mirrorActivityToCloud('game_launched', {
+      gameId: id,
+      title: game.title,
+      coverUrl: game.coverUrl,
+    })
+
     // Friend-launched toast — broadcast so any friend currently logged
     // in on the same machine sees a Steam-style "Kazu lance Geometry
     // Dash" card slide in from the bottom-right. The renderer filters
@@ -612,6 +793,15 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
       // focused, but the immediate post-exit state is "yes the launcher
       // is still here and active".
       updatePresence(game.userId, 'online')
+      // Clear cloud rich presence so the friend strip stops showing
+      // "Joue à X" for someone who just quit.
+      void broadcastRichPresenceForGame(game, false)
+      // Cloud auto-upload: best-effort, fire-and-forget. The
+      // cloud-save service silently no-ops when offline or when
+      // Ludusavi finds zero save files. Emits a toast via the
+      // 'library:cloudSave' channel so the renderer can surface
+      // progress / errors / "Save cloud à jour" notifications.
+      void autoUploadAfterExit(id, seconds)
     })
 
     child.on('error', () => {
@@ -657,6 +847,15 @@ const EXE_SKIP_FOLDERS = new Set([
   'recycle',
   '$recycle.bin',
   'system volume information',
+  // Checksum / verification side-folders shipped by repackers. FitGirl
+  // bundles a `MD5/QuickSFV.EXE` helper here — without this, the
+  // auto-detect (which prefers .exe size > 2 MB) would pick QuickSFV
+  // as the game binary and silently route "Jouer" to a checksum tool.
+  'md5',
+  'sha1',
+  'sha256',
+  'checksums',
+  'verify',
 ])
 
 const EXE_NAME_BLOCKLIST = [
@@ -676,7 +875,46 @@ const EXE_NAME_BLOCKLIST = [
   /createdump/i,
   /python.*\.exe$/i,
   /^node\.exe$/i,
+  // Repacker-shipped utilities — these live alongside the game's actual
+  // binary and ARE > 2 MB sometimes, so the strict-size pass would
+  // otherwise prefer them over the real exe. Each pattern has been
+  // hit by a real user report:
+  //   - QuickSFV : FitGirl bundles in `MD5/` for checksum verification
+  //   - SFX / 7z : self-extracting archive stubs left after install
+  //   - aria2c   : downloader helper some repacks include
+  //   - dotnet-/dotnetcoreupdater : .NET runtime side-installers
+  //   - chrome_elf / GoogleCrashHandler : Chromium engine debris
+  /quicksfv/i,
+  /^sfx/i,
+  /^7z[a-z]*\.exe$/i,
+  /^aria2c?\.exe$/i,
+  /dotnet[-_]?(?:core)?updater/i,
+  /chrome_elf/i,
+  /googlecrashhandler/i,
+  /epicwebhelper/i,
+  /eossdk-win.*\.exe$/i,
 ]
+
+/**
+ * True when an absolute exe path's basename matches one of the
+ * helper / installer patterns we never want to launch as the
+ * "Jouer" action. Used both by the auto-detect scanner (to skip
+ * candidates) and by `updateLibraryGame` (to refuse a manual
+ * pick of e.g. `setup.exe`). Centralising means the two stay
+ * in lockstep when we add a new pattern.
+ *
+ * Note: this is intentionally a SUPERSET of SETUP_NAME_PATTERNS —
+ * the setup-detector returns positive matches for installer-like
+ * exes (which is correct for the Setup CTA), while this helper
+ * has to ALSO reject crash handlers / redists / etc. so the
+ * "Jouer" CTA never spawns those by mistake.
+ */
+export function isHelperExe(absoluteExePath: string): boolean {
+  if (!absoluteExePath) return false
+  const base = path.basename(absoluteExePath)
+  if (!/\.exe$/i.test(base)) return false
+  return EXE_NAME_BLOCKLIST.some((re) => re.test(base))
+}
 
 interface ExeCandidate {
   fullPath: string

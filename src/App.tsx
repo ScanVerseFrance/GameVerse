@@ -9,6 +9,7 @@ import { useLibraryStore } from './stores/library.store'
 import { useSocialStore } from './stores/social.store'
 import { useSettingsStore } from './stores/settings.store'
 import { useNotificationsStore } from './stores/notifications.store'
+import { useCloudStore } from './stores/cloud.store'
 import { useApplyTheme } from './hooks/useApplyTheme'
 
 export default function App() {
@@ -30,6 +31,13 @@ export default function App() {
     void loadCustom()
     void loadAddons()
     void loadDownloadSettings()
+    // Offline-first cloud bootstrap. Runs in parallel with the local
+    // restore — if the cloud is reachable AND we have a saved token,
+    // friends/presence/threads warm up by the time the user navigates
+    // to /community. If the network is down or no token is saved, we
+    // land in 'offline' / 'disconnected' and the local library remains
+    // fully usable.
+    void useCloudStore.getState().bootConnect()
   }, [restore, loadCustom, loadAddons, loadDownloadSettings])
 
   useEffect(() => {
@@ -119,6 +127,21 @@ export default function App() {
       socialStore.applyPresence(data.userId, data.status, data.lastActiveAt)
     })
 
+    // Cloud lifecycle. Status updates flip the badge + warm/wipe
+    // caches; envelope events feed the live message / friend /
+    // activity stores via applyEvent's dispatcher.
+    const cloudStore = useCloudStore.getState()
+    const unsubCloudStatus = window.nexus.cloud.onStatusChange((data) => {
+      cloudStore.applyStatus({
+        status: data.status,
+        user: data.user,
+        reason: data.reason,
+      })
+    })
+    const unsubCloudEvent = window.nexus.cloud.onEvent((env) => {
+      cloudStore.applyEvent(env)
+    })
+
     return () => {
       unsubProgress()
       unsubState()
@@ -128,6 +151,8 @@ export default function App() {
       unsubLibAdded()
       unsubAch()
       unsubPres()
+      unsubCloudStatus()
+      unsubCloudEvent()
     }
   }, [])
 
