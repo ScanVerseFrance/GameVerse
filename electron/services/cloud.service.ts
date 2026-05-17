@@ -39,7 +39,7 @@ import type {
 // Hard-coded default. The user can override at runtime via the
 // "Avancé" panel in Paramètres → Cloud (stored in a settings row);
 // keeping the production URL here means a fresh install just works.
-const DEFAULT_API_URL = 'https://api.scanverse.online'
+const DEFAULT_API_URL = 'https://nexus.scanverse.online'
 const CONNECT_TIMEOUT_MS = 5000
 const REQUEST_TIMEOUT_MS = 15_000
 
