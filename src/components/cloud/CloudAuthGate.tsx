@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { useEffect } from 'react'
 import { useCloudStore } from '@/stores/cloud.store'
+import { PasswordStrength } from '@/components/common/PasswordStrength'
 import { cn } from '@/utils/cn'
 
 /**
@@ -379,6 +380,15 @@ export function CloudAuthGate() {
               disabled={busy || success}
               required
             />
+            {/* Strength meter — only at register time. We pass the
+                username so the scorer can penalise "password contains
+                your username" combos. */}
+            {tab === 'register' && (
+              <PasswordStrength
+                password={password}
+                username={username}
+              />
+            )}
 
             {error && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-error/10 border border-error/30 text-sm text-error">
@@ -460,21 +470,6 @@ export function CloudAuthGate() {
               )}
             </p>
           </form>
-
-          {/* Persistent server-config link — always visible at the
-              bottom of the form so the user can change the API URL
-              without first hitting an error. */}
-          <div className="mt-8 pt-4 border-t border-border-soft text-center">
-            <button
-              type="button"
-              onClick={() => setServerOpen((v) => !v)}
-              className="inline-flex items-center gap-1.5 text-[11px] text-fg-muted hover:text-fg-secondary font-mono"
-              title="Pointer le launcher vers un autre backend (self-hosted, dev local…)"
-            >
-              <Server className="w-3 h-3" />
-              Serveur&nbsp;: <span className="text-fg-secondary">{serverUrl || '—'}</span>
-            </button>
-          </div>
         </motion.div>
       </main>
     </div>
