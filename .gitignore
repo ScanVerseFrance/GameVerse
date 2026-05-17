@@ -1,0 +1,24 @@
+node_modules
+dist
+dist-electron
+release
+.vite
+.env
+.env.local
+*.log
+.DS_Store
+Thumbs.db
+# Per-user game downloads (can be tens of GB) — never commit.
+downloads/
+# Local SQLite + user assets created at runtime by Electron's userData
+# path. The data/ folder under the repo root is the BUILT-IN ankergames
+# JSON source (committed), but per-user state lands elsewhere; ignore
+# any stray .db / .db-journal that lands in the tree.
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+# Claude Code agent config / workspace settings — personal, not project.
+.claude/
+# Local scratch JSON copies (rename-with-suffix during testing).
+*Copie*.json

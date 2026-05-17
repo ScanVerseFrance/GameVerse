@@ -1,0 +1,27 @@
+{
+  "id": "wesnoth",
+  "title": "Battle for Wesnoth",
+  "coverUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/Wesnoth-logo.png/240px-Wesnoth-logo.png",
+  "heroUrl": "https://www.wesnoth.org/images/sshots-1.16/1.16-1.jpg",
+  "description": "Battle for Wesnoth est un jeu de stratégie au tour par tour dans un univers de fantasy heroique. Lève une armée d'humains, elfes, nains, orcs, mort-vivants ou dragons à travers 16+ campagnes solo (200+ scénarios), maîtrise les terrains et la météo, fais monter en niveau tes unités d'élite. Multijoueur jusqu'à 8 joueurs (humains ou IA) sur ladder ELO online. Plus de 20 ans de développement actif, un standard du genre TBS libre.",
+  "developer": "Wesnoth Team",
+  "publisher": "Wesnoth Team",
+  "releaseDate": "2003-06-18",
+  "releaseYear": 2003,
+  "genres": ["Strategie", "Fantasy"],
+  "sizeBytes": 450000000,
+  "rating": 4.3,
+  "screenshotUrls": [
+    "https://www.wesnoth.org/images/sshots-1.16/1.16-1.jpg",
+    "https://www.wesnoth.org/images/sshots-1.16/1.16-2.jpg"
+  ],
+  "systemRequirements": {
+    "min": {
+      "os": "Windows 7+",
+      "cpu": "Pentium 4 1 GHz",
+      "ram": "512 MB",
+      "gpu": "Compatible OpenGL",
+      "stockage": "600 MB"
+    }
+  }
+}

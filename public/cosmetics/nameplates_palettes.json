@@ -1,0 +1,2466 @@
+{
+  "Angels.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Aquarius Bundle.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Arctic Winter Frost.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Aries Bundle.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Aurora Winter Fox.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Aurora.webm": {
+    "palette": "teal",
+    "dark_hex": "#086460",
+    "dark_rgb": [
+      8,
+      100,
+      96
+    ],
+    "light_hex": "#7DEED7",
+    "light_rgb": [
+      125,
+      238,
+      215
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(8, 100, 96) 200%)"
+  },
+  "Autumn Foliage Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Badtz-maru.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Berry Bunny.webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Black Mana.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Black Ops 7 Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Bloomling.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Blossoming Branch.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Blue Mana.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Bonsai.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Busy Bee Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Bye Bye.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Camo Master.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Cancer Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Capricorn Bundle.webm": {
+    "palette": "teal",
+    "dark_hex": "#086460",
+    "dark_rgb": [
+      8,
+      100,
+      96
+    ],
+    "light_hex": "#7DEED7",
+    "light_rgb": [
+      125,
+      238,
+      215
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(8, 100, 96) 200%)"
+  },
+  "Cat Beans.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Cherry Blossoms.webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Chococat Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Cinnamoroll Bundle.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Cityscape.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Clappy Feet (Dark).webm": {
+    "palette": "white",
+    "dark_hex": "#FFFFFF",
+    "dark_rgb": [
+      255,
+      255,
+      255
+    ],
+    "light_hex": "#FFFFFF",
+    "light_rgb": [
+      255,
+      255,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(255, 255, 255) 200%)"
+  },
+  "Clappy Feet (Light).webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Clappy Feet (Medium).webm": {
+    "palette": "teal",
+    "dark_hex": "#086460",
+    "dark_rgb": [
+      8,
+      100,
+      96
+    ],
+    "light_hex": "#7DEED7",
+    "light_rgb": [
+      125,
+      238,
+      215
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(8, 100, 96) 200%)"
+  },
+  "Clappy Feet.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Claptrap.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Cosmic Storm.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Cozy Cat.webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "D20 Roll.webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Daisy Dream Bubbles.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Dark Roses Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Donald Splish Splash.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Dragon Ball.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Dream Waves Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Encore! Bundle.webm": {
+    "palette": "teal",
+    "dark_hex": "#086460",
+    "dark_rgb": [
+      8,
+      100,
+      96
+    ],
+    "light_hex": "#7DEED7",
+    "light_rgb": [
+      125,
+      238,
+      215
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(8, 100, 96) 200%)"
+  },
+  "Fairies.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Firefly Meadow.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Gemini Bundle.webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Glitch.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Glowies Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Go Sports!.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Gomah.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Goofy Happy Tune.webm": {
+    "palette": "clover",
+    "dark_hex": "#047B20",
+    "dark_rgb": [
+      4,
+      123,
+      32
+    ],
+    "light_hex": "#63CD5A",
+    "light_rgb": [
+      99,
+      205,
+      90
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(4, 123, 32) 200%)"
+  },
+  "Gothic Arches.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Green Mana.webm": {
+    "palette": "clover",
+    "dark_hex": "#047B20",
+    "dark_rgb": [
+      4,
+      123,
+      32
+    ],
+    "light_hex": "#63CD5A",
+    "light_rgb": [
+      99,
+      205,
+      90
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(4, 123, 32) 200%)"
+  },
+  "Hallucination Bundle.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Heaven Sent Bundle.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Hello Kitty Bundle.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Hermit's Lantern.webm": {
+    "palette": "clover",
+    "dark_hex": "#047B20",
+    "dark_rgb": [
+      4,
+      123,
+      32
+    ],
+    "light_hex": "#63CD5A",
+    "light_rgb": [
+      99,
+      205,
+      90
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(4, 123, 32) 200%)"
+  },
+  "Hoppy Boi Bundle.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Hot Dog.webm": {
+    "palette": "teal",
+    "dark_hex": "#086460",
+    "dark_rgb": [
+      8,
+      100,
+      96
+    ],
+    "light_hex": "#7DEED7",
+    "light_rgb": [
+      125,
+      238,
+      215
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(8, 100, 96) 200%)"
+  },
+  "Hunny Bunnies Bundle.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Infinite Swirl Bundle.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "It's Showtime! Bundle.webm": {
+    "palette": "lemon",
+    "dark_hex": "#F6CD12",
+    "dark_rgb": [
+      246,
+      205,
+      18
+    ],
+    "light_hex": "#FED400",
+    "light_rgb": [
+      254,
+      212,
+      0
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(246, 205, 18) 200%)"
+  },
+  "K-Heart (Dark).webm": {
+    "palette": "white",
+    "dark_hex": "#FFFFFF",
+    "dark_rgb": [
+      255,
+      255,
+      255
+    ],
+    "light_hex": "#FFFFFF",
+    "light_rgb": [
+      255,
+      255,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(255, 255, 255) 200%)"
+  },
+  "K-Heart (Light).webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "K-Heart (Medium).webm": {
+    "palette": "teal",
+    "dark_hex": "#086460",
+    "dark_rgb": [
+      8,
+      100,
+      96
+    ],
+    "light_hex": "#7DEED7",
+    "light_rgb": [
+      125,
+      238,
+      215
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(8, 100, 96) 200%)"
+  },
+  "K-Heart.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Koi Pond.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Kuromi Bundle.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Ladybug Luau.webm": {
+    "palette": "forest",
+    "dark_hex": "#2D5401",
+    "dark_rgb": [
+      45,
+      84,
+      1
+    ],
+    "light_hex": "#6AA624",
+    "light_rgb": [
+      106,
+      166,
+      36
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(45, 84, 1) 200%)"
+  },
+  "Lantern Festival Bundle.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Leo Bundle.webm": {
+    "palette": "lemon",
+    "dark_hex": "#F6CD12",
+    "dark_rgb": [
+      246,
+      205,
+      18
+    ],
+    "light_hex": "#FED400",
+    "light_rgb": [
+      254,
+      212,
+      0
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(246, 205, 18) 200%)"
+  },
+  "Libra Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Light Cycles Bundle.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Light Wall (Blue).webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Lil' Inchy Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Lone Wolf Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Love Stinks Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Lover Girl Autumn Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Lucky Bunny Bundle.webm": {
+    "palette": "clover",
+    "dark_hex": "#047B20",
+    "dark_rgb": [
+      4,
+      123,
+      32
+    ],
+    "light_hex": "#63CD5A",
+    "light_rgb": [
+      99,
+      205,
+      90
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(4, 123, 32) 200%)"
+  },
+  "Lucky Era Bundle.webm": {
+    "palette": "teal",
+    "dark_hex": "#086460",
+    "dark_rgb": [
+      8,
+      100,
+      96
+    ],
+    "light_hex": "#7DEED7",
+    "light_rgb": [
+      125,
+      238,
+      215
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(8, 100, 96) 200%)"
+  },
+  "Luna Moth.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Magic Hearts (Blue).webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Magic Hearts (Orange).webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Magic Mists.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Mickey Twinkle Star.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Mini Goku.webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Mini Vegeta.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Minnie True Love.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Moon Essence.webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Moon Meadow Bundle.webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Moonlit Charm.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Nevermore Bundle.webm": {
+    "palette": "white",
+    "dark_hex": "#FFFFFF",
+    "dark_rgb": [
+      255,
+      255,
+      255
+    ],
+    "light_hex": "#FFFFFF",
+    "light_rgb": [
+      255,
+      255,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(255, 255, 255) 200%)"
+  },
+  "Oasis.webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Ominous Reading Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Owlbear Cub.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Pandoran Seas (Ilu).webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Pandoran Seas (Squid).webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Pisces Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Pixie Dust.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Planet Rings.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Pluto Playful Friend.webm": {
+    "palette": "clover",
+    "dark_hex": "#047B20",
+    "dark_rgb": [
+      4,
+      123,
+      32
+    ],
+    "light_hex": "#63CD5A",
+    "light_rgb": [
+      99,
+      205,
+      90
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(4, 123, 32) 200%)"
+  },
+  "Pochacco Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Pompompurin Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Raise Hell Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Red Dragon.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Red Mana.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Ripper Awakens.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Roly Poly (Blue).webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Roly Poly (Orange).webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Roly Poly Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Ryomen Sukuna Bundle.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Sagittarius Bundle.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Satoru Gojo Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Scorpio Bundle.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Secret Agent.webm": {
+    "palette": "forest",
+    "dark_hex": "#2D5401",
+    "dark_rgb": [
+      45,
+      84,
+      1
+    ],
+    "light_hex": "#6AA624",
+    "light_rgb": [
+      106,
+      166,
+      36
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(45, 84, 1) 200%)"
+  },
+  "Shattered Veil.webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Skibidi Toilet.webm": {
+    "palette": "lemon",
+    "dark_hex": "#F6CD12",
+    "dark_rgb": [
+      246,
+      205,
+      18
+    ],
+    "light_hex": "#FED400",
+    "light_rgb": [
+      254,
+      212,
+      0
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(246, 205, 18) 200%)"
+  },
+  "Spider-Man Bundle.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Spider-Man vs Venom.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Spirit Blossom Petals.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Spirit Blossom Springs.webm": {
+    "palette": "teal",
+    "dark_hex": "#086460",
+    "dark_rgb": [
+      8,
+      100,
+      96
+    ],
+    "light_hex": "#7DEED7",
+    "light_rgb": [
+      125,
+      238,
+      215
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(8, 100, 96) 200%)"
+  },
+  "Spirit Moon.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Spirit of Spring.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Sproutling.webm": {
+    "palette": "clover",
+    "dark_hex": "#047B20",
+    "dark_rgb": [
+      4,
+      123,
+      32
+    ],
+    "light_hex": "#63CD5A",
+    "light_rgb": [
+      99,
+      205,
+      90
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(4, 123, 32) 200%)"
+  },
+  "Squad Wipe.webm": {
+    "palette": "teal",
+    "dark_hex": "#086460",
+    "dark_rgb": [
+      8,
+      100,
+      96
+    ],
+    "light_hex": "#7DEED7",
+    "light_rgb": [
+      125,
+      238,
+      215
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(8, 100, 96) 200%)"
+  },
+  "Star Drift Bundle.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Starfall Tides (Nightshade).webm": {
+    "palette": "berry",
+    "dark_hex": "#893A99",
+    "dark_rgb": [
+      137,
+      58,
+      153
+    ],
+    "light_hex": "#B11FCF",
+    "light_rgb": [
+      177,
+      31,
+      207
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(137, 58, 153) 200%)"
+  },
+  "Starfall Tides (Rose).webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Starfall Tides (Void).webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Starfall Tides.webm": {
+    "palette": "teal",
+    "dark_hex": "#086460",
+    "dark_rgb": [
+      8,
+      100,
+      96
+    ],
+    "light_hex": "#7DEED7",
+    "light_rgb": [
+      125,
+      238,
+      215
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(8, 100, 96) 200%)"
+  },
+  "Starlight Whales.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Sun and Moon.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Sunlit Radiance.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Sweetheart Bundle.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Sword of Legend.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "TV Woman.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Taurus Bundle.webm": {
+    "palette": "forest",
+    "dark_hex": "#2D5401",
+    "dark_rgb": [
+      45,
+      84,
+      1
+    ],
+    "light_hex": "#6AA624",
+    "light_rgb": [
+      106,
+      166,
+      36
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(45, 84, 1) 200%)"
+  },
+  "The Grid Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "The Grid Fireworks.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "The Magician Bundle.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "The Same Duck.webm": {
+    "palette": "forest",
+    "dark_hex": "#2D5401",
+    "dark_rgb": [
+      45,
+      84,
+      1
+    ],
+    "light_hex": "#6AA624",
+    "light_rgb": [
+      106,
+      166,
+      36
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(45, 84, 1) 200%)"
+  },
+  "Touch Grass.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Twilight (Dusk).webm": {
+    "palette": "white",
+    "dark_hex": "#FFFFFF",
+    "dark_rgb": [
+      255,
+      255,
+      255
+    ],
+    "light_hex": "#FFFFFF",
+    "light_rgb": [
+      255,
+      255,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(255, 255, 255) 200%)"
+  },
+  "Twilight (Fuchsia).webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Twilight Amethyst Bundle.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Twilight Bundle.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Twilight.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Under the Sea.webm": {
+    "palette": "sky",
+    "dark_hex": "#0080B7",
+    "dark_rgb": [
+      0,
+      128,
+      183
+    ],
+    "light_hex": "#56CCFF",
+    "light_rgb": [
+      86,
+      204,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(0, 128, 183) 200%)"
+  },
+  "Vault.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Vengeance.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Venom Bundle.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "Virgo Bundle.webm": {
+    "palette": "lemon",
+    "dark_hex": "#F6CD12",
+    "dark_rgb": [
+      246,
+      205,
+      18
+    ],
+    "light_hex": "#FED400",
+    "light_rgb": [
+      254,
+      212,
+      0
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(246, 205, 18) 200%)"
+  },
+  "White Mana.webm": {
+    "palette": "bubble_gum",
+    "dark_hex": "#DC3E97",
+    "dark_rgb": [
+      220,
+      62,
+      151
+    ],
+    "light_hex": "#F957B3",
+    "light_rgb": [
+      249,
+      87,
+      179
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(220, 62, 151) 200%)"
+  },
+  "Woodsprites Bundle.webm": {
+    "palette": "violet",
+    "dark_hex": "#730BC8",
+    "dark_rgb": [
+      115,
+      11,
+      200
+    ],
+    "light_hex": "#972FED",
+    "light_rgb": [
+      151,
+      47,
+      237
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(115, 11, 200) 200%)"
+  },
+  "Year of the Horse Bundle.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Yuji Itadori Bundle.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  },
+  "Yunara's Aion Er'na.webm": {
+    "palette": "cobalt",
+    "dark_hex": "#0131C2",
+    "dark_rgb": [
+      1,
+      49,
+      194
+    ],
+    "light_hex": "#4278FF",
+    "light_rgb": [
+      66,
+      120,
+      255
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(1, 49, 194) 200%)"
+  },
+  "gudetama.webm": {
+    "palette": "crimson",
+    "dark_hex": "#900007",
+    "dark_rgb": [
+      144,
+      0,
+      7
+    ],
+    "light_hex": "#E7040F",
+    "light_rgb": [
+      231,
+      4,
+      15
+    ],
+    "gradient_css": "linear-gradient(90deg, rgba(0, 0, 0, 0) -30%, rgb(144, 0, 7) 200%)"
+  }
+}

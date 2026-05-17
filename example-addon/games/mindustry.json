@@ -1,0 +1,26 @@
+{
+  "id": "mindustry",
+  "title": "Mindustry",
+  "coverUrl": "https://upload.wikimedia.org/wikipedia/en/thumb/3/3b/Mindustry_Logo.png/240px-Mindustry_Logo.png",
+  "heroUrl": "https://upload.wikimedia.org/wikipedia/en/2/27/Mindustry_screenshot.png",
+  "description": "Mindustry est un mélange unique de tower defense et de jeu de gestion d'usine façon Factorio. Construis des chaînes de production automatisées pour alimenter tes défenses, mine des ressources, raffine, distribue avec des tapis convoyeurs, et défends ton noyau contre des vagues d'ennemis croissantes. Campagne solo riche + multijoueur PvP/coop. Gratuit, libre, multiplateforme.",
+  "developer": "Anuken",
+  "publisher": "Anuken",
+  "releaseDate": "2017-09-15",
+  "releaseYear": 2017,
+  "genres": ["Tower Defense", "Strategie"],
+  "sizeBytes": 140000000,
+  "rating": 4.7,
+  "screenshotUrls": [
+    "https://upload.wikimedia.org/wikipedia/en/2/27/Mindustry_screenshot.png"
+  ],
+  "systemRequirements": {
+    "min": {
+      "os": "Windows 7+",
+      "cpu": "Dual core 2 GHz",
+      "ram": "2 GB",
+      "gpu": "OpenGL 2.0 compatible",
+      "stockage": "200 MB"
+    }
+  }
+}

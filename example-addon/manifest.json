@@ -1,0 +1,24 @@
+{
+  "id": "com.nexus.example-foss",
+  "name": "Jeux open source",
+  "version": "1.0.0",
+  "description": "Sélection de jeux open source légalement gratuits, depuis leurs sites officiels. Démontre le format de manifeste Nexus de bout en bout.",
+  "author": "Nexus Launcher",
+  "homepage": "https://github.com/svu/nexus-launcher",
+  "iconUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Open_Source_Initiative_keyhole.svg/200px-Open_Source_Initiative_keyhole.svg.png",
+  "contentType": "games",
+  "endpoints": {
+    "catalog": "/catalog.json",
+    "meta": "/games/:id.json",
+    "download": "/downloads/:id.json"
+  },
+  "catalogs": [
+    {
+      "id": "all",
+      "name": "Tous les jeux",
+      "genres": ["RTS", "Strategie", "Tower Defense", "Karting", "Fantasy", "Multijoueur"],
+      "sortable": true
+    }
+  ],
+  "cacheTtlSeconds": 60
+}

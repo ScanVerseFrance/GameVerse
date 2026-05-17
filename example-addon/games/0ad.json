@@ -1,0 +1,34 @@
+{
+  "id": "0ad",
+  "title": "0 A.D.",
+  "coverUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/0_A.D._Logo.png/240px-0_A.D._Logo.png",
+  "heroUrl": "https://play0ad.com/wp-content/uploads/2020/12/screenshot-2020-12-romans.jpg",
+  "description": "0 A.D. (zero ay-dee) est un jeu de stratégie temps réel historique et 3D, gratuit, open source et multiplateforme, développé par Wildfire Games. Joue 13 civilisations antiques (Romains, Carthaginois, Athéniens, Perses, Mauryas, Han, etc.), bâtis ton empire de l'âge du bronze à l'apogée romaine. Solo + multijoueur jusqu'à 8. Visuels somptueux, profondeur historique réelle.",
+  "developer": "Wildfire Games",
+  "publisher": "Wildfire Games",
+  "releaseDate": "2009-06-01",
+  "releaseYear": 2009,
+  "genres": ["RTS", "Strategie", "Multijoueur"],
+  "sizeBytes": 1300000000,
+  "rating": 4.4,
+  "screenshotUrls": [
+    "https://play0ad.com/wp-content/uploads/2020/12/screenshot-2020-12-romans.jpg",
+    "https://play0ad.com/wp-content/uploads/2020/12/screenshot-2020-12-athenians.jpg"
+  ],
+  "systemRequirements": {
+    "min": {
+      "os": "Windows 7+ 64-bit",
+      "cpu": "Intel Core 2 Duo 2 GHz",
+      "ram": "2 GB",
+      "gpu": "GeForce 8600 / Radeon HD 2600",
+      "stockage": "2 GB"
+    },
+    "recommended": {
+      "os": "Windows 10 64-bit",
+      "cpu": "Intel Core i5 quad-core",
+      "ram": "4 GB",
+      "gpu": "GeForce GTX 760+",
+      "stockage": "3 GB"
+    }
+  }
+}

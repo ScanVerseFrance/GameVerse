@@ -1,0 +1,51 @@
+{
+  "games": [
+    {
+      "id": "openra",
+      "title": "OpenRA",
+      "coverUrl": "https://www.openra.net/images/branding/openra-256x256.png",
+      "releaseYear": 2007,
+      "genres": ["RTS", "Strategie", "Multijoueur"],
+      "sizeBytes": 115000000,
+      "rating": 4.5
+    },
+    {
+      "id": "mindustry",
+      "title": "Mindustry",
+      "coverUrl": "https://upload.wikimedia.org/wikipedia/en/thumb/3/3b/Mindustry_Logo.png/240px-Mindustry_Logo.png",
+      "releaseYear": 2017,
+      "genres": ["Tower Defense", "Strategie"],
+      "sizeBytes": 140000000,
+      "rating": 4.7
+    },
+    {
+      "id": "0ad",
+      "title": "0 A.D.",
+      "coverUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/0_A.D._Logo.png/240px-0_A.D._Logo.png",
+      "releaseYear": 2009,
+      "genres": ["RTS", "Strategie", "Multijoueur"],
+      "sizeBytes": 1300000000,
+      "rating": 4.4
+    },
+    {
+      "id": "supertuxkart",
+      "title": "SuperTuxKart",
+      "coverUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c9/SuperTuxKart_logo.svg/240px-SuperTuxKart_logo.svg.png",
+      "releaseYear": 2006,
+      "genres": ["Karting", "Multijoueur"],
+      "sizeBytes": 850000000,
+      "rating": 4.2
+    },
+    {
+      "id": "wesnoth",
+      "title": "Battle for Wesnoth",
+      "coverUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/35/Wesnoth-logo.png/240px-Wesnoth-logo.png",
+      "releaseYear": 2003,
+      "genres": ["Strategie", "Fantasy"],
+      "sizeBytes": 450000000,
+      "rating": 4.3
+    }
+  ],
+  "total": 5,
+  "hasMore": false
+}

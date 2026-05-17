@@ -1,0 +1,35 @@
+{
+  "id": "openra",
+  "title": "OpenRA",
+  "coverUrl": "https://www.openra.net/images/branding/openra-256x256.png",
+  "heroUrl": "https://www.openra.net/images/screenshots/red-alert-allied-base.jpg",
+  "description": "OpenRA est un remake open source des classiques RTS Westwood des années 90 : Command & Conquer Tiberian Dawn, Red Alert et Dune 2000. Le gameplay d'origine, modernisé avec une interface contemporaine, le support multijoueur online via lobby intégré, des cartes générées automatiquement, et un système de mods complet. Compatible Windows / macOS / Linux. Communauté très active depuis 2007.",
+  "developer": "OpenRA contributors",
+  "publisher": "OpenRA Project",
+  "releaseDate": "2007-09-26",
+  "releaseYear": 2007,
+  "genres": ["RTS", "Strategie", "Multijoueur"],
+  "sizeBytes": 115000000,
+  "rating": 4.5,
+  "screenshotUrls": [
+    "https://www.openra.net/images/screenshots/red-alert-allied-base.jpg",
+    "https://www.openra.net/images/screenshots/tiberian-dawn-attack.jpg",
+    "https://www.openra.net/images/screenshots/dune-2000-base.jpg"
+  ],
+  "systemRequirements": {
+    "min": {
+      "os": "Windows 7 SP1+",
+      "cpu": "1.2 GHz dual core",
+      "ram": "1 GB",
+      "gpu": "OpenGL 2.1 compatible",
+      "stockage": "300 MB"
+    },
+    "recommended": {
+      "os": "Windows 10",
+      "cpu": "2 GHz quad core",
+      "ram": "2 GB",
+      "gpu": "Carte graphique dédiée",
+      "stockage": "500 MB"
+    }
+  }
+}

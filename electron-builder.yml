@@ -1,0 +1,28 @@
+appId: com.svu.nexuslauncher
+productName: Nexus Launcher
+copyright: Copyright © SVU
+directories:
+  buildResources: build
+  output: release
+files:
+  - dist
+  - dist-electron
+asarUnpack:
+  - "**/*.{node,dll}"
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-${arch}.${ext}
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-Setup-${version}.${ext}
