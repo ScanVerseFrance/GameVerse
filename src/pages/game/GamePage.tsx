@@ -44,7 +44,7 @@ export default function GamePage() {
   if (loading) {
     return (
       <div className="py-20 flex items-center justify-center gap-2 text-sm text-fg-muted">
-        <LoadingSpinner size="md" /> Loading game…
+        <LoadingSpinner size="md" /> Chargement du jeu…
       </div>
     )
   }
@@ -56,16 +56,16 @@ export default function GamePage() {
           onClick={() => navigate(-1)}
           className="inline-flex items-center gap-1.5 text-sm text-fg-secondary hover:text-fg-primary transition-colors mb-4"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back
+          <ArrowLeft className="w-3.5 h-3.5" /> Retour
         </button>
         <Card padding="lg" className="border-error/30 bg-error/5">
           <div className="flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-error shrink-0 mt-0.5" />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-fg-primary">Could not load game</p>
+              <p className="text-sm font-medium text-fg-primary">Impossible de charger le jeu</p>
               <p className="text-sm text-fg-secondary mt-1 break-words">{error}</p>
               <p className="text-xs text-fg-muted mt-2 break-all">
-                Addon: <span className="font-mono">{addon?.name ?? addonId}</span> · Game id:{' '}
+                Addon&nbsp;: <span className="font-mono">{addon?.name ?? addonId}</span> · ID du jeu&nbsp;:{' '}
                 <span className="font-mono">{gameId}</span>
               </p>
             </div>
@@ -87,7 +87,7 @@ export default function GamePage() {
           onClick={() => navigate(-1)}
           className="absolute top-6 left-6 lg:left-10 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-black/40 backdrop-blur-sm border border-white/10 hover:bg-black/60 transition-colors"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back
+          <ArrowLeft className="w-3.5 h-3.5" /> Retour
         </button>
       </div>
 

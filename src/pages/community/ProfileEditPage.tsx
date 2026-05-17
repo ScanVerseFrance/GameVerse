@@ -20,6 +20,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Username } from '@/components/common/Username'
+import { CustomColorPicker } from '@/components/common/CustomColorPicker'
 import {
   NAMEPLATES,
   PROFILE_EFFECTS,
@@ -48,12 +49,19 @@ const SECTIONS: Array<{ value: SectionKey; label: string; icon: typeof UserIcon;
   { value: 'music', label: 'Musique', icon: Music },
 ]
 
-const USERNAME_ANIMATIONS: Array<{ value: 'none' | 'shimmer' | 'rainbow' | 'pulse'; label: string }> = [
+type AnimKey = 'none' | 'shimmer' | 'rainbow' | 'pulse' | 'glitch' | 'neon'
+const USERNAME_ANIMATIONS: Array<{ value: AnimKey; label: string }> = [
   { value: 'none', label: 'Aucune' },
   { value: 'shimmer', label: 'Shimmer' },
   { value: 'rainbow', label: 'Arc-en-ciel' },
   { value: 'pulse', label: 'Pulsation' },
+  { value: 'glitch', label: 'Glitch' },
+  { value: 'neon', label: 'Néon' },
 ]
+// Animations that take over the colour channel — bi-colour mode
+// is hidden when one of these is active because the gradient sweep
+// would fight the rainbow keyframes.
+const BI_COLOR_INCOMPATIBLE = new Set<AnimKey>(['rainbow'])
 
 const COLOR_SWATCHES = [
   '',
@@ -103,8 +111,11 @@ export default function ProfileEditPage() {
   const [bio, setBio] = useState(user?.bio ?? '')
   const [email, setEmail] = useState(user?.email ?? '')
   const [usernameColor, setUsernameColor] = useState(user?.usernameColor ?? '')
+  const [usernameColor2, setUsernameColor2] = useState(
+    user?.usernameColor2 ?? ''
+  )
   const [usernameAnimation, setUsernameAnimation] = useState<
-    'none' | 'shimmer' | 'rainbow' | 'pulse'
+    'none' | 'shimmer' | 'rainbow' | 'pulse' | 'glitch' | 'neon'
   >(user?.usernameAnimation ?? 'none')
 
   // Cosmetic drafts. Loaded once from the user (which already has the
@@ -130,6 +141,7 @@ export default function ProfileEditPage() {
     setBio(user.bio ?? '')
     setEmail(user.email ?? '')
     setUsernameColor(user.usernameColor ?? '')
+    setUsernameColor2(user.usernameColor2 ?? '')
     setUsernameAnimation(user.usernameAnimation ?? 'none')
   }, [user?.id])
 
@@ -213,6 +225,9 @@ export default function ProfileEditPage() {
         bio,
         email: email || '',
         usernameColor,
+        usernameColor2: BI_COLOR_INCOMPATIBLE.has(usernameAnimation)
+          ? null
+          : usernameColor2 || null,
         usernameAnimation,
       }),
       window.nexus.profile.updateCosmetics(user.id, {
@@ -439,6 +454,8 @@ export default function ProfileEditPage() {
                 setBio={setBio}
                 usernameColor={usernameColor}
                 setUsernameColor={setUsernameColor}
+                usernameColor2={usernameColor2}
+                setUsernameColor2={setUsernameColor2}
                 usernameAnimation={usernameAnimation}
                 setUsernameAnimation={setUsernameAnimation}
                 onAvatar={handleAvatar}
@@ -560,8 +577,10 @@ interface IdentityProps {
   setBio: (v: string) => void
   usernameColor: string
   setUsernameColor: (v: string) => void
-  usernameAnimation: 'none' | 'shimmer' | 'rainbow' | 'pulse'
-  setUsernameAnimation: (v: 'none' | 'shimmer' | 'rainbow' | 'pulse') => void
+  usernameColor2: string
+  setUsernameColor2: (v: string) => void
+  usernameAnimation: AnimKey
+  setUsernameAnimation: (v: AnimKey) => void
   onAvatar: (e: ChangeEvent<HTMLInputElement>) => void
   onBanner: (e: ChangeEvent<HTMLInputElement>) => void
   onClearAvatar: () => void
@@ -692,66 +711,139 @@ function IdentitySection(p: IdentityProps) {
         <span className="text-xs text-fg-muted self-end">{p.bio.length}/300</span>
       </div>
 
-      {/* Username styling */}
+      {/* Username styling — ScanVerse-style picker stack.
+          Two-row layout: top = primary colour swatches + custom HSV
+          picker, bi-colour toggle + secondary picker; bottom = animation
+          grid. The bi-colour row auto-hides when an animation that
+          owns the colour channel is active (rainbow). */}
       <div className="pt-4 border-t border-border-soft">
         <h3 className="text-[11px] font-semibold uppercase tracking-widest text-fg-secondary mb-3">
           Stylisation du pseudo
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
-              Couleur
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {COLOR_SWATCHES.map((c) => (
-                <button
-                  key={c || 'reset'}
-                  onClick={() => p.setUsernameColor(c)}
-                  className={cn(
-                    'w-7 h-7 rounded-full border-2 transition-all',
-                    (p.usernameColor || '') === c
-                      ? 'border-fg-primary scale-110'
-                      : 'border-transparent hover:scale-105'
-                  )}
-                  style={{
-                    background:
-                      c ||
-                      'repeating-conic-gradient(rgba(255,255,255,0.15) 0% 25%, transparent 0% 50%) 50% / 6px 6px',
-                  }}
-                  title={c || 'Couleur par défaut'}
-                  aria-label={c || 'Réinitialiser'}
-                />
-              ))}
-            </div>
-            <input
-              type="text"
+
+        {/* Live preview — re-applies the current draft so the user
+            sees the colour + animation + bi-colour combo without
+            scrolling back to the persistent top preview. Keyed on
+            (animation, color2 active) so React re-mounts → animation
+            restarts and the user can re-feel the effect after every
+            tweak (Discord-style). */}
+        <div
+          key={`${p.usernameAnimation}-${p.usernameColor2 ? '2' : '1'}`}
+          className="mb-4 p-4 rounded-md bg-[var(--surface-soft)] border border-glass-border text-center"
+        >
+          <Username
+            user={{
+              username: p.user.username,
+              displayName: p.displayName || p.user.displayName,
+              usernameColor: p.usernameColor,
+              usernameColor2: p.usernameColor2 || null,
+              usernameAnimation: p.usernameAnimation,
+            }}
+            className="font-display font-extrabold text-3xl"
+          />
+        </div>
+
+        {/* Primary colour row — preset swatches + custom HSV picker */}
+        <div className="flex flex-col gap-2 mb-5">
+          <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
+            Couleur principale
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            {COLOR_SWATCHES.map((c) => (
+              <button
+                key={c || 'reset'}
+                onClick={() => p.setUsernameColor(c)}
+                className={cn(
+                  'w-7 h-7 rounded-full border-2 transition-all',
+                  (p.usernameColor || '') === c
+                    ? 'border-fg-primary scale-110'
+                    : 'border-transparent hover:scale-105'
+                )}
+                style={{
+                  background:
+                    c ||
+                    'repeating-conic-gradient(rgba(255,255,255,0.15) 0% 25%, transparent 0% 50%) 50% / 6px 6px',
+                }}
+                title={c || 'Couleur par défaut'}
+                aria-label={c || 'Réinitialiser'}
+              />
+            ))}
+            <span className="w-px h-7 bg-border-soft mx-1" />
+            <CustomColorPicker
               value={p.usernameColor}
-              onChange={(e) => p.setUsernameColor(e.target.value)}
-              placeholder="#abc, rgb(…) ou vide"
-              className="h-10 px-3 rounded-md bg-[var(--surface-soft)] border border-glass-border focus:bg-[var(--surface-soft-hover)] focus:border-accent-primary/60 focus:outline-none text-sm font-mono text-fg-primary placeholder:text-fg-muted mt-1"
-              maxLength={32}
+              onChange={p.setUsernameColor}
+              title="Couleur custom (HSV / hex)"
             />
+            <span className="text-[10px] font-mono text-fg-muted ml-1">
+              Custom
+            </span>
           </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
-              Animation
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {USERNAME_ANIMATIONS.map((a) => (
-                <button
-                  key={a.value}
-                  onClick={() => p.setUsernameAnimation(a.value)}
-                  className={cn(
-                    'h-10 rounded-md text-xs font-medium border transition-colors',
-                    p.usernameAnimation === a.value
-                      ? 'border-accent-primary/60 bg-accent-primary/10 text-fg-primary'
-                      : 'border-glass-border text-fg-secondary hover:bg-[var(--surface-soft)]'
-                  )}
-                >
-                  {a.label}
-                </button>
-              ))}
+        </div>
+
+        {/* Bi-colour toggle + secondary picker. Hidden when the active
+            animation already drives the colour channel itself. */}
+        {!BI_COLOR_INCOMPATIBLE.has(p.usernameAnimation) ? (
+          <div className="flex flex-col gap-2 mb-5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
+                Couleur animée (dégradé)
+              </label>
+              <button
+                onClick={() =>
+                  p.setUsernameColor2(
+                    p.usernameColor2 ? '' : p.usernameColor || '#66c0f4'
+                  )
+                }
+                className={cn(
+                  'h-6 px-3 rounded-full text-[11px] font-semibold transition-colors',
+                  p.usernameColor2
+                    ? 'bg-accent-primary/15 text-accent-primary border border-accent-primary/40'
+                    : 'bg-[var(--surface-soft)] text-fg-muted border border-glass-border hover:text-fg-secondary'
+                )}
+              >
+                {p.usernameColor2 ? 'Activé' : 'Désactivé'}
+              </button>
             </div>
+            {p.usernameColor2 && (
+              <div className="flex items-center gap-3 p-3 rounded-md bg-[var(--surface-soft)] border border-glass-border">
+                <CustomColorPicker
+                  value={p.usernameColor2}
+                  onChange={p.setUsernameColor2}
+                  title="Seconde couleur (sweep)"
+                />
+                <p className="text-[11px] text-fg-muted leading-snug flex-1">
+                  Le pseudo va alterner entre les deux couleurs en boucle.
+                  Compatible avec toutes les animations sauf <strong>Arc-en-ciel</strong>.
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="mb-5 p-3 rounded-md bg-[var(--surface-soft)] border border-glass-border text-[11px] text-fg-muted leading-snug">
+            <strong className="text-fg-secondary">Couleur animée indisponible</strong> avec l'animation <em>Arc-en-ciel</em> — choisis une autre animation pour activer le dégradé.
+          </div>
+        )}
+
+        {/* Animation grid */}
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
+            Animation
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {USERNAME_ANIMATIONS.map((a) => (
+              <button
+                key={a.value}
+                onClick={() => p.setUsernameAnimation(a.value)}
+                className={cn(
+                  'h-10 rounded-md text-xs font-medium border transition-colors',
+                  p.usernameAnimation === a.value
+                    ? 'border-accent-primary/60 bg-accent-primary/10 text-fg-primary'
+                    : 'border-glass-border text-fg-secondary hover:bg-[var(--surface-soft)]'
+                )}
+              >
+                {a.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>

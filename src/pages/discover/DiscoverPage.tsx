@@ -294,9 +294,9 @@ export default function DiscoverPage() {
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
         <div className="flex items-center gap-2 mb-1">
           <Compass className="w-4 h-4 text-accent-primary" />
-          <p className="text-xs font-semibold text-fg-secondary uppercase tracking-widest">Explore</p>
+          <p className="text-xs font-semibold text-fg-secondary uppercase tracking-widest">Explorer</p>
         </div>
-        <h1 className="font-display font-bold text-3xl text-fg-primary">Discover</h1>
+        <h1 className="font-display font-bold text-3xl text-fg-primary">Découvrir</h1>
         <p className="text-sm text-fg-secondary mt-1">{totalSourcesLabel}</p>
       </motion.div>
 

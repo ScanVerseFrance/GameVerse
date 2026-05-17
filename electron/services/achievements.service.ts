@@ -583,3 +583,105 @@ export function getProgress(
     .get(userId, steamAppId) as { c: number }
   return { unlocked: unlocked.c, total: total.c }
 }
+
+/**
+ * Aggregate achievement state for a user — every library row that has
+ * a resolved steam_appid, with its unlocked / total counts and the
+ * most recent unlock timestamp. Used by the profile page's
+ * "Succès" tab to render a per-game summary without N IPC calls.
+ *
+ * Sorted by completion percent desc then most-recent unlock — gives
+ * the user a "what I just completed" view at the top.
+ */
+export interface UserAchievementGameSummary {
+  libraryGameId: string
+  steamAppId: number
+  title: string
+  coverUrl: string | null
+  totalAchievements: number
+  unlockedAchievements: number
+  /** Most recent unlock ms epoch — null when nothing unlocked. */
+  lastUnlockedAt: number | null
+  /** Latest unlocked api_name → useful for "Dernier succès" sub-line. */
+  lastUnlockedDisplayName: string | null
+  lastUnlockedIconUrl: string | null
+}
+
+export function summariseUserAchievements(
+  userId: string
+): UserAchievementGameSummary[] {
+  const db = getDatabase()
+  // Pull every library row with a steam_appid resolved (the artwork
+  // backfill writes that column). We LEFT JOIN against the unlock
+  // counts and catalog counts so games with zero unlocks still show
+  // up — the user wants to see "Hollow Knight Silksong 0/14" too.
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        lg.id              AS libraryGameId,
+        lg.steam_appid     AS steamAppId,
+        lg.title           AS title,
+        lg.cover_url       AS coverUrl,
+        (SELECT COUNT(*) FROM achievements_catalog ac WHERE ac.steam_appid = lg.steam_appid)            AS totalAchievements,
+        (SELECT COUNT(*) FROM achievement_unlocks au WHERE au.user_id = ? AND au.steam_appid = lg.steam_appid) AS unlockedAchievements,
+        (SELECT MAX(unlocked_at) FROM achievement_unlocks au WHERE au.user_id = ? AND au.steam_appid = lg.steam_appid) AS lastUnlockedAt
+      FROM library_games lg
+      WHERE lg.user_id = ? AND lg.steam_appid IS NOT NULL
+      `
+    )
+    .all(userId, userId, userId) as Array<{
+      libraryGameId: string
+      steamAppId: number
+      title: string
+      coverUrl: string | null
+      totalAchievements: number
+      unlockedAchievements: number
+      lastUnlockedAt: number | null
+    }>
+
+  // Hydrate "last unlocked" display name + icon in a second pass so
+  // the join above stays readable. One small query per row with a
+  // recent unlock; games with zero unlocks skip the lookup.
+  const lookupLast = db.prepare(
+    `SELECT au.api_name, ac.display_name, ac.icon_url
+       FROM achievement_unlocks au
+       LEFT JOIN achievements_catalog ac
+         ON ac.steam_appid = au.steam_appid AND ac.api_name = au.api_name
+       WHERE au.user_id = ? AND au.steam_appid = ?
+       ORDER BY au.unlocked_at DESC LIMIT 1`
+  )
+  const out: UserAchievementGameSummary[] = []
+  for (const r of rows) {
+    let lastName: string | null = null
+    let lastIcon: string | null = null
+    if (r.unlockedAchievements > 0) {
+      const last = lookupLast.get(userId, r.steamAppId) as
+        | { api_name: string; display_name: string | null; icon_url: string | null }
+        | undefined
+      lastName = last?.display_name ?? last?.api_name ?? null
+      lastIcon = last?.icon_url ?? null
+    }
+    out.push({
+      libraryGameId: r.libraryGameId,
+      steamAppId: r.steamAppId,
+      title: r.title,
+      coverUrl: r.coverUrl,
+      totalAchievements: r.totalAchievements,
+      unlockedAchievements: r.unlockedAchievements,
+      lastUnlockedAt: r.lastUnlockedAt,
+      lastUnlockedDisplayName: lastName,
+      lastUnlockedIconUrl: lastIcon,
+    })
+  }
+
+  // Completion desc, then most-recent unlock — surfaces the just-
+  // finished games at the top of the list.
+  out.sort((a, b) => {
+    const pa = a.totalAchievements > 0 ? a.unlockedAchievements / a.totalAchievements : 0
+    const pb = b.totalAchievements > 0 ? b.unlockedAchievements / b.totalAchievements : 0
+    if (pa !== pb) return pb - pa
+    return (b.lastUnlockedAt ?? 0) - (a.lastUnlockedAt ?? 0)
+  })
+  return out
+}

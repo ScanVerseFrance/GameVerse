@@ -3,14 +3,12 @@ import {
   Cloud,
   CloudOff,
   Loader2,
-  LogIn,
   LogOut,
   RefreshCw,
   Wifi,
   WifiOff,
 } from 'lucide-react'
 import { useCloudStore } from '@/stores/cloud.store'
-import { CloudConnectDialog } from './CloudConnectDialog'
 import { cn } from '@/utils/cn'
 
 /**
@@ -30,8 +28,11 @@ export function CloudStatusBadge() {
   const reason = useCloudStore((s) => s.reason)
   const logout = useCloudStore((s) => s.logout)
   const reconnect = useCloudStore((s) => s.reconnect)
+  // Single popover state. The badge is non-interactive when
+  // disconnected (the boot-time CloudAuthGate handles that flow)
+  // — the dropdown only shows up when there's something to act on
+  // (logout, reconnect after a network blip).
   const [open, setOpen] = useState(false)
-  const [loginOpen, setLoginOpen] = useState(false)
 
   const meta = (() => {
     switch (status) {
@@ -67,25 +68,23 @@ export function CloudStatusBadge() {
     }
   })()
 
+  // Badge is "open-on-click" only for the connected / offline states.
+  // Disconnected / connecting are non-interactive — the gate (or its
+  // spinner) is the right surface for those.
+  const interactive = status === 'connected' || status === 'offline'
+
   return (
     <>
       <div className="relative">
         <button
-          onClick={() => {
-            // Quick path: disconnected → straight to login dialog.
-            if (status === 'disconnected') {
-              setLoginOpen(true)
-              return
-            }
-            setOpen((v) => !v)
-          }}
+          onClick={interactive ? () => setOpen((v) => !v) : undefined}
+          disabled={!interactive}
           className={cn(
             'h-8 px-3 rounded-full border inline-flex items-center gap-2 text-xs font-semibold transition-colors',
-            meta.tone
+            meta.tone,
+            !interactive && 'cursor-default opacity-90'
           )}
-          title={
-            reason ?? `Nexus Cloud · ${status}`
-          }
+          title={reason ?? `Nexus Cloud · ${status}`}
         >
           <span className={cn('w-1.5 h-1.5 rounded-full', meta.dot)} />
           {meta.icon}
@@ -151,26 +150,7 @@ export function CloudStatusBadge() {
           </>
         )}
 
-        {open && status === 'disconnected' && (
-          // Edge case: status flipped to 'disconnected' while popover was
-          // open. Redirect to the login dialog so we never strand the
-          // user on an empty popover.
-          <div className="absolute top-full right-0 mt-2 w-64 rounded-md bg-bg-secondary border border-glass-border shadow-2xl z-40 overflow-hidden">
-            <button
-              onClick={() => {
-                setOpen(false)
-                setLoginOpen(true)
-              }}
-              className="h-10 w-full px-3 text-sm text-fg-primary hover:bg-[var(--surface-soft)] inline-flex items-center gap-2 justify-center"
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              Se connecter à Nexus Cloud
-            </button>
-          </div>
-        )}
       </div>
-
-      <CloudConnectDialog open={loginOpen} onClose={() => setLoginOpen(false)} />
     </>
   )
 }

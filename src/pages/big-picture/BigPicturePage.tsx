@@ -22,6 +22,7 @@ import {
 import { useLibraryStore } from '@/stores/library.store'
 import { useDownloadStore } from '@/stores/download.store'
 import { useSocialStore } from '@/stores/social.store'
+import { useCloudStore } from '@/stores/cloud.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { Username } from '@/components/common/Username'
@@ -96,12 +97,79 @@ export default function BigPicturePage() {
     return () => clearInterval(i)
   }, [])
 
-  // Esc closes the detail overlay, or exits Big Picture if nothing is open.
+  // Keyboard navigation à la Steam Big Picture:
+  //   • Escape         — close detail overlay or exit Big Picture
+  //   • Tab / Shift+Tab — focus follows DOM (browser default)
+  //   • Arrow keys     — move focus between tiles in the active row,
+  //                       jump rows vertically. Implemented by walking
+  //                       the focusable tile elements within the
+  //                       scrolling main area.
+  //   • Enter / Space  — open detail (already native button behaviour)
   useEffect(() => {
     function onKey(e: globalThis.KeyboardEvent) {
       if (e.key === 'Escape') {
         if (detail) setDetail(null)
         else navigate('/')
+        return
+      }
+      // Skip arrow handling when a text input is focused (search etc.).
+      const t = document.activeElement
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return
+      e.preventDefault()
+      const tiles = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-bp-tile="true"]')
+      )
+      if (tiles.length === 0) return
+      const current = document.activeElement as HTMLElement | null
+      const idx = current ? tiles.indexOf(current) : -1
+      if (idx === -1) {
+        tiles[0].focus()
+        return
+      }
+      const rect = current!.getBoundingClientRect()
+      // Find the next tile in the requested direction by geometric
+      // closeness — works across carousels (Continuer à jouer →
+      // Favoris) which a simple index walk wouldn't.
+      let best = -1
+      let bestScore = Infinity
+      for (let i = 0; i < tiles.length; i++) {
+        if (i === idx) continue
+        const r = tiles[i].getBoundingClientRect()
+        const dx = r.left - rect.left
+        const dy = r.top - rect.top
+        let primary = 0
+        let secondary = 0
+        if (e.key === 'ArrowRight') {
+          if (dx <= 5 || Math.abs(dy) > rect.height * 0.6) continue
+          primary = dx
+          secondary = Math.abs(dy)
+        } else if (e.key === 'ArrowLeft') {
+          if (dx >= -5 || Math.abs(dy) > rect.height * 0.6) continue
+          primary = -dx
+          secondary = Math.abs(dy)
+        } else if (e.key === 'ArrowDown') {
+          if (dy <= 5) continue
+          primary = dy
+          secondary = Math.abs(dx)
+        } else {
+          if (dy >= -5) continue
+          primary = -dy
+          secondary = Math.abs(dx)
+        }
+        const score = primary + secondary * 1.6
+        if (score < bestScore) {
+          bestScore = score
+          best = i
+        }
+      }
+      if (best !== -1) {
+        tiles[best].focus()
+        tiles[best].scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'center',
+        })
       }
     }
     window.addEventListener('keydown', onKey)
@@ -399,6 +467,11 @@ function HomeView(p: ViewProps) {
     <div className="flex flex-col gap-8 pt-6">
       {p.featured && <FeaturedHero game={p.featured} onLaunch={() => p.onLaunch(p.featured!)} onDetails={() => p.onSelect(p.featured!)} />}
 
+      {/* "Mes amis en jeu" — rich-presence rail piped from Nexus Cloud.
+          Self-hides when no cloud friend is in_game (component returns
+          null in compact variant). */}
+      <CloudFriendsPlayingRail />
+
       {p.recently.length > 0 && (
         <Carousel
           title="Continuer à jouer"
@@ -609,6 +682,7 @@ function BigTile({
       onBlur={onBlur}
       onDoubleClick={onLaunch}
       onClick={onSelect}
+      data-bp-tile="true"
       className={cn(
         'group/tile relative aspect-[3/4] w-[180px] lg:w-[220px] shrink-0 snap-start rounded-md overflow-hidden bg-bg-tertiary text-left',
         'border-2 border-transparent transition-all duration-200',
@@ -1068,5 +1142,91 @@ function Hint({ button, label }: { button: string; label: string }) {
       </kbd>
       <span>{label}</span>
     </span>
+  )
+}
+
+/* ──────────────── Cloud friends-playing rail ──────────────── */
+
+/**
+ * Horizontal strip on the Big Picture home that surfaces every
+ * cloud friend whose presence is `in_game` with a rich-presence
+ * payload. Renders nothing when the cloud isn't connected or nobody
+ * is playing — keeps the home view tidy on cold-boot. */
+function CloudFriendsPlayingRail() {
+  const status = useCloudStore((s) => s.status)
+  const friends = useCloudStore((s) => s.friends)
+  const presences = useCloudStore((s) => s.presences)
+  const playing = useMemo(
+    () =>
+      friends
+        .map((f) => ({ friend: f, presence: presences[f.id] }))
+        .filter(
+          (e) => e.presence?.status === 'in_game' && e.presence.richPresence?.gameTitle
+        ),
+    [friends, presences]
+  )
+  if (status !== 'connected' || playing.length === 0) return null
+  return (
+    <section className="px-8">
+      <header className="flex items-center justify-between mb-3">
+        <h3 className="font-display font-bold text-xl text-fg-primary inline-flex items-center gap-2">
+          <Users className="w-4 h-4 text-accent-secondary" />
+          Mes amis en jeu
+          <span className="text-xs font-mono text-fg-muted font-normal ml-1">
+            · {playing.length}
+          </span>
+        </h3>
+      </header>
+      <div className="flex gap-3 overflow-x-auto pb-3 -mx-2 px-2 snap-x snap-mandatory">
+        {playing.map(({ friend, presence }) => {
+          const rp = presence!.richPresence!
+          const name = friend.displayName ?? friend.username
+          return (
+            <div
+              key={friend.id}
+              className="shrink-0 snap-start w-[300px] flex items-center gap-3 p-3 rounded-md bg-bg-secondary/80 border border-glass-border"
+            >
+              <div className="relative w-10 h-10 rounded-full bg-accent-gradient overflow-hidden flex items-center justify-center shrink-0">
+                {friend.avatarPath ? (
+                  <img
+                    src={friend.avatarPath}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <span className="text-sm font-bold text-white">
+                    {name.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <span
+                  className="absolute rounded-full"
+                  style={{
+                    width: 12,
+                    height: 12,
+                    bottom: 0,
+                    right: 0,
+                    background: '#a855f7',
+                    border: '2px solid var(--bg-secondary, #0a0a0f)',
+                  }}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-fg-primary truncate">{name}</p>
+                <p className="text-[11px] text-accent-secondary truncate">
+                  Joue à {rp.gameTitle}
+                </p>
+              </div>
+              {rp.coverUrl && (
+                <img
+                  src={rp.coverUrl}
+                  alt=""
+                  className="shrink-0 w-9 h-12 rounded-sm object-cover border border-glass-border"
+                />
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }

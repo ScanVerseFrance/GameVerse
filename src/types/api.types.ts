@@ -11,8 +11,20 @@ export interface PublicUser {
   /** CSS color (hex / rgb / named) used to colorize the displayed username
    * across the app. Null = inherits default fg-primary. */
   usernameColor: string | null
-  /** Predefined animation key applied to the username text. */
-  usernameAnimation: 'none' | 'shimmer' | 'rainbow' | 'pulse' | null
+  /** Predefined animation key applied to the username text.
+   *  v0.2 adds `glitch` and `neon` (ported from ScanVerse). */
+  usernameAnimation:
+    | 'none'
+    | 'shimmer'
+    | 'rainbow'
+    | 'pulse'
+    | 'glitch'
+    | 'neon'
+    | null
+  /** Optional second colour. When set, the username renders as a
+   *  two-colour animated sweep via CSS variables (--uname-c1 /
+   *  --uname-c2). Forced off when animation = 'rainbow'. */
+  usernameColor2: string | null
   isGuest: boolean
 }
 
@@ -47,6 +59,13 @@ export type ProfilePatch = Partial<{
   avatarPath: string
   bannerPath: string
   usernameColor: string
-  usernameAnimation: 'none' | 'shimmer' | 'rainbow' | 'pulse'
+  usernameAnimation:
+    | 'none'
+    | 'shimmer'
+    | 'rainbow'
+    | 'pulse'
+    | 'glitch'
+    | 'neon'
+  usernameColor2: string | null
   email: string
 }>

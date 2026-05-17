@@ -118,7 +118,7 @@ function AccountSection() {
   const [email, setEmail] = useState(user?.email ?? '')
   const [usernameColor, setUsernameColor] = useState(user?.usernameColor ?? '')
   const [usernameAnimation, setUsernameAnimation] = useState<
-    'none' | 'shimmer' | 'rainbow' | 'pulse'
+    'none' | 'shimmer' | 'rainbow' | 'pulse' | 'glitch' | 'neon'
   >(user?.usernameAnimation ?? 'none')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)

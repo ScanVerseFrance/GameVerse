@@ -44,6 +44,10 @@ function runMigrations(d: Database.Database) {
   ensureColumn('library_games', 'launch_options', 'TEXT')
   ensureColumn('users', 'banner_path', 'TEXT')
   ensureColumn('users', 'username_color', 'TEXT')
+  /** Optional secondary colour. When set AND the active animation
+   *  isn't `rainbow`, the username renders as a 2-colour gradient
+   *  sweep (see Username.tsx + index.css .username-bi). */
+  ensureColumn('users', 'username_color_2', 'TEXT')
   ensureColumn('users', 'username_animation', 'TEXT')
   // Profile customisation — ComicScan-inspired. Plaque/nameplate background
   // for the username card, profile effect overlay (CSS preset key), and

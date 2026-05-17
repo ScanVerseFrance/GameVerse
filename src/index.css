@@ -196,6 +196,78 @@ body.no-animations *::after {
   animation: username-pulse 2.4s ease-in-out infinite;
 }
 
+/* Glitch — RGB-split via two pseudo-elements offset in opposite
+   directions. The pseudo-elements use ::before content from a CSS
+   custom prop set inline; we read the username text via the
+   `data-anim="glitch"` selector + a JS fallback (Username.tsx
+   wraps the text in a span so children inherit). */
+@keyframes username-glitch-r {
+  0%, 100% { transform: translate(0,0); }
+  20% { transform: translate(-1px, 1px); }
+  40% { transform: translate(1px, -1px); }
+  60% { transform: translate(-2px, 0); }
+  80% { transform: translate(2px, 1px); }
+}
+@keyframes username-glitch-b {
+  0%, 100% { transform: translate(0,0); }
+  20% { transform: translate(1px, -1px); }
+  40% { transform: translate(-1px, 1px); }
+  60% { transform: translate(2px, 0); }
+  80% { transform: translate(-2px, -1px); }
+}
+.username-glitch {
+  position: relative;
+  text-shadow:
+    1px 0 0 rgba(255, 0, 80, 0.65),
+    -1px 0 0 rgba(0, 200, 255, 0.65);
+  animation: username-glitch-r 1.2s steps(8, end) infinite;
+}
+
+/* Neon — soft glow with subtle pulse, picks up `currentColor` so the
+   chosen username colour drives the halo. Works well on a dark
+   background; falls back to a sensible cyan default when no colour
+   is set (color: inherit + currentColor === fg-primary). */
+@keyframes username-neon {
+  0%, 100% {
+    text-shadow:
+      0 0 4px currentColor,
+      0 0 8px currentColor,
+      0 0 16px currentColor;
+  }
+  50% {
+    text-shadow:
+      0 0 6px currentColor,
+      0 0 14px currentColor,
+      0 0 28px currentColor;
+  }
+}
+.username-neon {
+  animation: username-neon 2.6s ease-in-out infinite;
+}
+
+/* Bi-color sweep — when two colours are configured AND the active
+   animation isn't `rainbow`, this layers a 200% linear-gradient
+   text fill that scrolls horizontally. Combines additively with the
+   underlying animation (pulse/shimmer/etc.) because both write to
+   different style channels (`color` vs `text-shadow`). */
+@keyframes username-bi-pan {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.username-bi {
+  background-image: linear-gradient(
+    90deg,
+    var(--uname-c1, currentColor) 0%,
+    var(--uname-c2, currentColor) 50%,
+    var(--uname-c1, currentColor) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  animation: username-bi-pan 4.5s linear infinite;
+}
+
 /* ──────────── Nameplates / Plaques ────────────
    Background card for the username area on the profile page. Each preset
    is a single linear-gradient (sometimes animated). Apply to a wrapper

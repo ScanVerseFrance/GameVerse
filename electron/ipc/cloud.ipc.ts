@@ -158,6 +158,97 @@ export function registerCloudIpc(): void {
     }
   })
 
+  // ── Friend requests (Steam-style) ──────────────────────────────
+  ipcMain.handle('cloud:listFriendRequests', async () => {
+    try {
+      return {
+        ok: true,
+        ...(await svc.passthroughJson('/v1/friends/requests')),
+      }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, incoming: [], outgoing: [] }
+    }
+  })
+
+  ipcMain.handle(
+    'cloud:sendFriendRequest',
+    async (_e, username: unknown, message: unknown) => {
+      const u = safeStr(username, 64)
+      if (!u) return { ok: false, error: 'username required' }
+      const m = typeof message === 'string' ? safeStr(message, 280) ?? undefined : undefined
+      try {
+        return {
+          ok: true,
+          ...(await svc.passthroughJson('/v1/friends/requests', {
+            method: 'POST',
+            body: { username: u, ...(m ? { message: m } : {}) },
+          })),
+        }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle('cloud:acceptFriendRequest', async (_e, userId: unknown) => {
+    const id = safeStr(userId, 40)
+    if (!id) return { ok: false, error: 'userId required' }
+    try {
+      return {
+        ok: true,
+        ...(await svc.passthroughJson(
+          `/v1/friends/requests/${encodeURIComponent(id)}/accept`,
+          { method: 'POST' }
+        )),
+      }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('cloud:declineFriendRequest', async (_e, userId: unknown) => {
+    const id = safeStr(userId, 40)
+    if (!id) return { ok: false, error: 'userId required' }
+    try {
+      await svc.cloudFetch(
+        `/v1/friends/requests/${encodeURIComponent(id)}/decline`,
+        { method: 'POST' }
+      )
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('cloud:cancelFriendRequest', async (_e, userId: unknown) => {
+    const id = safeStr(userId, 40)
+    if (!id) return { ok: false, error: 'userId required' }
+    try {
+      await svc.cloudFetch(
+        `/v1/friends/requests/${encodeURIComponent(id)}`,
+        { method: 'DELETE' }
+      )
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('cloud:searchUsers', async (_e, query: unknown) => {
+    const q = safeStr(query, 64)
+    if (!q) return { ok: false, error: 'query required', results: [] }
+    try {
+      return {
+        ok: true,
+        ...(await svc.passthroughJson(
+          `/v1/friends/search?q=${encodeURIComponent(q)}`
+        )),
+      }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, results: [] }
+    }
+  })
+
   // ── Presence ────────────────────────────────────────────────────
   ipcMain.handle('cloud:patchPresence', async (_e, body: unknown) => {
     if (!body || typeof body !== 'object') {

@@ -69,4 +69,22 @@ export function registerAchievementsIpc(): void {
       return { ok: false, error: (e as Error).message }
     }
   })
+
+  /**
+   * Per-game achievement summary for the profile page's "Succès" tab.
+   * Returns every library row with a steam_appid + its unlocked/total
+   * counts + the most recent unlock metadata. Sorted by completion%
+   * desc so the user lands on what they just finished.
+   */
+  ipcMain.handle('achievements:summaryForUser', async (_e, userId: unknown) => {
+    if (typeof userId !== 'string') return { ok: false, error: 'userId required', summaries: [] }
+    try {
+      return {
+        ok: true,
+        summaries: svc.summariseUserAchievements(sanitizeString(userId, 64)),
+      }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, summaries: [] }
+    }
+  })
 }

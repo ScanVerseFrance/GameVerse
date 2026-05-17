@@ -109,7 +109,27 @@ export type CloudWsEnvelope =
   | { type: 'message:read-all'; data: { peerId: string; readAt: string } }
   | { type: 'friend:added'; data: { user: CloudPublicUser } }
   | { type: 'friend:removed'; data: { userId: string } }
+  | {
+      type: 'friend:request'
+      data: { from: CloudPublicUser; message: string | null }
+    }
   | { type: 'activity:new'; data: CloudActivity }
+
+/** Steam-style friend request — one row in either direction of the
+ *  pending pair. Used by the Friends page tabs (Incoming / Outgoing). */
+export interface CloudFriendRequest {
+  user: CloudPublicUser
+  message: string | null
+  createdAt: string
+}
+
+/** Per-user search hit returned by /v1/friends/search — carries the
+ *  relationship status so the renderer can render the right CTA
+ *  ("Ajouter" / "Demande envoyée" / "Accepter" / "Ami"). */
+export interface CloudFriendSearchHit {
+  user: CloudPublicUser
+  status: 'none' | 'request_sent' | 'request_incoming' | 'friend'
+}
 
 /** Returned by the boot connect attempt. Tells the renderer what
  *  state to land in + carries the user record if we made it. */

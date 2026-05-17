@@ -84,7 +84,7 @@ export function ReviewsSection({ externalGameId }: ReviewsSectionProps) {
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <MessageSquare className="w-4 h-4 text-accent-primary" />
-          <h3 className="font-display font-bold text-lg text-fg-primary">Community reviews</h3>
+          <h3 className="font-display font-bold text-lg text-fg-primary">Avis de la communauté</h3>
           {reviews.length > 0 && (
             <span className="flex items-center gap-1.5 text-sm text-fg-secondary">
               <Star className="w-3.5 h-3.5 fill-warning text-warning" />
@@ -100,7 +100,7 @@ export function ReviewsSection({ externalGameId }: ReviewsSectionProps) {
             leftIcon={myReview ? <Edit3 className="w-3.5 h-3.5" /> : <Star className="w-3.5 h-3.5" />}
             onClick={openEditor}
           >
-            {myReview ? 'Edit your review' : 'Write a review'}
+            {myReview ? 'Modifier mon avis' : 'Écrire un avis'}
           </Button>
         )}
       </div>
@@ -112,7 +112,7 @@ export function ReviewsSection({ externalGameId }: ReviewsSectionProps) {
           className="mb-5 p-4 rounded-md bg-[var(--surface-soft)] border border-glass-border"
         >
           <div className="flex items-center gap-3 mb-3">
-            <span className="text-sm text-fg-secondary">Your rating:</span>
+            <span className="text-sm text-fg-secondary">Ta note&nbsp;:</span>
             <StarRating value={rating} onChange={setRating} size={24} />
           </div>
           <textarea
@@ -120,7 +120,7 @@ export function ReviewsSection({ externalGameId }: ReviewsSectionProps) {
             onChange={(e) => setContent(e.target.value)}
             rows={3}
             maxLength={4000}
-            placeholder="Share your thoughts (optional)…"
+            placeholder="Partage ton ressenti (optionnel)…"
             className="w-full bg-bg-secondary border border-glass-border hover:border-[var(--surface-soft-border)] focus:border-accent-primary/60 focus:outline-none rounded-md px-3 py-2 text-sm text-fg-primary placeholder:text-fg-muted resize-none mb-3"
           />
           <div className="flex justify-between items-center gap-2">
@@ -132,17 +132,17 @@ export function ReviewsSection({ externalGameId }: ReviewsSectionProps) {
                 onClick={() => void deleteReview()}
                 className="text-error hover:text-error"
               >
-                Delete
+                Supprimer
               </Button>
             ) : (
               <span />
             )}
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => setEditing(false)}>
-                Cancel
+                Annuler
               </Button>
               <Button size="sm" onClick={() => void saveReview()} loading={saving}>
-                Save
+                Enregistrer
               </Button>
             </div>
           </div>
@@ -150,10 +150,10 @@ export function ReviewsSection({ externalGameId }: ReviewsSectionProps) {
       )}
 
       {loading ? (
-        <div className="py-6 text-center text-sm text-fg-muted">Loading reviews…</div>
+        <div className="py-6 text-center text-sm text-fg-muted">Chargement des avis…</div>
       ) : reviews.length === 0 ? (
         <div className="py-6 text-center text-sm text-fg-muted">
-          No reviews yet.{user && ' Be the first.'}
+          Aucun avis pour le moment.{user && ' Sois le premier.'}
         </div>
       ) : (
         <div className="flex flex-col gap-3">

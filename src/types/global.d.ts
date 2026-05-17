@@ -45,6 +45,8 @@ import type {
   CloudActivity,
   CloudConnectResult,
   CloudConnectionStatus,
+  CloudFriendRequest,
+  CloudFriendSearchHit,
   CloudMessage,
   CloudPresence,
   CloudPublicUser,
@@ -481,6 +483,23 @@ export interface NexusAPI {
       userId: string,
       steamAppId: number
     ) => Promise<{ ok: boolean; error?: string; unlocked?: number; total?: number }>
+    summaryForUser: (userId: string) => Promise<
+      | {
+          ok: true
+          summaries: Array<{
+            libraryGameId: string
+            steamAppId: number
+            title: string
+            coverUrl: string | null
+            totalAchievements: number
+            unlockedAchievements: number
+            lastUnlockedAt: number | null
+            lastUnlockedDisplayName: string | null
+            lastUnlockedIconUrl: string | null
+          }>
+        }
+      | { ok: false; error: string; summaries: [] }
+    >
     onUnlocked: (
       cb: (data: { userId: string; steamAppId: number; apiName: string; unlockedAt: number }) => void
     ) => () => void
@@ -529,6 +548,28 @@ export interface NexusAPI {
       | { ok: false; error: string }
     >
     removeFriend: (friendId: string) => Promise<{ ok: boolean; error?: string }>
+    listFriendRequests: () => Promise<
+      | { ok: true; incoming: CloudFriendRequest[]; outgoing: CloudFriendRequest[] }
+      | { ok: false; error: string; incoming: []; outgoing: [] }
+    >
+    sendFriendRequest: (
+      username: string,
+      message?: string
+    ) => Promise<
+      | { ok: true; autoAccepted: true; friend: CloudPublicUser }
+      | { ok: true; autoAccepted: false; pending: true; to: CloudPublicUser }
+      | { ok: false; error: string }
+    >
+    acceptFriendRequest: (userId: string) => Promise<
+      | { ok: true; friend: CloudPublicUser | null }
+      | { ok: false; error: string }
+    >
+    declineFriendRequest: (userId: string) => Promise<{ ok: boolean; error?: string }>
+    cancelFriendRequest: (userId: string) => Promise<{ ok: boolean; error?: string }>
+    searchUsers: (query: string) => Promise<
+      | { ok: true; results: CloudFriendSearchHit[] }
+      | { ok: false; error: string; results: [] }
+    >
     // Presence
     patchPresence: (body: {
       status: CloudPresence['status']

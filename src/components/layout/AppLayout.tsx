@@ -5,6 +5,7 @@ import { TopNav } from './TopNav'
 import { StatusBar } from './StatusBar'
 import { AchievementToastContainer } from '@/components/achievements/AchievementToast'
 import { FriendLaunchedToastContainer } from '@/components/community/FriendLaunchedToast'
+import { CloudSaveToastContainer } from '@/components/cloud/CloudSaveToast'
 import { usePresence } from '@/hooks/usePresence'
 
 /**
@@ -33,6 +34,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {!immersive && <StatusBar />}
       <AchievementToastContainer />
       <FriendLaunchedToastContainer />
+      <CloudSaveToastContainer />
     </div>
   )
 }

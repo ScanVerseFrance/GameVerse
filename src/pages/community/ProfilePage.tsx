@@ -27,6 +27,7 @@ import { useSocialStore } from '@/stores/social.store'
 import { Card } from '@/components/ui/Card'
 import { ActivityFeedItem } from '@/components/community/ActivityFeedItem'
 import { PlaytimeHeatmap } from '@/components/community/PlaytimeHeatmap'
+import { AchievementsTab } from '@/components/community/AchievementsTab'
 import { ProfileCustomiseDialog } from '@/components/community/ProfileCustomiseDialog'
 import { AvatarActionPopup } from '@/components/community/AvatarActionPopup'
 import { Username } from '@/components/common/Username'
@@ -793,14 +794,7 @@ export default function ProfilePage() {
               </Card>
             )}
             {tab === 'achievements' && (
-              <Card padding="lg">
-                <TabPlaceholder
-                  icon={Trophy}
-                  title="Succès"
-                  message="Un tableau de succès agrégés (par tier bronze/argent/or, avec progression communautaire) arrive bientôt."
-                  cta={null}
-                />
-              </Card>
+              <AchievementsTab userId={profile.id} isSelf={isSelf} />
             )}
           </div>
         </motion.div>

@@ -126,7 +126,7 @@ export function DownloadSourcePicker({ addonId, gameId, gameTitle, coverUrl }: D
       )}
 
       {sources && sources.length === 0 && (
-        <p className="text-sm text-fg-muted text-center py-6">No download sources provided by this addon.</p>
+        <p className="text-sm text-fg-muted text-center py-6">Aucune source de téléchargement fournie par cet addon.</p>
       )}
 
       {sources && sources.length > 0 && (

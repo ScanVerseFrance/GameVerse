@@ -43,6 +43,7 @@ import { DownloadConfirmDialog } from '@/components/downloads/DownloadConfirmDia
 import { UninstallConfirmDialog } from '@/components/library/UninstallConfirmDialog'
 import { ExtractDialog } from '@/components/library/ExtractDialog'
 import { StopGameConfirmDialog } from '@/components/library/StopGameConfirmDialog'
+import { SaveConflictDialog } from '@/components/cloud/SaveConflictDialog'
 import { SteamNewsSection } from '@/components/game/SteamNewsSection'
 import { SteamMetaSection } from '@/components/game/SteamMetaSection'
 import type { JsonSourceSearchHit } from '@/types/json-source.types'
@@ -180,6 +181,19 @@ export default function JsonGamePage() {
   const [zipSize, setZipSize] = useState<number | null>(null)
   const [extractDialogOpen, setExtractDialogOpen] = useState(false)
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false)
+  /** When a cloud-save conflict is detected at launch time, we stash
+   *  the report here and open the modal. The Play button waits until
+   *  the user picks Cloud / Local / Annuler before spawning. */
+  const [conflictReport, setConflictReport] = useState<{
+    artifact: {
+      id: string
+      sizeBytes: number
+      label: string | null
+      hostname: string | null
+      createdAt: string
+    }
+    localMtime: number | null
+  } | null>(null)
   // Achievements (Hydra-style) — fetched from Steam Web API when a Steam
   // appid is known AND the user configured their key. Needs a separate
   // state from artwork because the API call is independent.
@@ -425,6 +439,40 @@ export default function JsonGamePage() {
   async function handlePlay() {
     if (!installedGame) return
     setLaunchError(null)
+    // Pre-flight cloud save conflict check. Only fires when the cloud
+    // is connected — checkConflict returns cloudIsNewer: false when
+    // offline, so the local-only path stays fast. When a newer cloud
+    // artifact exists AND it was made on a different machine, we open
+    // the Steam-style modal and DELAY the launch until the user has
+    // chosen Cloud / Local / Annuler. The modal's onLaunch callback
+    // resumes the spawn.
+    try {
+      const report = await window.nexus.cloudSave.checkConflict(installedGame.id)
+      if (
+        report.ok &&
+        report.cloudIsNewer &&
+        report.latestArtifact &&
+        report.fromDifferentHost
+      ) {
+        setConflictReport({
+          artifact: report.latestArtifact,
+          localMtime: report.localMtime,
+        })
+        return
+      }
+    } catch {
+      // Silent — conflict check is best-effort. Launch goes ahead.
+    }
+    const res = await launchLibraryGame(installedGame.id)
+    if (!res.ok) setLaunchError(res.error ?? 'Échec du lancement')
+  }
+
+  // Resumes the launch after the conflict modal closes (whether the
+  // user kept cloud, local, or simply cancelled — the modal already
+  // performed the chosen sync, we just spawn the binary).
+  async function handleLaunchAfterConflict() {
+    setConflictReport(null)
+    if (!installedGame) return
     const res = await launchLibraryGame(installedGame.id)
     if (!res.ok) setLaunchError(res.error ?? 'Échec du lancement')
   }
@@ -1381,6 +1429,22 @@ export default function JsonGamePage() {
           onConfirm={() => void handleStop()}
           gameTitle={installedGame.title}
           sessionLabel={currentSessionLabel()}
+        />
+      )}
+
+      {/* Cloud save conflict — Steam-style modal interleaved with the
+          launch flow. handlePlay() stashes the report and bails; the
+          modal's "Garder cloud / local / annuler" callbacks resume by
+          calling handleLaunchAfterConflict. */}
+      {installedGame && conflictReport && (
+        <SaveConflictDialog
+          open
+          gameTitle={installedGame.title}
+          libraryGameId={installedGame.id}
+          cloudArtifact={conflictReport.artifact}
+          localMtime={conflictReport.localMtime}
+          onClose={() => setConflictReport(null)}
+          onLaunch={() => void handleLaunchAfterConflict()}
         />
       )}
 

@@ -1,7 +1,9 @@
 import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from 'react'
 import { createHashRouter, Navigate, Outlet } from 'react-router-dom'
 import { useAuthStore } from './stores/auth.store'
+import { useCloudStore } from './stores/cloud.store'
 import AppLayout from './components/layout/AppLayout'
+import { CloudAuthGate } from './components/cloud/CloudAuthGate'
 import { LoadingSpinner } from './components/ui/LoadingSpinner'
 
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'))
@@ -43,8 +45,22 @@ function lazyElement(Component: LazyExoticComponent<ComponentType>) {
 function AuthGate() {
   const status = useAuthStore((s) => s.status)
   const user = useAuthStore((s) => s.user)
+  // Mandatory Nexus Cloud sign-in: any session state other than
+  // 'connected' or 'offline' (token saved but server unreachable)
+  // shows the full-screen CloudAuthGate. Without this the new
+  // social / chat / save features look broken to first-time users
+  // who never went near the cloud login dialog.
+  // - 'offline' lets users keep playing locally when the wifi
+  //   dies mid-session — they're already authenticated, the
+  //   token is just unconfirmed.
+  // - 'connecting' shows the gate's centred spinner.
+  // - 'disconnected' means no token at all → force the auth form.
+  const cloudStatus = useCloudStore((s) => s.status)
   if (status === 'loading') return <FullScreenBoot />
   if (!user) return <Navigate to="/login" replace />
+  if (cloudStatus !== 'connected' && cloudStatus !== 'offline') {
+    return <CloudAuthGate />
+  }
   return (
     <AppLayout>
       <Suspense fallback={<FullScreenBoot />}>

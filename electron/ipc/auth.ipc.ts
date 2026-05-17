@@ -27,6 +27,7 @@ interface UserRow {
   avatar_path: string | null
   banner_path: string | null
   username_color: string | null
+  username_color_2: string | null
   username_animation: string | null
   is_guest: number
   created_at: number
@@ -41,7 +42,15 @@ interface PublicUser {
   avatarPath: string | null
   bannerPath: string | null
   usernameColor: string | null
-  usernameAnimation: 'none' | 'shimmer' | 'rainbow' | 'pulse' | null
+  usernameColor2: string | null
+  usernameAnimation:
+    | 'none'
+    | 'shimmer'
+    | 'rainbow'
+    | 'pulse'
+    | 'glitch'
+    | 'neon'
+    | null
   bio: string | null
   isGuest: boolean
 }
@@ -55,7 +64,14 @@ interface AuthResult {
 
 const SESSION_DAYS = 30
 
-const VALID_USERNAME_ANIMATIONS = ['none', 'shimmer', 'rainbow', 'pulse'] as const
+const VALID_USERNAME_ANIMATIONS = [
+  'none',
+  'shimmer',
+  'rainbow',
+  'pulse',
+  'glitch',
+  'neon',
+] as const
 type UsernameAnimation = (typeof VALID_USERNAME_ANIMATIONS)[number]
 
 function normalizeUsernameAnimation(v: string | null): UsernameAnimation | null {
@@ -72,6 +88,7 @@ function toPublic(row: UserRow): PublicUser {
     avatarPath: row.avatar_path,
     bannerPath: row.banner_path,
     usernameColor: row.username_color,
+    usernameColor2: row.username_color_2,
     usernameAnimation: normalizeUsernameAnimation(row.username_animation),
     bio: row.bio,
     isGuest: row.is_guest === 1,
@@ -199,6 +216,7 @@ export function registerAuthIpc() {
         avatarPath: string
         bannerPath: string
         usernameColor: string
+        usernameColor2: string | null
         usernameAnimation: UsernameAnimation
         email: string
       }>
@@ -241,6 +259,19 @@ export function registerAuthIpc() {
           if (!ok) return { ok: false, error: 'Couleur invalide (utilise un hex ou rgb)' }
           fields.push('username_color = ?')
           values.push(c || null)
+        }
+        if (patch.usernameColor2 !== undefined) {
+          // Same validation as the primary colour. Null clears (single-
+          // colour mode); non-empty enables the bi-colour sweep.
+          const c2 =
+            patch.usernameColor2 == null
+              ? ''
+              : sanitizeString(patch.usernameColor2, 32)
+          const ok2 = !c2 || /^#[0-9a-f]{3,8}$/i.test(c2) || /^rgba?\(/i.test(c2)
+          if (!ok2)
+            return { ok: false, error: 'Seconde couleur invalide (utilise un hex ou rgb)' }
+          fields.push('username_color_2 = ?')
+          values.push(c2 || null)
         }
         if (patch.usernameAnimation !== undefined) {
           const v = normalizeUsernameAnimation(patch.usernameAnimation)

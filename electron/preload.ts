@@ -197,6 +197,8 @@ const api = {
       ipcRenderer.invoke('achievements:setUnlocked', userId, steamAppId, apiName, unlocked),
     progress: (userId: string, steamAppId: number) =>
       ipcRenderer.invoke('achievements:progress', userId, steamAppId),
+    summaryForUser: (userId: string) =>
+      ipcRenderer.invoke('achievements:summaryForUser', userId),
     onUnlocked: (cb: (data: unknown) => void) => subscribe('achievements:unlocked', cb),
   },
   cloud: {
@@ -218,6 +220,17 @@ const api = {
       ipcRenderer.invoke('cloud:addFriend', username),
     removeFriend: (friendId: string) =>
       ipcRenderer.invoke('cloud:removeFriend', friendId),
+    listFriendRequests: () => ipcRenderer.invoke('cloud:listFriendRequests'),
+    sendFriendRequest: (username: string, message?: string) =>
+      ipcRenderer.invoke('cloud:sendFriendRequest', username, message),
+    acceptFriendRequest: (userId: string) =>
+      ipcRenderer.invoke('cloud:acceptFriendRequest', userId),
+    declineFriendRequest: (userId: string) =>
+      ipcRenderer.invoke('cloud:declineFriendRequest', userId),
+    cancelFriendRequest: (userId: string) =>
+      ipcRenderer.invoke('cloud:cancelFriendRequest', userId),
+    searchUsers: (query: string) =>
+      ipcRenderer.invoke('cloud:searchUsers', query),
     // ── Presence ────────────────────────────────────────────────
     patchPresence: (body: unknown) =>
       ipcRenderer.invoke('cloud:patchPresence', body),

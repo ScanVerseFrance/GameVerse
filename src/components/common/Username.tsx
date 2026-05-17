@@ -6,36 +6,79 @@ import { cn } from '@/utils/cn'
  * Render a username with the user's chosen color + animation effect
  * (set in Settings → Compte → Personnalisation du pseudo).
  *
- * Accepts only the subset of PublicUser we actually read so it can also be
- * given a `PublicProfile` from the social store, friends list, etc.
+ * Animation modes supported (ported from ScanVerse):
+ *   none, shimmer, rainbow, pulse, glitch, neon
+ *
+ * Bi-color mode: when `usernameColor2` is set AND the animation isn't
+ * `rainbow` (which already drives its own colours), the component
+ * adds the `username-bi` class and exposes the two colours as CSS
+ * variables — the active animation's stylesheet uses them to drive
+ * the gradient sweep (see `src/styles/username-effects.css`).
+ *
+ * Accepts only the subset of PublicUser we actually read so it can
+ * also be given a `PublicProfile`, friend, etc.
  */
 interface UsernameProps extends HTMLAttributes<HTMLSpanElement> {
-  user: Pick<PublicUser, 'username' | 'displayName' | 'usernameColor' | 'usernameAnimation'>
+  user: Pick<
+    PublicUser,
+    'username' | 'displayName' | 'usernameColor' | 'usernameAnimation'
+  > & { usernameColor2?: string | null }
   /** When true (default), prefer `displayName`; fall back to `username`.
    * Pass false to always show the raw `username`. */
   preferDisplay?: boolean
 }
 
-const ANIMATION_CLASS: Record<NonNullable<PublicUser['usernameAnimation']>, string> = {
+type AnimKey = NonNullable<PublicUser['usernameAnimation']>
+
+const ANIMATION_CLASS: Record<AnimKey, string> = {
   none: '',
   shimmer: 'username-shimmer',
   rainbow: 'username-rainbow',
   pulse: 'username-pulse',
+  glitch: 'username-glitch',
+  neon: 'username-neon',
 }
 
-export function Username({ user, preferDisplay = true, className, style, ...rest }: UsernameProps) {
+// Animations that own the colour entirely. When the user picks one
+// of these, the picker's colour swatches are visually ignored.
+const COLOUR_OVERRIDE_ANIMATIONS = new Set<AnimKey>(['rainbow'])
+
+// Animations that don't make sense in bi-colour mode (the two would
+// fight). Picker hides the second-colour widget when one is active.
+export const BI_COLOR_INCOMPATIBLE = new Set<AnimKey>(['rainbow'])
+
+export function Username({
+  user,
+  preferDisplay = true,
+  className,
+  style,
+  ...rest
+}: UsernameProps) {
   const label = preferDisplay ? user.displayName ?? user.username : user.username
-  const animClass = user.usernameAnimation ? ANIMATION_CLASS[user.usernameAnimation] : ''
+  const anim = user.usernameAnimation ?? 'none'
+  const animClass = ANIMATION_CLASS[anim] ?? ''
+  const c1 = user.usernameColor ?? null
+  const c2 = user.usernameColor2 ?? null
+  const biActive = !!(c2 && !BI_COLOR_INCOMPATIBLE.has(anim))
+
   const finalStyle: CSSProperties = {
     ...style,
-    // Rainbow overrides color, so let the keyframes drive it. Other modes
-    // honor the user's chosen color (or fall through to currentColor).
-    ...(user.usernameAnimation !== 'rainbow' && user.usernameColor
-      ? { color: user.usernameColor }
+    ...(!COLOUR_OVERRIDE_ANIMATIONS.has(anim) && c1 ? { color: c1 } : {}),
+    ...(biActive && c1 && c2
+      ? ({
+          // Custom properties consumed by `.username-bi` stylesheet.
+          '--uname-c1': c1,
+          '--uname-c2': c2,
+        } as CSSProperties)
       : {}),
   }
   return (
-    <span className={cn(animClass, className)} style={finalStyle} {...rest}>
+    <span
+      className={cn(animClass, biActive && 'username-bi', className)}
+      style={finalStyle}
+      data-anim={anim}
+      {...rest}
+    >
       {label}
     </span>
   )
