@@ -10,7 +10,10 @@ import {
   LogIn,
   RefreshCw,
   WifiOff,
+  Server,
+  X,
 } from 'lucide-react'
+import { useEffect } from 'react'
 import { useCloudStore } from '@/stores/cloud.store'
 import { cn } from '@/utils/cn'
 
@@ -55,6 +58,21 @@ export function CloudAuthGate() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  // API-URL editor — surfaced when the default URL is unreachable
+  // (typical case: backend not deployed yet, user wants to point at
+  // a local dev server or a self-hosted instance). Stored separately
+  // from the connection state because we POST it via setApiUrl which
+  // doesn't go through the cloud.store action layer.
+  const [serverOpen, setServerOpen] = useState(false)
+  const [serverUrl, setServerUrl] = useState('')
+  const [serverSaving, setServerSaving] = useState(false)
+
+  useEffect(() => {
+    // Seed the editor with whatever URL the main process currently
+    // has so the user sees what's actually being used before they
+    // change it. cloud:status returns it under `apiUrl`.
+    void window.nexus.cloud.status().then((s) => setServerUrl(s.apiUrl))
+  }, [])
 
   async function handleSubmit() {
     setBusy(true)
@@ -173,14 +191,91 @@ export function CloudAuthGate() {
                 <p className="text-[11px] text-fg-muted mt-1 leading-snug">
                   {reason ?? 'Vérifie ta connexion internet.'}
                 </p>
+                <p className="text-[11px] text-fg-muted mt-1 leading-snug">
+                  URL actuelle&nbsp;: <code className="text-fg-secondary">{serverUrl || '—'}</code>
+                </p>
+                <div className="mt-2 inline-flex items-center gap-3">
+                  <button
+                    onClick={() => void reconnect()}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-warning hover:text-fg-primary"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Réessayer la connexion
+                  </button>
+                  <button
+                    onClick={() => setServerOpen(true)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-warning hover:text-fg-primary"
+                  >
+                    <Server className="w-3 h-3" />
+                    Modifier l'URL du serveur
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Server-URL editor — opens on demand from the offline
+              banner OR the footer link. The user can point the
+              launcher at their own self-hosted backend OR a local
+              dev server (http://localhost:4000) while the production
+              one isn't up yet. */}
+          {serverOpen && (
+            <div className="mb-4 p-4 rounded-md border border-accent-primary/40 bg-accent-primary/5">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-fg-primary inline-flex items-center gap-1.5">
+                    <Server className="w-4 h-4 text-accent-primary" />
+                    URL du serveur Nexus Cloud
+                  </p>
+                  <p className="text-[11px] text-fg-muted mt-1 leading-snug">
+                    Par défaut : <code>https://api.scanverse.online</code>. Pour pointer vers un backend local en dev : <code>http://localhost:4000</code>.
+                  </p>
+                </div>
                 <button
-                  onClick={() => void reconnect()}
-                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-warning hover:text-fg-primary"
+                  onClick={() => setServerOpen(false)}
+                  className="text-fg-muted hover:text-fg-primary p-1 rounded-sm hover:bg-[var(--surface-soft)]"
+                  aria-label="Fermer"
                 >
-                  <RefreshCw className="w-3 h-3" />
-                  Réessayer la connexion
+                  <X className="w-4 h-4" />
                 </button>
               </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="url"
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  placeholder="https://api.scanverse.online"
+                  className="flex-1 h-10 px-3 rounded-md bg-bg-secondary border border-glass-border focus:border-accent-primary/60 focus:outline-none text-sm font-mono text-fg-primary placeholder:text-fg-muted"
+                />
+                <button
+                  onClick={async () => {
+                    setServerSaving(true)
+                    setError(null)
+                    const res = await window.nexus.cloud.setApiUrl(serverUrl.trim())
+                    if (res.ok && res.apiUrl) {
+                      setServerUrl(res.apiUrl)
+                      // Force a reconnect attempt against the new URL.
+                      await reconnect()
+                      setServerOpen(false)
+                    } else {
+                      setError(res.error ?? "Impossible d'enregistrer l'URL")
+                    }
+                    setServerSaving(false)
+                  }}
+                  disabled={serverSaving || !serverUrl.trim()}
+                  className="h-10 px-4 rounded-md bg-accent-gradient text-white text-sm font-semibold inline-flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {serverSaving ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  Enregistrer
+                </button>
+              </div>
+              <p className="text-[10px] text-fg-muted mt-2 leading-relaxed">
+                Le launcher va re-essayer la connexion immédiatement après l'enregistrement. La valeur est stockée dans <code>userData/nexus-cloud.url</code> et persiste entre les redémarrages.
+              </p>
             </div>
           )}
 
@@ -288,7 +383,25 @@ export function CloudAuthGate() {
             {error && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-error/10 border border-error/30 text-sm text-error">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span className="flex-1">{error}</span>
+                <div className="flex-1 min-w-0">
+                  <span className="block">{error}</span>
+                  {/* HTTP 404 / 502 / NetworkError all mean "your
+                      backend URL isn't reachable / hasn't shipped
+                      the v1 routes". Surface the URL editor inline
+                      so the user can fix it without leaving the form. */}
+                  {/HTTP 4\d\d|HTTP 5\d\d|fetch|ENOTFOUND|ECONNREFUSED|invalid token|injoignable/i.test(
+                    error
+                  ) && (
+                    <button
+                      type="button"
+                      onClick={() => setServerOpen(true)}
+                      className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-error hover:text-fg-primary underline"
+                    >
+                      <Server className="w-3 h-3" />
+                      Modifier l'URL du serveur
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -347,6 +460,21 @@ export function CloudAuthGate() {
               )}
             </p>
           </form>
+
+          {/* Persistent server-config link — always visible at the
+              bottom of the form so the user can change the API URL
+              without first hitting an error. */}
+          <div className="mt-8 pt-4 border-t border-border-soft text-center">
+            <button
+              type="button"
+              onClick={() => setServerOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 text-[11px] text-fg-muted hover:text-fg-secondary font-mono"
+              title="Pointer le launcher vers un autre backend (self-hosted, dev local…)"
+            >
+              <Server className="w-3 h-3" />
+              Serveur&nbsp;: <span className="text-fg-secondary">{serverUrl || '—'}</span>
+            </button>
+          </div>
         </motion.div>
       </main>
     </div>
