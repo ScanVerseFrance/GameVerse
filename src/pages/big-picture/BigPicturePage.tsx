@@ -226,7 +226,17 @@ export default function BigPicturePage() {
       {/* Ambient backdrop layer — blurred hero or cover, fades to navy. */}
       <BackdropLayer url={backdropUrl} />
 
-      <div className="relative flex h-full">
+      {/*
+        Sidebar + main share this flex row. We cap its height to
+        (100% - 3rem) so the bottom edge of the row sits exactly on
+        top of the absolute HintBar (h-12 = 48px). Without this cap,
+        the sidebar's "QUITTER B.P." button — which lives at the
+        bottom of the rail — sits underneath the hint bar and gets
+        clipped. The pb-20 inside the scrollable content area is
+        kept as a safety margin so the last row of game tiles doesn't
+        end flush against the row boundary.
+      */}
+      <div className="relative flex h-[calc(100%-3rem)]">
         {/* Left rail */}
         <BigPictureRail view={view} onChange={(v) => setView(v)} onExit={() => navigate('/')} user={user} />
 
