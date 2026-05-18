@@ -38,7 +38,15 @@ const REPO_OWNER = 'ScanVerseFrance'
 const REPO_NAME = 'GameVerse'
 const API_RELEASES_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases`
 const POLL_INTERVAL_MS = 4 * 60 * 60 * 1000 // 4 hours
-const INITIAL_DELAY_MS = 30 * 1000          // 30 s after boot
+const INITIAL_DELAY_MS = 8 * 1000           // 8 s after boot — matches the
+                                            // ScanVerse webview's update
+                                            // cadence; users complained that
+                                            // 30 s felt broken ("ah I have
+                                            // nothing"). 8 s is short enough
+                                            // to feel snappy but long enough
+                                            // to let the cloud bootConnect
+                                            // resolve first without
+                                            // competing for the network.
 const USER_AGENT = `NexusLauncher/${app.getVersion()} (Electron)`
 
 /** Public shape sent to the renderer popup. Kept narrow on purpose —
@@ -171,11 +179,15 @@ export async function checkForUpdates(opts: {
     }
     const releases = (await res.json()) as GitHubRelease[]
     const current = app.getVersion()
-    const runningPreRelease = current.includes('-')
 
+    // No prerelease filter. The launcher is in beta and every release
+    // ships as a `--prerelease` GitHub release. Filtering them out
+    // here once silently broke auto-update for v0.1.0 users until we
+    // hand-toggled v0.1.1 back to non-prerelease. Trust the user's
+    // opt-in setting (autoUpdate) for whether to surface at all;
+    // beyond that, the freshest non-draft release wins.
     const candidate = releases
       .filter((r) => !r.draft)
-      .filter((r) => runningPreRelease || !r.prerelease)
       .filter((r) =>
         r.assets.some((a) => /^Nexus-Launcher-Setup-.*\.exe$/i.test(a.name)),
       )
