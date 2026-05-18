@@ -43,8 +43,11 @@ interface CloudState {
     user: CloudUser | null
     reason?: string
   }) => void
+  /** `identifier` is either an email OR a legacy username. The
+   *  backend disambiguates server-side based on whether the value
+   *  contains an `@`. */
   login: (
-    username: string,
+    identifier: string,
     password: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>
   register: (payload: {
@@ -124,8 +127,8 @@ export const useCloudStore = create<CloudState>((set, get) => ({
     }
   },
 
-  login: async (username, password) => {
-    const res = await window.nexus.cloud.login(username, password)
+  login: async (identifier, password) => {
+    const res = await window.nexus.cloud.login(identifier, password)
     if (!res.ok) return { ok: false, error: res.error }
     set({ status: res.status, user: res.user, reason: null })
     await Promise.all([

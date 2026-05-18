@@ -343,12 +343,15 @@ export async function bootConnect(): Promise<CloudConnectResult> {
 }
 
 export async function loginCloud(
-  username: string,
+  identifier: string,
   password: string
 ): Promise<CloudConnectResult> {
+  // Server takes a single `identifier` field and branches on `@` to
+  // pick email-lookup vs username-lookup. We pass the value through
+  // verbatim — the form is the authority on what the user typed.
   const res = await cloudJson<{ token: string; user: CloudUser }>(
     '/v1/auth/login',
-    { method: 'POST', body: { username, password }, anonymous: true }
+    { method: 'POST', body: { identifier, password }, anonymous: true }
   )
   writeToken(res.token)
   currentUser = res.user

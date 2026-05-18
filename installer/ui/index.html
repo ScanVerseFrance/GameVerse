@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>Installation de Nexus Launcher</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:;" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Custom titlebar (window is frameless) -->
+  <header class="titlebar">
+    <div class="titlebar-brand">
+      <span class="logo-mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Stylised "N" cloud — same silhouette as the in-app Nexus
+               Cloud icon (a soft cloud with an N stroke through it). -->
+          <path d="M4 16c0-2.5 2-4.5 4.5-4.5h.3c.5-2.8 3-5 5.9-5 3.3 0 6 2.7 6 6 0 .3 0 .6-.1.9.9.6 1.4 1.6 1.4 2.7 0 1.8-1.5 3.4-3.4 3.4H7.4C5.5 19.5 4 18 4 16Z"
+                fill="url(#nexus-cloud-grad)"/>
+          <path d="M10 9v6m4-6v6m-4-3l4-3" stroke="white" stroke-width="1.7" stroke-linecap="round"/>
+          <defs>
+            <linearGradient id="nexus-cloud-grad" x1="4" y1="6" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#66c0f4"/>
+              <stop offset="1" stop-color="#5ba32b"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </span>
+      <span class="logo-text">Nexus <span class="logo-text-accent">Launcher</span></span>
+      <span class="titlebar-sub">— Installation</span>
+    </div>
+    <div class="titlebar-actions">
+      <button class="tb-btn" id="tb-min" title="Réduire" aria-label="Réduire">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <button class="tb-btn tb-close" id="tb-close" title="Fermer" aria-label="Fermer">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="wizard">
+
+    <!-- Page 1 — Welcome -->
+    <section class="page active" data-page="welcome">
+      <div class="hero">
+        <div class="hero-glow"></div>
+        <div class="hero-logo">
+          <div class="wordmark-big">Nexus <span class="wordmark-big-accent">Launcher</span></div>
+        </div>
+      </div>
+      <h1 class="page-title">Bienvenue sur Nexus Launcher</h1>
+      <p class="page-lede">
+        Le launcher de jeux plugin-neutre par SVU. Bibliothèque locale,
+        amis, présence riche et sauvegardes cloud — sans dépendre d'un
+        store unique.
+      </p>
+      <ul class="features">
+        <li><span class="dot"></span> Bibliothèque, téléchargements et sources via plugins (sources tierces non incluses)</li>
+        <li><span class="dot"></span> Amis, présence et messagerie via Nexus Cloud</li>
+        <li><span class="dot"></span> Saves cloud — 2 Go inclus avec ton compte</li>
+        <li><span class="dot"></span> Mises à jour automatiques en arrière-plan</li>
+      </ul>
+      <footer class="actions">
+        <button class="btn ghost" data-link="https://www.scanverse.online">Voir SVU</button>
+        <button class="btn primary" data-next>Suivant</button>
+      </footer>
+    </section>
+
+    <!-- Page 2 — License -->
+    <section class="page" data-page="license">
+      <h1 class="page-title">Conditions d'utilisation</h1>
+      <p class="page-lede">Lis et accepte avant d'installer Nexus Launcher.</p>
+      <div class="license-box">
+        <p class="license-intro"><strong>En bref —</strong> Nexus Launcher est un client desktop plugin-neutre publié par SVU à des fins de démonstration et de communauté. Le launcher lui-même n'héberge ni ne distribue de contenu : ce que tu installes via les plugins relève de ta responsabilité.</p>
+
+        <h3>1. Champ d'application</h3>
+        <ul>
+          <li>Ces conditions s'appliquent à l'application desktop Nexus Launcher ainsi qu'aux services Nexus Cloud associés (<code>nexus.scanverse.online</code>).</li>
+          <li>L'usage du service vaut acceptation des présentes conditions.</li>
+          <li>Nexus Launcher est édité par SVU — une initiative communautaire sans but lucratif.</li>
+        </ul>
+
+        <h3>2. Compte Nexus Cloud</h3>
+        <ul>
+          <li>Un compte est requis pour utiliser les fonctionnalités sociales et de sauvegarde cloud.</li>
+          <li>Tu es responsable de la confidentialité de tes identifiants. En cas d'usage frauduleux, change ton mot de passe immédiatement.</li>
+          <li>Pseudo, avatar, bio et statut doivent rester respectueux et non trompeurs.</li>
+        </ul>
+
+        <h3>3. Plugins et sources tierces</h3>
+        <ul>
+          <li>Nexus Launcher est <strong>plugin-neutre</strong> : le client de base ne contient aucune source de jeux, gratuite ou payante.</li>
+          <li>L'installation d'un plugin et le contenu auquel il donne accès relèvent de ta seule responsabilité légale.</li>
+          <li>SVU ne saurait être tenu responsable du comportement d'un plugin tiers ni du contenu qu'il référence.</li>
+        </ul>
+
+        <h3>4. Utilisation acceptable</h3>
+        <ul>
+          <li>Pas de propos haineux, harcelants ou illégaux dans les messages, profils ou présences.</li>
+          <li>Pas de contournement des limites techniques (rate-limits, validations serveur, etc.).</li>
+          <li>Pas de spam ni d'usage automatisé visant à perturber le service.</li>
+        </ul>
+
+        <h3>5. Saves cloud et données</h3>
+        <ul>
+          <li>Les saves sont chiffrées en transit (HTTPS) et stockées sur Nexus Cloud avec un quota par défaut de 2 Go.</li>
+          <li>Présence, amis et messages transitent en temps réel via WebSocket sécurisé.</li>
+          <li>Aucune donnée personnelle n'est partagée avec des tiers en dehors des prestataires d'hébergement strictement nécessaires.</li>
+        </ul>
+
+        <h3>6. Mises à jour automatiques</h3>
+        <ul>
+          <li>Le launcher vérifie périodiquement la disponibilité d'une nouvelle version sur GitHub.</li>
+          <li>Tu peux toujours refuser une mise à jour proposée ; aucune installation silencieuse non sollicitée n'est effectuée.</li>
+          <li>Tu peux désactiver les vérifications dans <code>Paramètres → Avancé → Mises à jour</code>.</li>
+        </ul>
+
+        <h3>7. Suspension, évolution et responsabilité</h3>
+        <ul>
+          <li>Le service Nexus Cloud peut évoluer, être interrompu temporairement ou définitivement sans préavis.</li>
+          <li>SVU ne peut être tenu responsable des pertes de données, indisponibilités, ou contenus tiers.</li>
+          <li>Pour toute demande, ouvre un ticket sur le dépôt GitHub officiel.</li>
+        </ul>
+
+        <p class="muted small">Dernière mise à jour : mai 2026 — © 2026 SVU — Tous droits réservés.</p>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="agree-cb" />
+        <span class="check-box"></span>
+        <span>J'accepte les conditions d'utilisation</span>
+      </label>
+      <footer class="actions">
+        <button class="btn ghost" data-back>Précédent</button>
+        <button class="btn primary" data-next id="license-next" disabled>Suivant</button>
+      </footer>
+    </section>
+
+    <!-- Page 3 — Path -->
+    <section class="page" data-page="path">
+      <h1 class="page-title">Choisis le dossier d'installation</h1>
+      <p class="page-lede">Nexus Launcher occupe environ 280 Mo. Tu peux changer le dossier ou laisser celui par défaut.</p>
+      <div class="path-row">
+        <input type="text" id="path-input" class="input" readonly />
+        <button class="btn ghost" id="path-pick">Parcourir…</button>
+      </div>
+      <div class="opts">
+        <label class="check">
+          <input type="checkbox" id="opt-desktop" checked />
+          <span class="check-box"></span>
+          <span>Créer un raccourci sur le Bureau</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="opt-startmenu" checked />
+          <span class="check-box"></span>
+          <span>Créer un raccourci dans le Menu Démarrer</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="opt-launch" checked />
+          <span class="check-box"></span>
+          <span>Lancer Nexus Launcher à la fin de l'installation</span>
+        </label>
+      </div>
+      <footer class="actions">
+        <button class="btn ghost" data-back>Précédent</button>
+        <button class="btn primary" id="install-btn">Installer</button>
+      </footer>
+    </section>
+
+    <!-- Page 4 — Progress -->
+    <section class="page" data-page="progress">
+      <h1 class="page-title">Installation en cours</h1>
+      <p class="page-lede" id="progress-phase">Préparation…</p>
+      <div class="progress-shell">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+      <p class="progress-detail" id="progress-detail">0 / 0 fichiers</p>
+      <p class="muted small">Ne ferme pas cette fenêtre. L'opération prend en général moins d'une minute.</p>
+    </section>
+
+    <!-- Page 5 — Done -->
+    <section class="page" data-page="done">
+      <div class="check-circle">
+        <svg viewBox="0 0 32 32" width="48" height="48"><path d="M9 16l5 5 9-11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h1 class="page-title">Installation terminée</h1>
+      <p class="page-lede" id="done-msg">Nexus Launcher a été installé. Tu peux désormais lancer le launcher.</p>
+      <footer class="actions center">
+        <button class="btn primary" id="finish-btn">Fermer</button>
+      </footer>
+    </section>
+
+    <!-- Page 6 — Error -->
+    <section class="page" data-page="error">
+      <div class="error-circle">!</div>
+      <h1 class="page-title">L'installation a échoué</h1>
+      <p class="page-lede" id="error-msg">Une erreur s'est produite.</p>
+      <footer class="actions center">
+        <button class="btn ghost" id="error-retry">Réessayer</button>
+        <button class="btn primary" id="error-close">Fermer</button>
+      </footer>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

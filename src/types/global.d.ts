@@ -693,6 +693,37 @@ export interface NexusAPI {
     exportData: (userId: string) => Promise<{ ok: boolean; path?: string; error?: string }>
     resetAllData: () => Promise<{ ok: boolean }>
   }
+  update: {
+    check: () => Promise<
+      | { status: 'available'; info: UpdateAvailableInfo }
+      | { status: 'up-to-date'; currentVersion: string }
+      | { status: 'disabled' }
+      | { status: 'error'; error: string }
+    >
+    download: (downloadUrl: string) => Promise<{ ok: boolean; error?: string }>
+    onAvailable: (cb: (info: UpdateAvailableInfo) => void) => () => void
+    onProgress: (
+      cb: (
+        p:
+          | { phase: 'download'; received: number; total: number }
+          | { phase: 'apply' },
+      ) => void,
+    ) => () => void
+  }
+}
+
+/** Pushed via `update:available` whenever the GitHub poller finds a
+ *  newer Setup.exe than the running version. The popup binds to this
+ *  shape directly. */
+export interface UpdateAvailableInfo {
+  currentVersion: string
+  latestVersion: string
+  releaseNotes: string
+  downloadUrl: string
+  /** Bytes — for the "X MB to download" line. */
+  size: number
+  publishedAt: string
+  htmlUrl: string
 }
 
 declare global {

@@ -26,6 +26,12 @@ import { initCloud, shutdownCloud } from './services/cloud.service'
 import { registerCloudIpc } from './ipc/cloud.ipc'
 import { registerCloudSaveIpc } from './ipc/cloud-save.ipc'
 import { registerProfileIpc } from './ipc/profile.ipc'
+import {
+  initAutoUpdate,
+  shutdownAutoUpdate,
+} from './services/auto-update.service'
+import { registerAutoUpdateIpc } from './ipc/auto-update.ipc'
+import { getAppSettings } from './services/app-settings.service'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const APP_ROOT = path.join(__dirname, '..')
@@ -143,6 +149,15 @@ void app.whenReady().then(async () => {
   registerProfileIpc()
   registerCloudIpc()
   registerCloudSaveIpc()
+  registerAutoUpdateIpc()
+  // Auto-update polls GitHub Releases on a 4h cadence. The setting
+  // is queried lazily on every check so flipping it off in the
+  // Paramètres pane takes effect at the next interval without
+  // restarting the launcher.
+  initAutoUpdate({
+    getMain: () => mainWindow,
+    isEnabled: () => getAppSettings().autoUpdate !== false,
+  })
   createWindow()
 
   app.on('activate', () => {
@@ -164,5 +179,6 @@ app.on('before-quit', () => {
   shutdownLibrary()
   shutdownAchievementWatcher()
   shutdownCloud()
+  shutdownAutoUpdate()
   closeDatabase()
 })

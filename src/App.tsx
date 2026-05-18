@@ -11,6 +11,7 @@ import { useSettingsStore } from './stores/settings.store'
 import { useNotificationsStore } from './stores/notifications.store'
 import { useCloudStore } from './stores/cloud.store'
 import { useApplyTheme } from './hooks/useApplyTheme'
+import { UpdatePopup } from './components/common/UpdatePopup'
 
 export default function App() {
   const restore = useAuthStore((s) => s.restoreSession)
@@ -156,5 +157,13 @@ export default function App() {
     }
   }, [])
 
-  return <RouterProvider router={router} />
+  // UpdatePopup is rendered alongside the router so it floats above
+  // every route. Subscribes to `update:available` and shows a toast
+  // in the bottom-right when the GitHub poller finds a new version.
+  return (
+    <>
+      <RouterProvider router={router} />
+      <UpdatePopup />
+    </>
+  )
 }

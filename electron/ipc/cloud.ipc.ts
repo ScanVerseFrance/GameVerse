@@ -47,12 +47,15 @@ export function registerCloudIpc(): void {
 
   ipcMain.handle(
     'cloud:login',
-    async (_e, username: unknown, password: unknown) => {
-      const u = safeStr(username, 64)
+    async (_e, identifier: unknown, password: unknown) => {
+      // 254 = RFC 5321 email length cap; comfortably covers usernames
+      // (32 chars max) and emails (longest realistically in the wild).
+      const id = safeStr(identifier, 254)
       const p = safeStr(password, 200)
-      if (!u || !p) return { ok: false, error: 'username + password required' }
+      if (!id || !p)
+        return { ok: false, error: 'identifier + password required' }
       try {
-        const res = await svc.loginCloud(u, p)
+        const res = await svc.loginCloud(id, p)
         return { ok: true, ...res }
       } catch (e) {
         return {

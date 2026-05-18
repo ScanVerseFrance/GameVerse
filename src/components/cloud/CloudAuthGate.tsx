@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Cloud,
   CloudOff,
@@ -56,6 +56,11 @@ export function CloudAuthGate() {
   const [password, setPassword] = useState('')
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
+  // Login-only field. Kept separate from `email` so a half-typed
+  // register email doesn't leak into the login form when the user
+  // toggles back and forth — and so the placeholder/autocomplete
+  // can be tuned per intent.
+  const [loginIdentifier, setLoginIdentifier] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
@@ -80,7 +85,7 @@ export function CloudAuthGate() {
     setError(null)
     const res =
       tab === 'login'
-        ? await login(username.trim(), password)
+        ? await login(loginIdentifier.trim(), password)
         : await register({
             username: username.trim(),
             password,
@@ -97,15 +102,23 @@ export function CloudAuthGate() {
     }
   }
 
-  // Form validation — register requires every field; login only
-  // needs username + password.
+  // Form validation. Login: identifier (email-shaped OR a 3+ char
+  // legacy username) + password. Register: full quartet.
+  const loginIdValid =
+    loginIdentifier.trim().length >= 3 &&
+    // Accept anything with an `@` (email) or anything else 3+ chars
+    // (username). Backend disambiguates server-side.
+    (loginIdentifier.includes('@') ||
+      /^[a-zA-Z0-9_.-]+$/.test(loginIdentifier.trim()))
   const canSubmit =
     !busy &&
     !success &&
-    username.trim().length >= 3 &&
     password.length >= 8 &&
-    (tab === 'login' ||
-      (email.trim().length > 3 && displayName.trim().length > 0))
+    (tab === 'login'
+      ? loginIdValid
+      : username.trim().length >= 3 &&
+        email.trim().length > 3 &&
+        displayName.trim().length > 0)
 
   // While status is 'connecting' (initial bootConnect), don't show
   // the form yet — it'd flash for a fraction of a second on a fast
@@ -229,7 +242,7 @@ export function CloudAuthGate() {
                     URL du serveur Nexus Cloud
                   </p>
                   <p className="text-[11px] text-fg-muted mt-1 leading-snug">
-                    Par défaut : <code>https://api.scanverse.online</code>. Pour pointer vers un backend local en dev : <code>http://localhost:4000</code>.
+                    Par défaut : <code>https://nexus.scanverse.online</code>. Pour pointer vers un backend local en dev : <code>http://localhost:4000</code>.
                   </p>
                 </div>
                 <button
@@ -245,7 +258,7 @@ export function CloudAuthGate() {
                   type="url"
                   value={serverUrl}
                   onChange={(e) => setServerUrl(e.target.value)}
-                  placeholder="https://api.scanverse.online"
+                  placeholder="https://nexus.scanverse.online"
                   className="flex-1 h-10 px-3 rounded-md bg-bg-secondary border border-glass-border focus:border-accent-primary/60 focus:outline-none text-sm font-mono text-fg-primary placeholder:text-fg-muted"
                 />
                 <button
@@ -280,15 +293,28 @@ export function CloudAuthGate() {
             </div>
           )}
 
-          <div className="mb-6">
-            <h2 className="font-display font-black text-3xl text-fg-primary">
-              {tab === 'register' ? 'Crée ton compte' : 'Connecte-toi'}
-            </h2>
-            <p className="text-sm text-fg-secondary mt-2">
-              {tab === 'register'
-                ? 'Tous les champs sont requis. Tu pourras tout modifier plus tard.'
-                : 'Entre ton nom d\'utilisateur et ton mot de passe.'}
-            </p>
+          {/* Heading morphs between modes — same slot, content swaps
+              with a soft cross-fade so the tab toggle feels like one
+              UI mutating rather than two screens swapping. */}
+          <div className="mb-6 min-h-[68px]">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={tab}
+                initial={{ opacity: 0, y: -6, filter: 'blur(4px)' }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, y: 6, filter: 'blur(4px)' }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <h2 className="font-display font-black text-3xl text-fg-primary">
+                  {tab === 'register' ? 'Crée ton compte' : 'Connecte-toi'}
+                </h2>
+                <p className="text-sm text-fg-secondary mt-2">
+                  {tab === 'register'
+                    ? 'Tous les champs sont requis. Tu pourras tout modifier plus tard.'
+                    : 'Entre ton e-mail et ton mot de passe.'}
+                </p>
+              </motion.div>
+            </AnimatePresence>
           </div>
 
           {/* Tabs */}
@@ -325,70 +351,129 @@ export function CloudAuthGate() {
             </button>
           </div>
 
-          <form
+          {/* The form container uses `layout` so its height interpolates
+              smoothly when the field count changes (1 ↔ 3 fields). The
+              fields themselves swap via AnimatePresence inside, giving
+              a "morphism" feel rather than an abrupt rebuild. Setting
+              the inner field group as a single key={tab} block means
+              the whole stack cross-fades atomically — cleaner than
+              animating each field in/out independently. */}
+          <motion.form
+            layout
+            transition={{
+              layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] },
+            }}
             onSubmit={(e) => {
               e.preventDefault()
               if (canSubmit) void handleSubmit()
             }}
             className="flex flex-col gap-3"
           >
-            <Field
-              label="Nom d'utilisateur (@)"
-              hint="3-32 caractères · lettres, chiffres, . _ -"
-              value={username}
-              onChange={setUsername}
-              placeholder="kazu"
-              autoComplete="username"
-              disabled={busy || success}
-              required
-            />
-            {tab === 'register' && (
-              <>
-                <Field
-                  label="E-mail"
-                  hint="Pour récupérer ton compte"
-                  value={email}
-                  onChange={setEmail}
-                  placeholder="kazu@scanverse.online"
-                  type="email"
-                  autoComplete="email"
-                  disabled={busy || success}
-                  required
-                />
-                <Field
-                  label="Nom affiché"
-                  hint="Le nom visible par tes amis"
-                  value={displayName}
-                  onChange={setDisplayName}
-                  placeholder="Kazu"
-                  autoComplete="nickname"
-                  disabled={busy || success}
-                  required
-                />
-              </>
-            )}
-            <Field
-              label="Mot de passe"
-              hint="8 caractères minimum"
-              value={password}
-              onChange={setPassword}
-              placeholder="••••••••"
-              type="password"
-              autoComplete={
-                tab === 'register' ? 'new-password' : 'current-password'
-              }
-              disabled={busy || success}
-              required
-            />
+            <AnimatePresence mode="wait" initial={false}>
+              {tab === 'login' ? (
+                <motion.div
+                  key="login-fields"
+                  layout
+                  initial={{ opacity: 0, y: -8, filter: 'blur(6px)' }}
+                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, y: 8, filter: 'blur(6px)' }}
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                  className="flex flex-col gap-3"
+                >
+                  <Field
+                    label="E-mail"
+                    hint="L'adresse de ton compte Nexus"
+                    value={loginIdentifier}
+                    onChange={setLoginIdentifier}
+                    placeholder="kazu@scanverse.online"
+                    type="email"
+                    autoComplete="email"
+                    disabled={busy || success}
+                    required
+                  />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="register-fields"
+                  layout
+                  initial={{ opacity: 0, y: -8, filter: 'blur(6px)' }}
+                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, y: 8, filter: 'blur(6px)' }}
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                  className="flex flex-col gap-3"
+                >
+                  <Field
+                    label="Nom d'utilisateur (@)"
+                    hint="3-32 caractères · lettres, chiffres, . _ -"
+                    value={username}
+                    onChange={setUsername}
+                    placeholder="kazu"
+                    autoComplete="username"
+                    disabled={busy || success}
+                    required
+                  />
+                  <Field
+                    label="E-mail"
+                    hint="Pour récupérer ton compte"
+                    value={email}
+                    onChange={setEmail}
+                    placeholder="kazu@scanverse.online"
+                    type="email"
+                    autoComplete="email"
+                    disabled={busy || success}
+                    required
+                  />
+                  <Field
+                    label="Nom affiché"
+                    hint="Le nom visible par tes amis"
+                    value={displayName}
+                    onChange={setDisplayName}
+                    placeholder="Kazu"
+                    autoComplete="nickname"
+                    disabled={busy || success}
+                    required
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <motion.div layout>
+              <Field
+                label="Mot de passe"
+                hint="8 caractères minimum"
+                value={password}
+                onChange={setPassword}
+                placeholder="••••••••"
+                type="password"
+                autoComplete={
+                  tab === 'register' ? 'new-password' : 'current-password'
+                }
+                disabled={busy || success}
+                required
+              />
+            </motion.div>
             {/* Strength meter — only at register time. We pass the
                 username so the scorer can penalise "password contains
-                your username" combos. */}
-            {tab === 'register' && (
-              <PasswordStrength
-                password={password}
-                username={username}
-              />
-            )}
+                your username" combos. AnimatePresence so it crossfades
+                rather than abruptly appearing on tab flip. */}
+            <AnimatePresence initial={false}>
+              {tab === 'register' && (
+                <motion.div
+                  key="strength"
+                  layout
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  className="overflow-hidden"
+                >
+                  <PasswordStrength
+                    password={password}
+                    username={username}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {error && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-error/10 border border-error/30 text-sm text-error">
@@ -469,7 +554,7 @@ export function CloudAuthGate() {
                 </>
               )}
             </p>
-          </form>
+          </motion.form>
         </motion.div>
       </main>
     </div>

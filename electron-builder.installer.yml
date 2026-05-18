@@ -1,0 +1,35 @@
+# Builds the Setup.exe wrapper around the installer/ mini-Electron app.
+#
+# Run AFTER the main launcher has been built in --dir mode and its
+# win-unpacked tree has been copied to installer/payload/.
+# See scripts/build-installer.mjs.
+appId: com.svu.nexuslauncher.installer
+productName: Nexus Launcher Setup
+copyright: Copyright © SVU
+directories:
+  app: installer
+  output: release
+files:
+  - "**/*"
+extraResources:
+  # Points at the junction maintained by scripts/build-installer.mjs.
+  # Always refers to the freshly-built launcher win-unpacked tree;
+  # the underlying scratch dir name is timestamped to dodge Defender
+  # scan-locks on the previous run's leftover.
+  - from: installer/payload-active
+    to: payload
+    filter:
+      - "**/*"
+win:
+  target:
+    - target: portable
+      arch: [x64]
+  icon: build/installer-icon.ico
+  artifactName: Nexus-Launcher-Setup-${version}.${ext}
+portable:
+  # Same artifactName here — electron-builder needs both blocks set
+  # otherwise it falls back to the default "${productName}-${version}…"
+  # which contains a space and breaks GitHub Release upload URLs.
+  artifactName: Nexus-Launcher-Setup-${version}.${ext}
+asar: true
+compression: maximum

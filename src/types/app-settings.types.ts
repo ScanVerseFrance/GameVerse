@@ -18,6 +18,11 @@ export interface AppSettings {
    * https://steamcommunity.com/dev/apikey. The achievements section degrades
    * gracefully to a placeholder when blank. */
   steamWebApiKey: string
+  /** When true, the launcher polls GitHub Releases every ~4 hours and
+   *  proposes any newer version via an in-app popup. The check is
+   *  also fired manually from Paramètres → Avancé → Mises à jour.
+   *  Default: true. */
+  autoUpdate: boolean
 }
 
 export interface SystemMetrics {

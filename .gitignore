@@ -22,3 +22,14 @@ downloads/
 .claude/
 # Local scratch JSON copies (rename-with-suffix during testing).
 *Copie*.json
+# Installer build artefacts — payload-active is a junction maintained
+# by scripts/build-installer.mjs; payload-* are timestamped scratch
+# copies of the launcher (each ~240 MB). None of this ships in git.
+installer/payload
+installer/payload-active
+installer/payload-*
+installer/node_modules
+installer/assets/icon.png
+# Generated icon binaries (created by scripts/gen-installer-art.mjs).
+build/icon.ico
+build/installer-icon.ico

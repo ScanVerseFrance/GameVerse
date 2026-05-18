@@ -14,6 +14,11 @@ function defaultSettings(): AppSettings {
     notifications: { downloadComplete: true, achievementUnlocked: true },
     steamGridDbApiKey: '',
     steamWebApiKey: '',
+    // Opt-in by default — silent installs of a launcher with broken
+    // updates make for very angry users. The popup itself is non-
+    // blocking and gated behind explicit consent ("Mettre à jour"
+    // button) so this is "check + ask", not "check + apply".
+    autoUpdate: true,
   }
 }
 
@@ -34,6 +39,7 @@ function loadSettings(): void {
       },
       steamGridDbApiKey: typeof parsed.steamGridDbApiKey === 'string' ? parsed.steamGridDbApiKey : '',
       steamWebApiKey: typeof parsed.steamWebApiKey === 'string' ? parsed.steamWebApiKey : '',
+      autoUpdate: typeof parsed.autoUpdate === 'boolean' ? parsed.autoUpdate : true,
     }
   } catch {
     settings = defaultSettings()
@@ -99,6 +105,9 @@ export function updateAppSettings(patch: Partial<AppSettings>): AppSettings {
   }
   if (patch.steamWebApiKey !== undefined) {
     settings.steamWebApiKey = String(patch.steamWebApiKey).trim().slice(0, 200)
+  }
+  if (patch.autoUpdate !== undefined) {
+    settings.autoUpdate = !!patch.autoUpdate
   }
   saveSettings()
   return getAppSettings()

@@ -1,3 +1,13 @@
+# Main launcher build config.
+#
+# Output: release/win-unpacked/  — an unpacked directory, NOT an installer.
+# The Setup.exe is built separately by scripts/build-installer.mjs which
+# copies win-unpacked/ into installer/payload/ and runs electron-builder
+# against electron-builder.installer.yml. That two-stage flow gives us a
+# custom-branded wizard instead of NSIS's generic Win32 UI.
+#
+# Mac/Linux still ship the platform-native installers because nobody has
+# requested a custom wizard there yet — keep it simple.
 appId: com.svu.nexuslauncher
 productName: Nexus Launcher
 copyright: Copyright © SVU
@@ -7,12 +17,24 @@ directories:
 files:
   - dist
   - dist-electron
+  # Cosmetics (~1.8 GB of avatar decorations + profile effects + nameplates)
+  # are excluded from v0.1.0 because they balloon the installer past
+  # what 7-Zip can compress on a typical developer machine. They'll be
+  # re-introduced in v0.2.0 via a runtime CDN loader (likely served
+  # from nexus.scanverse.online's static asset bucket) so the launcher
+  # ships lean and cosmetics stream on demand.
+  - "!dist/cosmetics/**/*"
 asarUnpack:
   - "**/*.{node,dll}"
 win:
   target:
-    - target: nsis
+    # `dir` = bare unpacked output, no installer. The Setup.exe is then
+    # built by the installer/ wrapper which copies this tree as payload.
+    - target: dir
       arch: [x64]
+  icon: build/icon.ico
+  # Single-file artifact name doesn't matter much for `dir` target
+  # (it ships as a folder), but keeping it for consistency.
   artifactName: ${productName}-${version}-${arch}.${ext}
 mac:
   target:
@@ -22,7 +44,3 @@ linux:
   target:
     - target: AppImage
       arch: [x64]
-nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  artifactName: ${productName}-Setup-${version}.${ext}

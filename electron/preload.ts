@@ -207,8 +207,10 @@ const api = {
     status: () => ipcRenderer.invoke('cloud:status'),
     reconnect: () => ipcRenderer.invoke('cloud:reconnect'),
     logout: () => ipcRenderer.invoke('cloud:logout'),
-    login: (username: string, password: string) =>
-      ipcRenderer.invoke('cloud:login', username, password),
+    // `identifier` is either an email OR a username — the backend
+    // branches on the `@` to pick the lookup column.
+    login: (identifier: string, password: string) =>
+      ipcRenderer.invoke('cloud:login', identifier, password),
     register: (payload: unknown) => ipcRenderer.invoke('cloud:register', payload),
     setApiUrl: (url: string) => ipcRenderer.invoke('cloud:setApiUrl', url),
     // ── Account ─────────────────────────────────────────────────
@@ -296,6 +298,35 @@ const api = {
       ipcRenderer.invoke('app:revokeOtherSessions', userId, keepToken),
     exportData: (userId: string) => ipcRenderer.invoke('app:exportData', userId),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
+  },
+  update: {
+    // Manual check — fires the same logic as the 4h timer but bypasses
+    // the "already notified this session" dedup so the popup will pop
+    // even if the user dismissed it earlier.
+    check: () => ipcRenderer.invoke('update:check'),
+    // Accepts the proposal — starts the download and on completion
+    // spawns the installer with --silent. The launcher will exit
+    // shortly after this resolves.
+    download: (downloadUrl: string) =>
+      ipcRenderer.invoke('update:download', downloadUrl),
+    onAvailable: (
+      cb: (info: {
+        currentVersion: string
+        latestVersion: string
+        releaseNotes: string
+        downloadUrl: string
+        size: number
+        publishedAt: string
+        htmlUrl: string
+      }) => void,
+    ) => subscribe('update:available', cb),
+    onProgress: (
+      cb: (
+        p:
+          | { phase: 'download'; received: number; total: number }
+          | { phase: 'apply' },
+      ) => void,
+    ) => subscribe('update:progress', cb),
   },
 }
 
