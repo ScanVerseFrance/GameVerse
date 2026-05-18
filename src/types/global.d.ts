@@ -209,6 +209,10 @@ export interface NexusAPI {
     >
     launchSetup: (setupPath: string) => Promise<{ ok: boolean; error?: string }>
     launch: (id: string) => Promise<{ ok: boolean; error?: string }>
+    transfer: (
+      id: string,
+      destFolder: string
+    ) => Promise<{ ok: boolean; error?: string; newInstallPath?: string }>
     stop: (id: string) => Promise<{ ok: boolean; error?: string }>
     verify: (
       id: string

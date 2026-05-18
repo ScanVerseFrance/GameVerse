@@ -31,6 +31,7 @@ import { PlaytimeHeatmap } from '@/components/community/PlaytimeHeatmap'
 import { AchievementsTab } from '@/components/community/AchievementsTab'
 import { ProfileCustomiseDialog } from '@/components/community/ProfileCustomiseDialog'
 import { AvatarActionPopup } from '@/components/community/AvatarActionPopup'
+import { AvatarLightbox } from '@/components/common/AvatarLightbox'
 import { Username } from '@/components/common/Username'
 import { ImageCropDialog } from '@/components/common/ImageCropDialog'
 import { PresenceDot, formatLastSeen } from '@/components/common/PresenceDot'
@@ -239,6 +240,10 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false)
+  /** Avatar fullscreen viewer (Hydra 3.8.0 — "abrir o avatar em
+   *  tela cheia"). Open via long-press on the own avatar OR ANY
+   *  click on a visitor avatar. Drawn by AvatarLightbox. */
+  const [avatarLightboxOpen, setAvatarLightboxOpen] = useState(false)
   const [customiseOpen, setCustomiseOpen] = useState(false)
   // Track whether the customise dialog was opened from the avatar
   // action popup ("Changer la décoration") — in that case we lock it
@@ -497,12 +502,31 @@ export default function ProfilePage() {
                   so it punches a clean circle out of the banner gradient. */}
               <button
                 type="button"
-                onClick={isSelf ? () => setAvatarMenuOpen((v) => !v) : undefined}
-                disabled={!isSelf}
+                onClick={
+                  isSelf
+                    ? () => setAvatarMenuOpen((v) => !v)
+                    : () => {
+                        // Visitor view: clicking the avatar opens the
+                        // fullscreen lightbox (Hydra 3.8.0). Only fires
+                        // when an avatarPath actually exists — clicking
+                        // the gradient placeholder is a no-op.
+                        if (profile.avatarPath) setAvatarLightboxOpen(true)
+                      }
+                }
                 className={`relative w-full h-full rounded-full bg-accent-gradient overflow-hidden flex items-center justify-center border-4 border-bg-primary shadow-lift group ${
-                  isSelf ? 'cursor-pointer hover:ring-2 hover:ring-accent-primary/60 transition-shadow' : 'cursor-default'
+                  isSelf
+                    ? 'cursor-pointer hover:ring-2 hover:ring-accent-primary/60 transition-shadow'
+                    : profile.avatarPath
+                      ? 'cursor-zoom-in hover:ring-2 hover:ring-white/30 transition-shadow'
+                      : 'cursor-default'
                 }`}
-                title={isSelf ? 'Cliquer pour modifier' : undefined}
+                title={
+                  isSelf
+                    ? 'Cliquer pour modifier'
+                    : profile.avatarPath
+                      ? 'Cliquer pour agrandir'
+                      : undefined
+                }
               >
                 {profile.avatarPath ? (
                   <img src={profile.avatarPath} alt="" className="w-full h-full object-cover rounded-full" />
@@ -562,6 +586,14 @@ export default function ProfilePage() {
                     setCustomiseDecorationsOnly(true)
                     setCustomiseOpen(true)
                   }}
+                  // Only surface the fullscreen viewer when an avatar
+                  // actually exists — clicking it for the gradient
+                  // placeholder would open an empty lightbox.
+                  onViewFullscreen={
+                    profile.avatarPath
+                      ? () => setAvatarLightboxOpen(true)
+                      : undefined
+                  }
                 />
               )}
             </div>
@@ -883,6 +915,17 @@ export default function ProfilePage() {
           {imageUpload.error}
         </div>
       )}
+
+      {/* Full-screen avatar viewer (Hydra 3.8.0). Triggered by a click
+          on a visitor avatar — for own avatar the action popup
+          intercepts first. The lightbox renders the avatar + the
+          decoration overlay so the user sees the full composition. */}
+      <AvatarLightbox
+        src={avatarLightboxOpen ? profile.avatarPath : null}
+        decorationUrl={decoration.file}
+        alt={`Avatar de ${profile.displayName ?? profile.username}`}
+        onClose={() => setAvatarLightboxOpen(false)}
+      />
     </div>
   )
 }

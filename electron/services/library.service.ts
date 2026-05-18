@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
+import fsp from 'node:fs/promises'
 import crypto from 'node:crypto'
 import { BrowserWindow, shell } from 'electron'
 import { getDatabase } from './database.service'
@@ -1453,6 +1454,84 @@ export interface VerifyReport {
   leftoverSetups: string[]
   errors: string[]
   warnings: string[]
+}
+
+/**
+ * Move an installed game's files to a new folder, then update the
+ * library row so install_path + executable_path point at the new
+ * location. Hydra 3.9.6 added this — users who run out of space on
+ * their C: drive can shift big repacks to D:/Games without losing
+ * their library entry, playtime or achievements progress.
+ *
+ * Implementation:
+ *   - Same volume → fs.rename (atomic, instant).
+ *   - Cross volume → recursive copy + delete source. We DON'T emit
+ *     progress events for v0.2.1; the renderer just shows a spinner.
+ *     A 50 GB copy on an external HDD will take minutes; that's the
+ *     trade-off we accept to ship the feature now. v0.3 will add a
+ *     `library:transferProgress` channel mirroring the extraction
+ *     one.
+ *   - The executable_path is patched in-place by string-replacing the
+ *     install_path prefix with the new one — safe because the exe
+ *     lives strictly inside install_path.
+ *   - Refuses while the game is running (would invalidate the file
+ *     handle the spawned process holds open).
+ */
+export async function transferGame(
+  id: string,
+  destFolder: string
+): Promise<{ ok: boolean; error?: string; newInstallPath?: string }> {
+  const game = getLibraryGame(id)
+  if (!game) return { ok: false, error: 'Jeu introuvable' }
+  if (!game.installPath || !fs.existsSync(game.installPath)) {
+    return { ok: false, error: "Le dossier d'installation n'existe pas" }
+  }
+  if (running.has(id)) {
+    return {
+      ok: false,
+      error: 'Arrête le jeu avant de le déplacer.',
+    }
+  }
+  const newDest = path.join(destFolder, path.basename(game.installPath))
+  if (newDest === game.installPath) {
+    return { ok: false, error: 'Le dossier de destination est identique.' }
+  }
+  if (fs.existsSync(newDest)) {
+    return {
+      ok: false,
+      error: `Le dossier ${newDest} existe déjà — supprime-le ou choisis-en un autre.`,
+    }
+  }
+  try {
+    await fsp.mkdir(destFolder, { recursive: true })
+    try {
+      // Fast path — same volume. Atomic; no halfway state.
+      await fsp.rename(game.installPath, newDest)
+    } catch (err) {
+      // EXDEV = rename across volumes is illegal on POSIX-ish systems.
+      // Fall back to recursive copy + remove source. fs.cp lands on
+      // Node 20+ and is sync from the caller's POV (await-able).
+      if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err
+      await fsp.cp(game.installPath, newDest, { recursive: true })
+      await fsp.rm(game.installPath, { recursive: true, force: true })
+    }
+    // String-replace the install_path prefix in executable_path so the
+    // user keeps "Jouer" without reconfiguring. We rely on the exe
+    // sitting strictly INSIDE install_path which is invariant.
+    let newExePath: string | null = null
+    if (game.executablePath && game.executablePath.startsWith(game.installPath)) {
+      newExePath =
+        newDest + game.executablePath.slice(game.installPath.length)
+    }
+    const now = Date.now()
+    const db = getDatabase()
+    db.prepare(
+      `UPDATE library_games SET install_path = ?, executable_path = ?, updated_at = ? WHERE id = ?`
+    ).run(newDest, newExePath ?? game.executablePath, now, id)
+    return { ok: true, newInstallPath: newDest }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
 }
 
 export function verifyLibraryGame(id: string): VerifyReport {

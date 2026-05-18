@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Camera, Sparkles, X } from 'lucide-react'
+import { Camera, Sparkles, X, Maximize2 } from 'lucide-react'
 
 /**
  * Steam/ScanVerse-style action menu that pops up next to the profile
@@ -17,6 +17,10 @@ interface AvatarActionPopupProps {
   onClose: () => void
   onChangeAvatar: () => void
   onChangeDecoration: () => void
+  /** Optional — if provided, an extra "Voir en plein écran" item
+   *  opens the avatar lightbox (Hydra 3.8.0). Skipped when no avatar
+   *  has been set yet, since there'd be nothing to show. */
+  onViewFullscreen?: () => void
   /** Absolute position relative to the closest positioned ancestor. */
   anchor?: 'right' | 'bottom'
 }
@@ -26,6 +30,7 @@ export function AvatarActionPopup({
   onClose,
   onChangeAvatar,
   onChangeDecoration,
+  onViewFullscreen,
   anchor = 'right',
 }: AvatarActionPopupProps) {
   const ref = useRef<HTMLDivElement>(null)
@@ -89,6 +94,19 @@ export function AvatarActionPopup({
         <Sparkles className="w-4 h-4 text-accent-primary" />
         Changer la décoration
       </button>
+      {onViewFullscreen && (
+        <button
+          onClick={() => {
+            onViewFullscreen()
+            onClose()
+          }}
+          className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-fg-primary hover:bg-[var(--surface-soft)] transition-colors text-left border-t border-border-soft"
+          role="menuitem"
+        >
+          <Maximize2 className="w-4 h-4 text-accent-primary" />
+          Voir en plein écran
+        </button>
+      )}
       <button
         onClick={onClose}
         className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] text-fg-muted hover:bg-[var(--surface-soft)] transition-colors border-t border-border-soft"

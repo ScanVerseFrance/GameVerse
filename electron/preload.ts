@@ -91,6 +91,11 @@ const api = {
     detectZip: (folder: string) => ipcRenderer.invoke('library:detectZip', folder),
     launchSetup: (setupPath: string) => ipcRenderer.invoke('library:launchSetup', setupPath),
     launch: (id: string) => ipcRenderer.invoke('library:launch', id),
+    /** Move an installed game to another folder (Hydra 3.9.6). Same-
+     *  volume = atomic rename; cross-volume = recursive copy + delete
+     *  source. Updates install_path + executable_path automatically. */
+    transfer: (id: string, destFolder: string) =>
+      ipcRenderer.invoke('library:transfer', id, destFolder),
     stop: (id: string) => ipcRenderer.invoke('library:stop', id),
     verify: (id: string) => ipcRenderer.invoke('library:verify', id),
     extractZip: (id: string, mode: string) =>

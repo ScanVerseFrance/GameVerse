@@ -28,6 +28,7 @@ import {
   Heart,
   FileArchive,
   Save,
+  Move,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -876,6 +877,37 @@ export default function JsonGamePage() {
                 title="Ouvrir le dossier des sauvegardes (via Ludusavi)"
               >
                 Sauvegardes
+              </Button>
+            )}
+            {/* Move-to-disk — Hydra 3.9.6. Pops the system folder
+                picker, runs library:transfer in main, surfaces success
+                or error inline. The IPC handles both same-volume
+                (rename) and cross-volume (copy+rm) under the hood. */}
+            {isInstalled && installedGame && (
+              <Button
+                size="sm"
+                variant="ghost"
+                leftIcon={<Move className="w-3.5 h-3.5" />}
+                onClick={async () => {
+                  const picked = await window.nexus.downloads.pickFolder()
+                  if (!picked.ok || !picked.path) return
+                  setLaunchError(null)
+                  const res = await window.nexus.library.transfer(
+                    installedGame.id,
+                    picked.path
+                  )
+                  if (!res.ok) {
+                    setLaunchError(res.error ?? 'Échec du déplacement')
+                  } else {
+                    // Trigger a library reload so the new install_path
+                    // shows up in the UI. The library row was updated
+                    // server-side; we just need to re-pull.
+                    if (user) void useLibraryStore.getState().load(user.id)
+                  }
+                }}
+                title="Déplacer le jeu vers un autre disque (rename si même volume, sinon copie + delete)"
+              >
+                Déplacer
               </Button>
             )}
             {isInstalled && (

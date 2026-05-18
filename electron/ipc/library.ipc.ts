@@ -159,6 +159,23 @@ export function registerLibraryIpc() {
     return svc.launchGame(sanitizeString(id, 64))
   })
 
+  // ── library:transfer ─────────────────────────────────────────────
+  // Hydra 3.9.6 — move an installed game to a new disk. Renderer
+  // pops a "Choisir un dossier" dialog (system:pickFolder) then
+  // calls this with the resolved destination folder.
+  ipcMain.handle(
+    'library:transfer',
+    async (_e, id: unknown, destFolder: unknown) => {
+      if (typeof id !== 'string' || typeof destFolder !== 'string') {
+        return { ok: false, error: 'id + destFolder required' }
+      }
+      return svc.transferGame(
+        sanitizeString(id, 64),
+        sanitizeString(destFolder, 2048)
+      )
+    }
+  )
+
   ipcMain.handle('library:stop', async (_e, id: unknown) => {
     if (typeof id !== 'string') return { ok: false, error: 'id required' }
     return svc.stopGame(sanitizeString(id, 64))

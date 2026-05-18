@@ -36,10 +36,16 @@ import type {
   CloudWsEnvelope,
 } from '@/types/cloud.types'
 
-// Hard-coded default. The user can override at runtime via the
-// "Avancé" panel in Paramètres → Cloud (stored in a settings row);
-// keeping the production URL here means a fresh install just works.
-const DEFAULT_API_URL = 'https://nexus.scanverse.online'
+// Hard-coded production URL. v0.2.1 removed the user-overridable
+// editor because it generated more support traffic than it solved
+// (one beta user got stuck on a stale `http://api.scanverse.online`
+// in their override file and the launcher couldn't reach anything).
+// For local development, pass NEXUS_CLOUD_URL via the env (consumed
+// once at module load) — never via UI.
+const HARDCODED_API_URL = 'https://nexus.scanverse.online'
+const API_URL =
+  process.env.NEXUS_CLOUD_URL?.trim().replace(/\/+$/, '') ||
+  HARDCODED_API_URL
 const CONNECT_TIMEOUT_MS = 5000
 const REQUEST_TIMEOUT_MS = 15_000
 
@@ -49,8 +55,10 @@ function tokenPath(): string {
   return path.join(app.getPath('userData'), 'nexus-cloud.token')
 }
 
-/** Where the user-overridable API URL lives. Same dir as the token. */
-function urlOverridePath(): string {
+/** Legacy override file from v0.1.x. We delete it on boot via
+ *  cleanupLegacyState() so a user upgrading from a launcher that
+ *  pointed at the old `api.scanverse.online` doesn't get stuck. */
+function legacyUrlOverridePath(): string {
   return path.join(app.getPath('userData'), 'nexus-cloud.url')
 }
 
@@ -75,31 +83,27 @@ function clearToken(): void {
   }
 }
 
-function readApiUrl(): string {
-  try {
-    const raw = fs.readFileSync(urlOverridePath(), 'utf-8').trim()
-    if (raw) return raw.replace(/\/+$/, '')
-  } catch {
-    /* no override, fall through */
-  }
-  return DEFAULT_API_URL
-}
-
-export function setApiUrl(url: string): void {
-  const cleaned = url.trim().replace(/\/+$/, '')
-  if (!cleaned) {
-    try {
-      fs.unlinkSync(urlOverridePath())
-    } catch {
-      /* ignore */
-    }
-    return
-  }
-  fs.writeFileSync(urlOverridePath(), cleaned, 'utf-8')
+/**
+ * No-op kept for backward compat with the v0.1.x preload signature.
+ * The URL is hardcoded since v0.2.1; calls from the renderer just
+ * return the constant rather than writing anywhere.
+ */
+export function setApiUrl(_url: string): void {
+  /* removed — the URL is hardcoded */
 }
 
 export function getApiUrl(): string {
-  return readApiUrl()
+  return API_URL
+}
+
+/** Wipe the v0.1.x `nexus-cloud.url` override file. Called at boot
+ *  from initCloud — idempotent (no-op when the file isn't there). */
+function cleanupLegacyState(): void {
+  try {
+    fs.unlinkSync(legacyUrlOverridePath())
+  } catch {
+    /* already gone */
+  }
 }
 
 let getMainWindow: (() => BrowserWindow | null) | null = null
@@ -111,6 +115,7 @@ let reconnectAttempt = 0
 
 export function initCloud(getMain: () => BrowserWindow | null): void {
   getMainWindow = getMain
+  cleanupLegacyState()
 }
 
 function emit(channel: string, payload: unknown): void {
@@ -162,7 +167,7 @@ export async function cloudFetch(
   pathSuffix: string,
   opts: RequestOptions = {}
 ): Promise<Response> {
-  const url = `${readApiUrl()}${pathSuffix}`
+  const url = `${API_URL}${pathSuffix}`
   const headers: Record<string, string> = {
     Accept: 'application/json',
   }
@@ -272,7 +277,7 @@ async function openSocket(): Promise<void> {
   if (!token) return
   closeSocket()
   // ws:// vs wss:// derived from the API URL — http→ws, https→wss.
-  const apiUrl = readApiUrl()
+  const apiUrl = API_URL
   const wsUrl =
     apiUrl.replace(/^http/, 'ws') + `/v1/ws?token=${encodeURIComponent(token)}`
   try {

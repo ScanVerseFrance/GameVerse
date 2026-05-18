@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Compass, Search, LayoutGrid, List as ListIcon, X, Puzzle, FileJson } from 'lucide-react'
+import { Compass, Search, LayoutGrid, List as ListIcon, X, Puzzle, FileJson, Calendar } from 'lucide-react'
 import { useAddonStore } from '@/stores/addon.store'
 import { useJsonSourceStore } from '@/stores/json-source.store'
 import { useDebounce } from '@/hooks/useDebounce'
+import { useSearchHistory } from '@/hooks/useSearchHistory'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -44,6 +45,8 @@ export default function DiscoverPage() {
 
   const [query, setQuery] = useState(initialQuery)
   const debouncedQuery = useDebounce(query, 300)
+  const { history, record, remove, clear } = useSearchHistory()
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [genre, setGenre] = useState<string | null>(null)
   const [sort, setSort] = useState<string>('')
   const [view, setView] = useState<'grid' | 'list'>('grid')
@@ -97,22 +100,62 @@ export default function DiscoverPage() {
     if (debouncedQuery === lastSyncedQuery.current) return
     lastSyncedQuery.current = debouncedQuery
     const next = new URLSearchParams(searchParams)
-    if (debouncedQuery) next.set('q', debouncedQuery)
-    else next.delete('q')
+    if (debouncedQuery) {
+      next.set('q', debouncedQuery)
+      // Bump search history once the debounce settles. Recording on
+      // every keystroke would litter the dropdown with prefixes
+      // (`m`, `mi`, `min`, …) which is exactly what we want to avoid.
+      record(debouncedQuery)
+    } else {
+      next.delete('q')
+    }
     setSearchParams(next, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedQuery])
 
   const selectedKey = useMemo(() => [...selectedAddonIds].sort().join('|'), [selectedAddonIds])
 
-  /** JsonGames filtered client-side by the selected catalogue toggles.
-   *  We filter after the search rather than passing the source list to
-   *  the SQL query so a single toggle click is instant (no IPC roundtrip). */
+  /** Year filter (Hydra 3.9.6). Slider [min, max]. We parse the first
+   *  4-digit year out of the source's uploadDate string — that's all
+   *  the standard JSON-source format gives us. Catalogue entries
+   *  without a parseable year are kept visible (so a strict filter
+   *  doesn't accidentally blank the grid for sources that don't ship
+   *  dates). User can set explicit bounds via the slider; "any year"
+   *  is encoded as the full 1970→current-year range. */
+  const currentYear = new Date().getFullYear()
+  const [yearMin, setYearMin] = useState<number>(1970)
+  const [yearMax, setYearMax] = useState<number>(currentYear)
+
+  /** JsonGames filtered client-side by the selected catalogue toggles
+   *  AND by the year range. Filtering after the search rather than at
+   *  query time keeps single toggle clicks instant. */
   const filteredJsonGames = useMemo(() => {
-    if (selectedJsonSourceIds.length === jsonSources.length) return jsonGames
-    const allow = new Set(selectedJsonSourceIds)
-    return jsonGames.filter((g) => allow.has(g.sourceId))
-  }, [jsonGames, selectedJsonSourceIds, jsonSources.length])
+    let pool = jsonGames
+    if (selectedJsonSourceIds.length !== jsonSources.length) {
+      const allow = new Set(selectedJsonSourceIds)
+      pool = pool.filter((g) => allow.has(g.sourceId))
+    }
+    // Only apply year filter when the range is narrower than the full
+    // default — avoid the per-game regex run when the user hasn't
+    // touched the slider.
+    if (yearMin > 1970 || yearMax < currentYear) {
+      pool = pool.filter((g) => {
+        if (!g.uploadDate) return true // keep undated entries visible
+        const match = /\b(19|20|21)\d{2}\b/.exec(g.uploadDate)
+        if (!match) return true
+        const y = parseInt(match[0], 10)
+        return y >= yearMin && y <= yearMax
+      })
+    }
+    return pool
+  }, [
+    jsonGames,
+    selectedJsonSourceIds,
+    jsonSources.length,
+    yearMin,
+    yearMax,
+    currentYear,
+  ])
 
   const allGenres = useMemo(() => {
     const set = new Set<string>()
@@ -302,23 +345,84 @@ export default function DiscoverPage() {
 
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 h-11 px-3.5 rounded-md bg-[var(--surface-soft)] border border-glass-border focus-within:border-accent-primary/60 focus-within:bg-[var(--surface-soft-hover)] transition-all flex-1 min-w-[240px] max-w-md">
-            <Search className="w-4 h-4 text-fg-muted shrink-0" />
-            <input
-              type="text"
-              placeholder="Rechercher un jeu…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="flex-1 bg-transparent outline-none text-sm text-fg-primary placeholder:text-fg-muted"
-            />
-            {query && (
-              <button
-                onClick={() => setQuery('')}
-                className="text-fg-muted hover:text-fg-primary"
-                aria-label="Effacer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <div className="flex items-center gap-2 h-11 px-3.5 rounded-md bg-[var(--surface-soft)] border border-glass-border focus-within:border-accent-primary/60 focus-within:bg-[var(--surface-soft-hover)] transition-all">
+              <Search className="w-4 h-4 text-fg-muted shrink-0" />
+              <input
+                type="text"
+                placeholder="Rechercher un jeu…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onFocus={() => setHistoryOpen(true)}
+                // Slight blur delay so a click on a history row lands
+                // before we close — without this the dropdown vanishes
+                // mid-click and the click target is gone.
+                onBlur={() => setTimeout(() => setHistoryOpen(false), 150)}
+                className="flex-1 bg-transparent outline-none text-sm text-fg-primary placeholder:text-fg-muted"
+              />
+              {query && (
+                <button
+                  onClick={() => setQuery('')}
+                  className="text-fg-muted hover:text-fg-primary"
+                  aria-label="Effacer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            {/* Autocomplete dropdown — only shown when the input has
+                focus AND there's stored history AND the user hasn't
+                typed anything yet (typing means "I know what I'm
+                looking for", suggestions become noise). */}
+            {historyOpen && !query && history.length > 0 && (
+              <div className="absolute z-20 left-0 right-0 top-full mt-1 rounded-md bg-bg-secondary border border-glass-border shadow-lift overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-1.5 border-b border-glass-border">
+                  <span className="text-[10px] uppercase tracking-widest text-fg-muted font-semibold">
+                    Recherches récentes
+                  </span>
+                  <button
+                    onMouseDown={(e) => {
+                      // Prevent blur — onBlur fires before onClick on the input.
+                      e.preventDefault()
+                      clear()
+                    }}
+                    className="text-[10px] text-fg-muted hover:text-fg-primary"
+                  >
+                    Tout effacer
+                  </button>
+                </div>
+                <ul className="max-h-72 overflow-y-auto">
+                  {history.map((h) => (
+                    <li
+                      key={h.q}
+                      className="group flex items-center justify-between text-sm hover:bg-[var(--surface-soft)] transition-colors"
+                    >
+                      <button
+                        onMouseDown={(e) => {
+                          // Same blur-prevent trick — the click fires after the
+                          // input blurs which closes the dropdown otherwise.
+                          e.preventDefault()
+                          setQuery(h.q)
+                          setHistoryOpen(false)
+                        }}
+                        className="flex-1 text-left px-3 py-2 text-fg-primary truncate"
+                      >
+                        {h.q}
+                      </button>
+                      <button
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          remove(h.q)
+                        }}
+                        className="px-2 py-1 mr-1 opacity-0 group-hover:opacity-100 text-fg-muted hover:text-fg-primary transition-opacity"
+                        title="Retirer de l'historique"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
 
@@ -416,6 +520,57 @@ export default function DiscoverPage() {
                 </button>
               )
             })}
+          </div>
+        )}
+
+        {/* Year filter (Hydra 3.9.6). Twin range inputs styled as a
+            single slider — the layout stacks them and lets Tailwind's
+            accent-color tint match the rest of the discovery UI. The
+            "Réinitialiser" link only appears once the user has narrowed
+            the range, keeping the resting state tidy. */}
+        {jsonSources.length > 0 && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs text-fg-muted uppercase tracking-wider inline-flex items-center gap-1">
+              <Calendar className="w-3 h-3" /> Année :
+            </span>
+            <div className="inline-flex items-center gap-2">
+              <input
+                type="number"
+                min={1970}
+                max={currentYear}
+                value={yearMin}
+                onChange={(e) => {
+                  const v = Math.max(1970, Math.min(parseInt(e.target.value, 10) || 1970, yearMax))
+                  setYearMin(v)
+                }}
+                className="w-16 h-7 px-2 text-xs font-mono rounded bg-[var(--surface-soft)] border border-glass-border text-fg-primary"
+                aria-label="Année minimale"
+              />
+              <span className="text-fg-muted text-xs">→</span>
+              <input
+                type="number"
+                min={1970}
+                max={currentYear}
+                value={yearMax}
+                onChange={(e) => {
+                  const v = Math.min(currentYear, Math.max(parseInt(e.target.value, 10) || currentYear, yearMin))
+                  setYearMax(v)
+                }}
+                className="w-16 h-7 px-2 text-xs font-mono rounded bg-[var(--surface-soft)] border border-glass-border text-fg-primary"
+                aria-label="Année maximale"
+              />
+            </div>
+            {(yearMin > 1970 || yearMax < currentYear) && (
+              <button
+                onClick={() => {
+                  setYearMin(1970)
+                  setYearMax(currentYear)
+                }}
+                className="text-[11px] text-fg-muted hover:text-fg-primary underline"
+              >
+                Réinitialiser
+              </button>
+            )}
           </div>
         )}
 
