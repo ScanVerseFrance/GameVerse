@@ -292,6 +292,29 @@ export default function JsonGamePage() {
     }
   }, [installedGame?.installPath, installedGame?.executablePath, detectSetupLibrary])
 
+  // v0.2.3: auto-repair stale install_path. If the row still points at
+  // the original .zip but the .zip is gone (user extracted then
+  // deleted it, or extractZip persisted half its work), try to find
+  // the extracted sibling folder and swap install_path to it. Fires
+  // once per game id. The next render — driven by the library row
+  // refresh — flips the UI from "Aucun exe détecté" → "Jouer".
+  useEffect(() => {
+    if (!installedGame?.id || !installedGame.installPath) return
+    // Only repair when install_path looks like a .zip — leaves folder
+    // installs alone (they'd hit "no zip extension" anyway).
+    if (!/\.zip$/i.test(installedGame.installPath)) return
+    let cancelled = false
+    void window.nexus.library.repairInstallPath(installedGame.id).then((res) => {
+      if (cancelled) return
+      if (res.ok && res.repaired && user) {
+        // Trigger a library reload so the new install_path lands on
+        // the row in the renderer's store.
+        void useLibraryStore.getState().load(user.id)
+      }
+    })
+    return () => { cancelled = true }
+  }, [installedGame?.id, installedGame?.installPath, user])
+
   // Zip probe — looks for a single .zip in (or AT) the install folder.
   // AnkerGames-style pre-installed games arrive as a single .zip; once
   // extracted the game is ready to play with no setup.exe. The IPC
@@ -513,9 +536,23 @@ export default function JsonGamePage() {
     return m > 0 ? `${h} h ${m} min` : `${h} h`
   }
 
-  function handleOpenInstallFolder() {
-    if (installedGame?.installPath) {
-      void window.nexus.system.openPath(installedGame.installPath)
+  async function handleOpenInstallFolder() {
+    if (!installedGame?.installPath) return
+    setLaunchError(null)
+    const target = installedGame.installPath
+    // openPath returns {ok:false, error} when ENOENT — common after
+    // a manual cleanup or extractZip that didn't persist the new
+    // path. Try repair-then-retry once before surfacing the error.
+    const res = await window.nexus.system.openPath(target)
+    if (!res.ok) {
+      const repair = await window.nexus.library.repairInstallPath(installedGame.id)
+      if (repair.ok && repair.repaired && repair.newInstallPath) {
+        const res2 = await window.nexus.system.openPath(repair.newInstallPath)
+        if (res2.ok && user) void useLibraryStore.getState().load(user.id)
+        else setLaunchError(res2.error || 'Dossier introuvable')
+        return
+      }
+      setLaunchError(`Le dossier n'existe plus : ${target}`)
     }
   }
 

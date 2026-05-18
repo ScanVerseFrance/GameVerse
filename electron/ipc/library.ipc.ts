@@ -159,6 +159,92 @@ export function registerLibraryIpc() {
     return svc.launchGame(sanitizeString(id, 64))
   })
 
+  // ── library:repairInstallPath ────────────────────────────────────
+  // A v0.2.x user reported "Détecter & jouer" + "Ouvrir le dossier"
+  // both crashing on a game whose install_path still pointed at the
+  // original .zip file even though the user had extracted it elsewhere
+  // (or the launcher's extractZip ran but failed to persist the new
+  // path mid-write). This handler heals that case: if install_path
+  // points at a non-existent .zip, scan the sibling directories for
+  // a folder whose name matches the .zip (basename minus extension),
+  // and silently swap install_path to it. Also re-runs exe detection
+  // on the recovered folder so the next render flips to "Jouer".
+  //
+  // Returns { ok, repaired, newInstallPath?, newExePath? } so the
+  // caller (game page) can toast "Dossier corrigé automatiquement"
+  // when it actually did something.
+  ipcMain.handle(
+    'library:repairInstallPath',
+    async (_e, id: unknown) => {
+      if (typeof id !== 'string') return { ok: false, error: 'id required' }
+      const gameId = sanitizeString(id, 64)
+      const game = svc.getLibraryGame(gameId)
+      if (!game) return { ok: false, error: 'Jeu introuvable' }
+      if (!game.installPath) return { ok: true, repaired: false }
+      // Already a valid directory? Nothing to do.
+      try {
+        const stat = fs.statSync(game.installPath)
+        if (stat.isDirectory()) return { ok: true, repaired: false }
+      } catch {
+        /* missing — proceed with repair */
+      }
+      // Try the canonical "extract sibling": .zip → folder with same
+      // basename minus extension, in the same parent.
+      const parent = path.dirname(game.installPath)
+      const stem = path.basename(
+        game.installPath,
+        path.extname(game.installPath)
+      )
+      const candidate = path.join(parent, stem)
+      let target: string | null = null
+      if (fs.existsSync(candidate)) {
+        try {
+          if (fs.statSync(candidate).isDirectory()) target = candidate
+        } catch {
+          /* ignore */
+        }
+      }
+      // Last-ditch: any sibling folder under parent that looks game-ish.
+      if (!target && fs.existsSync(parent)) {
+        try {
+          const entries = fs.readdirSync(parent, { withFileTypes: true })
+          for (const e of entries) {
+            if (!e.isDirectory()) continue
+            // Heuristic: matching prefix → likely the extracted folder.
+            if (e.name.toLowerCase().startsWith(stem.toLowerCase().slice(0, 8))) {
+              target = path.join(parent, e.name)
+              break
+            }
+          }
+        } catch {
+          /* parent unreadable */
+        }
+      }
+      if (!target) {
+        return {
+          ok: false,
+          error: "Aucun dossier d'installation trouvé près de l'ancien chemin.",
+        }
+      }
+      let exePath: string | null = null
+      try {
+        exePath = svc.findExecutableInFolder(target, game.title)
+      } catch {
+        /* user will pick manually */
+      }
+      svc.updateLibraryGame(gameId, {
+        installPath: target,
+        executablePath: exePath,
+      })
+      return {
+        ok: true,
+        repaired: true,
+        newInstallPath: target,
+        newExePath: exePath,
+      }
+    }
+  )
+
   // ── library:transfer ─────────────────────────────────────────────
   // Hydra 3.9.6 — move an installed game to a new disk. Renderer
   // pops a "Choisir un dossier" dialog (system:pickFolder) then

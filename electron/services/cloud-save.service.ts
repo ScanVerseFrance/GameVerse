@@ -56,6 +56,35 @@ function deriveShop(game: LibraryGame): { shop: string; objectId: string } {
   return { shop: 'local', objectId: game.id }
 }
 
+/**
+ * Clean the library row's title for Ludusavi's PCGamingWiki lookup.
+ * Hydra learned the hard way: Ludusavi only knows games by their
+ * canonical PCGamingWiki name ("Among Us"), not the launcher's
+ * internal id ("ankergames:among-us-12345") and not the title with
+ * source suffixes ("Among Us — AnkerGames").
+ *
+ * We strip:
+ *   • trailing "— Source" / "- Source" suffixes (em-dash + ascii-dash)
+ *   • version markers like "v1.2.3" / "[v1.2.3]" / "(Cracked)"
+ *   • surrounding whitespace
+ *
+ * Conservative — we don't normalise punctuation or strip ™/® because
+ * PCGamingWiki includes them in titles like "Tom Clancy's Splinter
+ * Cell®". Over-cleaning would miss those.
+ */
+function ludusaviGameName(title: string): string {
+  return title
+    // "Game — Source" or "Game - Source" — drop everything after the
+    // last em-dash or " - " surrounded by spaces.
+    .replace(/\s+[—–]\s+[^—–]+$/u, '')
+    .replace(/\s+-\s+[^-]+$/, '')
+    // " v1.2.3" / " (v1.2.3)" / " [v1.2.3]"
+    .replace(/\s*[\[(]?v\d+(?:\.\d+)*[\])]?\s*$/i, '')
+    // "(Cracked)" / "[CODEX]" / "(Repack)" — community suffixes
+    .replace(/\s*[\[(](?:cracked|repack|codex|fitgirl|empress|skidrow|plaza|dodi)[\])]?\s*/gi, ' ')
+    .trim()
+}
+
 function platformLabel(): string {
   return process.platform
 }
@@ -86,11 +115,10 @@ interface BackupPreview {
 export async function resolveSavesFolder(
   game: LibraryGame
 ): Promise<{ ok: boolean; path?: string; error?: string }> {
-  const { objectId } = deriveShop(game)
   const dir = workdir(game.id)
   await fsp.mkdir(dir, { recursive: true })
   try {
-    const res = await runBackup(objectId, dir, /* preview */ true)
+    const res = await runBackup(ludusaviGameName(game.title), dir, /* preview */ true)
     // Take the first file we see. The save files of a single game are
     // typically siblings under one folder, so any of them yields the
     // right dirname. If the user has e.g. saves in BOTH
@@ -110,11 +138,10 @@ export async function resolveSavesFolder(
 export async function previewBackup(
   game: LibraryGame
 ): Promise<BackupPreview> {
-  const { objectId } = deriveShop(game)
   const dir = workdir(game.id)
   await fsp.mkdir(dir, { recursive: true })
   try {
-    const res = await runBackup(objectId, dir, /* preview */ true)
+    const res = await runBackup(ludusaviGameName(game.title), dir, /* preview */ true)
     let fileCount = 0
     let totalBytes = 0
     const games: string[] = []
@@ -170,7 +197,7 @@ export async function uploadGameSave(
 
   try {
     // 1. Ludusavi backup (not preview — actual file copy).
-    const result = await runBackup(objectId, backupTree, false)
+    const result = await runBackup(ludusaviGameName(game.title), backupTree, false)
     let fileCount = 0
     for (const g of Object.values(result.games ?? {})) {
       fileCount += Object.keys(g.files ?? {}).length
@@ -370,7 +397,7 @@ export async function checkConflict(
   await fsp.mkdir(dir, { recursive: true })
   let localMtime: number | null = null
   try {
-    const result = await runBackup(objectId, dir, /* preview */ true)
+    const result = await runBackup(ludusaviGameName(game.title), dir, /* preview */ true)
     // Walk Ludusavi's `files` map; the keys are the SOURCE paths
     // (absolute) we can stat. We stat the latest only.
     for (const g of Object.values(result.games ?? {})) {

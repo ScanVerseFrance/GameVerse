@@ -19,6 +19,7 @@ import {
   Lock,
   CheckCircle2,
   Play,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
@@ -32,6 +33,7 @@ import { AchievementsTab } from '@/components/community/AchievementsTab'
 import { ProfileCustomiseDialog } from '@/components/community/ProfileCustomiseDialog'
 import { AvatarActionPopup } from '@/components/community/AvatarActionPopup'
 import { AvatarLightbox } from '@/components/common/AvatarLightbox'
+import { YearRecapDialog } from '@/components/community/YearRecapDialog'
 import { Username } from '@/components/common/Username'
 import { ImageCropDialog } from '@/components/common/ImageCropDialog'
 import { PresenceDot, formatLastSeen } from '@/components/common/PresenceDot'
@@ -244,6 +246,10 @@ export default function ProfilePage() {
    *  tela cheia"). Open via long-press on the own avatar OR ANY
    *  click on a visitor avatar. Drawn by AvatarLightbox. */
   const [avatarLightboxOpen, setAvatarLightboxOpen] = useState(false)
+  /** Year-recap modal (Hydra 3.8.0 "Resumo 2025"). Only the owner of
+   *  the profile sees the button; the data is derived client-side
+   *  from the heatmap days[] which is already in state. */
+  const [recapOpen, setRecapOpen] = useState(false)
   const [customiseOpen, setCustomiseOpen] = useState(false)
   // Track whether the customise dialog was opened from the avatar
   // action popup ("Changer la décoration") — in that case we lock it
@@ -465,6 +471,17 @@ export default function ProfilePage() {
               >
                 <Camera className="w-3.5 h-3.5" />
                 Changer la bannière
+              </button>
+              {/* Year recap (Hydra 3.8.0). Owner-only; opens a
+                  Spotify-Wrapped-style summary of the current year's
+                  playtime, top games, achievements. */}
+              <button
+                onClick={() => setRecapOpen(true)}
+                className="inline-flex items-center gap-1.5 text-sm text-white bg-black/40 hover:bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-sm border border-white/10 transition-colors"
+                title={`Voir ton récap ${new Date().getFullYear()}`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Récap {new Date().getFullYear()}
               </button>
             </>
           ) : isFriend ? (
@@ -926,6 +943,45 @@ export default function ProfilePage() {
         alt={`Avatar de ${profile.displayName ?? profile.username}`}
         onClose={() => setAvatarLightboxOpen(false)}
       />
+
+      {/* Year recap (Hydra 3.8.0). Derive everything from the heatmap
+          + stats already loaded for this page — no extra IPC. */}
+      {isSelf && (() => {
+        const year = new Date().getFullYear()
+        const yearDays = heatmap.filter((d) => d.date.startsWith(`${year}-`))
+        const totalSeconds = yearDays.reduce(
+          (acc, d) => acc + d.minutes * 60,
+          0,
+        )
+        const daysPlayed = yearDays.filter((d) => d.minutes > 0).length
+        const longestSessionSeconds =
+          yearDays.reduce(
+            (max, d) => (d.minutes * 60 > max ? d.minutes * 60 : max),
+            0,
+          )
+        return (
+          <YearRecapDialog
+            open={recapOpen}
+            onClose={() => setRecapOpen(false)}
+            year={year}
+            totalSeconds={totalSeconds}
+            daysPlayed={daysPlayed}
+            longestSessionSeconds={longestSessionSeconds}
+            topGames={
+              stats.recentGame
+                ? [
+                    {
+                      title: stats.recentGame.title,
+                      coverUrl: stats.recentGame.coverUrl,
+                      seconds: stats.recentGame.totalPlaytimeSeconds,
+                    },
+                  ]
+                : []
+            }
+            achievementsCount={0}
+          />
+        )
+      })()}
     </div>
   )
 }

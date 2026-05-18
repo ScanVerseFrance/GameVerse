@@ -96,6 +96,12 @@ const api = {
      *  source. Updates install_path + executable_path automatically. */
     transfer: (id: string, destFolder: string) =>
       ipcRenderer.invoke('library:transfer', id, destFolder),
+    /** Heal a stale install_path that still points at the original
+     *  .zip after extraction. Scans the parent for a folder named
+     *  after the .zip stem and auto-swaps. Returns { repaired:true }
+     *  with the new install/exe paths on success. */
+    repairInstallPath: (id: string) =>
+      ipcRenderer.invoke('library:repairInstallPath', id),
     stop: (id: string) => ipcRenderer.invoke('library:stop', id),
     verify: (id: string) => ipcRenderer.invoke('library:verify', id),
     extractZip: (id: string, mode: string) =>

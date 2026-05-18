@@ -213,6 +213,13 @@ export interface NexusAPI {
       id: string,
       destFolder: string
     ) => Promise<{ ok: boolean; error?: string; newInstallPath?: string }>
+    repairInstallPath: (id: string) => Promise<{
+      ok: boolean
+      error?: string
+      repaired?: boolean
+      newInstallPath?: string
+      newExePath?: string | null
+    }>
     stop: (id: string) => Promise<{ ok: boolean; error?: string }>
     verify: (
       id: string
