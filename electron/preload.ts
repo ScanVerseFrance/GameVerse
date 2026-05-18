@@ -17,6 +17,10 @@ const api = {
      *  should navigate via react-router. Listener wires this once in
      *  App.tsx. */
     onNavGoto: (cb: (link: string) => void) => subscribe('nav:goto', cb),
+    /** Diagnostic: pop a Windows-OS test toast and return whether
+     *  Electron's Notification API even thinks it's supported. Used
+     *  by Settings → Notifications → "Tester une notif". */
+    testNotif: () => ipcRenderer.invoke('notifs:test'),
     /** Big Picture toggles fullscreen + kiosk + always-on-top so the
      *  Windows taskbar can't peek through. State is saved on enter
      *  and restored verbatim on exit. */

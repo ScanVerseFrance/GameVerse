@@ -13,10 +13,19 @@ import {
   Download as DownloadIcon,
   Pause as PauseIcon,
   Info,
+  Users,
+  Bell,
+  Circle,
+  Sparkles,
+  Trophy,
+  AlertTriangle,
+  MessageCircle,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth.store'
 import { useLibraryStore } from '@/stores/library.store'
 import { useDownloadStore } from '@/stores/download.store'
+import { useCloudStore } from '@/stores/cloud.store'
+import { useNotificationsStore } from '@/stores/notifications.store'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { Username } from '@/components/common/Username'
 import { cn } from '@/utils/cn'
@@ -92,6 +101,14 @@ export default function HomePage() {
   const downloads = useDownloadStore((s) => s.downloads)
   const pause = useDownloadStore((s) => s.pause)
   const resume = useDownloadStore((s) => s.resume)
+  // v0.2.5: friends + recent notifs rail. The library carousels alone
+  // duplicate /library, so we now pull in cloud-side context (who's
+  // online, what just happened) to give /accueil its own reason to
+  // exist. The data is already in their respective stores — no IPC
+  // round-trip on render.
+  const cloudFriends = useCloudStore((s) => s.friends)
+  const presences = useCloudStore((s) => s.presences)
+  const notifs = useNotificationsStore((s) => s.items)
 
   const sortedByPlayed = useMemo(
     () =>
@@ -151,9 +168,198 @@ export default function HomePage() {
         <DownloadStrip downloads={activeDownloads} onPause={pause} onResume={resume} />
       )}
 
+      {/* Cloud sidebar — friends online + recent notifications. Pulled
+          OUT of the carousel stack and into a 2-column block so the
+          home page stops feeling like a clone of /library. The block
+          only renders when there's something to show (friends OR a
+          notif less than 7 days old). */}
+      {(cloudFriends.length > 0 || notifs.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <FriendsRail friends={cloudFriends} presences={presences} />
+          <RecentActivityRail items={notifs} />
+        </div>
+      )}
+
       <AllGamesStrip games={games} />
     </div>
   )
+}
+
+/* ──────────────── Cloud sidebar rails ──────────────── */
+
+interface PresenceMap {
+  [userId: string]: { status: string | null }
+}
+
+function FriendsRail({
+  friends,
+  presences,
+}: {
+  friends: ReturnType<typeof useCloudStore.getState>['friends']
+  presences: PresenceMap
+}) {
+  // Sort: online first, then the rest alphabetically. Mirrors what
+  // Steam does in their friends rail — green dots cluster at the top.
+  const sorted = useMemo(() => {
+    const onlineRank = (id: string): number => {
+      const s = presences[id]?.status
+      if (s === 'in_game') return 0
+      if (s === 'online') return 1
+      return 2
+    }
+    return [...friends].sort((a, b) => {
+      const r = onlineRank(a.id) - onlineRank(b.id)
+      if (r !== 0) return r
+      return (a.displayName ?? a.username).localeCompare(b.displayName ?? b.username)
+    })
+  }, [friends, presences])
+
+  return (
+    <div className="rounded-lg bg-[var(--surface-soft)] border border-glass-border overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-glass-border">
+        <h2 className="font-display font-bold text-sm text-fg-primary inline-flex items-center gap-2">
+          <Users className="w-4 h-4 text-accent-primary" />
+          Amis
+          <span className="text-xs font-mono text-fg-muted ml-1">
+            {friends.length}
+          </span>
+        </h2>
+        <Link
+          to="/community/friends"
+          className="text-xs text-fg-muted hover:text-fg-primary"
+        >
+          Voir tout →
+        </Link>
+      </div>
+      {friends.length === 0 ? (
+        <div className="px-4 py-8 text-center text-xs text-fg-muted">
+          Tu n'as pas encore d'amis sur Nexus Cloud.
+          <br />
+          <Link to="/community/friends" className="text-accent-primary hover:underline">
+            Cherche quelqu'un
+          </Link>
+        </div>
+      ) : (
+        <ul className="max-h-72 overflow-y-auto">
+          {sorted.slice(0, 12).map((f) => {
+            const status = presences[f.id]?.status ?? null
+            const dotClass =
+              status === 'in_game'
+                ? 'text-purple-400'
+                : status === 'online'
+                  ? 'text-success'
+                  : 'text-fg-muted/40'
+            return (
+              <li key={f.id}>
+                <Link
+                  to={`/community/profile/${f.id}`}
+                  className="flex items-center gap-3 px-4 py-2 hover:bg-[var(--surface-soft-hover)] transition-colors"
+                >
+                  {f.avatarPath ? (
+                    <img
+                      src={f.avatarPath}
+                      alt=""
+                      className="w-8 h-8 rounded-full object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-accent-gradient flex items-center justify-center text-white text-sm font-bold shrink-0">
+                      {(f.displayName ?? f.username).slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-fg-primary truncate">
+                      {f.displayName ?? f.username}
+                    </p>
+                    <p className="text-[11px] text-fg-muted truncate">
+                      @{f.username}
+                    </p>
+                  </div>
+                  <Circle className={`w-2 h-2 fill-current shrink-0 ${dotClass}`} />
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Per-kind icon for the recent-activity rail. Keep in sync with the
+ *  same map in NotificationBell. */
+const ACTIVITY_KIND_ICON: Record<string, typeof Sparkles> = {
+  download_completed: DownloadIcon,
+  download_error: AlertTriangle,
+  library_added: LibraryIcon,
+  achievement_unlocked: Trophy,
+  friend_added: Users,
+  friend_request_received: Users,
+  friend_request_accepted: Users,
+  message_received: MessageCircle,
+  review_liked: Heart,
+  extraction_completed: LibraryIcon,
+  update_available: Sparkles,
+  info: Info,
+}
+
+function RecentActivityRail({
+  items,
+}: {
+  items: ReturnType<typeof useNotificationsStore.getState>['items']
+}) {
+  // Cap at 8 — anything older is in the NotificationBell anyway.
+  const recent = items.slice(0, 8)
+  return (
+    <div className="rounded-lg bg-[var(--surface-soft)] border border-glass-border overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-glass-border">
+        <h2 className="font-display font-bold text-sm text-fg-primary inline-flex items-center gap-2">
+          <Bell className="w-4 h-4 text-accent-primary" />
+          Activité récente
+        </h2>
+        <span className="text-xs text-fg-muted">{items.length} au total</span>
+      </div>
+      {recent.length === 0 ? (
+        <div className="px-4 py-8 text-center text-xs text-fg-muted">
+          Rien de neuf pour l'instant. Tes notifs apparaîtront ici.
+        </div>
+      ) : (
+        <ul className="max-h-72 overflow-y-auto">
+          {recent.map((n) => {
+            const Icon = ACTIVITY_KIND_ICON[n.kind] ?? Info
+            return (
+              <li key={n.id}>
+                <Link
+                  to={n.link ?? '#'}
+                  className="flex items-start gap-3 px-4 py-2 hover:bg-[var(--surface-soft-hover)] transition-colors"
+                >
+                  <Icon className="w-4 h-4 text-fg-muted shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-fg-primary truncate">{n.title}</p>
+                    {n.body && (
+                      <p className="text-[11px] text-fg-muted truncate">
+                        {n.body}
+                      </p>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-mono text-fg-muted shrink-0">
+                    {relativeTimeShort(n.createdAt)}
+                  </span>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function relativeTimeShort(ts: number): string {
+  const diff = Date.now() - ts
+  if (diff < 60_000) return 'now'
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m`
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h`
+  return `${Math.round(diff / 86_400_000)}j`
 }
 
 /* ──────────────── Featured hero ──────────────── */

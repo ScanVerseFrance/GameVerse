@@ -32,7 +32,7 @@ import {
 } from './services/auto-update.service'
 import { registerAutoUpdateIpc } from './ipc/auto-update.ipc'
 import { getAppSettings } from './services/app-settings.service'
-import { initNativeNotif } from './services/native-notif.service'
+import { initNativeNotif, testNotification } from './services/native-notif.service'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const APP_ROOT = path.join(__dirname, '..')
@@ -215,6 +215,10 @@ void app.whenReady().then(async () => {
   registerCloudIpc()
   registerCloudSaveIpc()
   registerAutoUpdateIpc()
+  // Diagnostic: surface the Notification API state to the Settings
+  // panel so a user reporting "no toasts" can self-check rather than
+  // sending us console logs blind.
+  ipcMain.handle('notifs:test', async () => testNotification())
   // Auto-update polls GitHub Releases on a 4h cadence. The setting
   // is queried lazily on every check so flipping it off in the
   // Paramètres pane takes effect at the next interval without

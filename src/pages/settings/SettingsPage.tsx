@@ -568,25 +568,134 @@ function NotificationsSection() {
 
   const downloadNotif = downloadSettings?.notificationsEnabled ?? true
   const downloadCompleteFlag = appSettings?.notifications.downloadComplete ?? true
+  const achievementFlag = appSettings?.notifications.achievementUnlocked ?? true
+  const updateFlag = appSettings?.notifications.updateAvailable ?? true
+  const friendMsgFlag = appSettings?.notifications.friendMessage ?? true
+  const friendGameFlag = appSettings?.notifications.friendLaunchedGame ?? true
+  const friendReqFlag = appSettings?.notifications.friendRequest ?? true
+
+  // Diagnostic toast — pops a synthetic Windows toast and surfaces
+  // whether Electron's Notification API thinks the OS supports it.
+  // Catches "I disabled toasts in Windows Settings" and "Focus Assist
+  // is on" without us having to dig through OS logs.
+  const [testResult, setTestResult] = useState<
+    | null
+    | {
+        shown: boolean
+        reason?: string
+        supported: boolean
+        platform: string
+        appUserModelId: string
+      }
+  >(null)
+  const [testing, setTesting] = useState(false)
+  async function runTest(): Promise<void> {
+    setTesting(true)
+    const r = await window.nexus.window.testNotif()
+    setTestResult(r)
+    setTesting(false)
+  }
 
   return (
     <div>
-      <SectionHeader icon={Bell} title="Notifications" description="Ce que Nexus te signale" />
+      <SectionHeader icon={Bell} title="Notifications" description="Notifications Windows envoyées par Nexus" />
       <div className="flex flex-col gap-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-fg-primary">Téléchargement terminé (notification système)</p>
-            <p className="text-xs text-fg-muted mt-0.5">Toast Windows à la fin d'un téléchargement</p>
+        {/* Diagnostic test toast */}
+        <div className="p-3 rounded-md bg-[var(--surface-soft)] border border-glass-border">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div>
+              <p className="text-sm font-medium text-fg-primary">Tester une notification</p>
+              <p className="text-xs text-fg-muted mt-0.5">
+                Vérifie que Windows accepte les toasts. Si rien n'apparaît,
+                vérifie Paramètres Windows → Système → Notifications.
+              </p>
+            </div>
+            <button
+              onClick={() => void runTest()}
+              disabled={testing}
+              className="h-8 px-3 rounded-md bg-accent-gradient text-white text-xs font-bold shrink-0 disabled:opacity-50"
+            >
+              {testing ? 'Test…' : 'Tester'}
+            </button>
           </div>
-          <Toggle
-            checked={downloadCompleteFlag && downloadNotif}
-            onChange={async (v) => {
-              await updateApp({ notifications: { downloadComplete: v } })
-              await updateDownload({ notificationsEnabled: v })
-            }}
-          />
+          {testResult && (
+            <div className="mt-2 text-xs font-mono space-y-0.5">
+              <p className={testResult.shown ? 'text-success' : 'text-error'}>
+                {testResult.shown
+                  ? '✓ Toast envoyé — tu devrais le voir en bas à droite.'
+                  : `✗ Toast bloqué : ${testResult.reason ?? 'raison inconnue'}`}
+              </p>
+              <p className="text-fg-muted">
+                supported={String(testResult.supported)} · platform={testResult.platform}
+              </p>
+              <p className="text-fg-muted">AUMID: {testResult.appUserModelId}</p>
+            </div>
+          )}
         </div>
+
+        {/* Toggles */}
+        <ToggleRow
+          label="Téléchargement terminé"
+          desc="Toast à la fin d'un téléchargement"
+          checked={downloadCompleteFlag && downloadNotif}
+          onChange={async (v) => {
+            await updateApp({ notifications: { downloadComplete: v } })
+            await updateDownload({ notificationsEnabled: v })
+          }}
+        />
+        <ToggleRow
+          label="Succès débloqué"
+          desc="Toast quand un achievement de jeu est débloqué"
+          checked={achievementFlag}
+          onChange={(v) => updateApp({ notifications: { achievementUnlocked: v } })}
+        />
+        <ToggleRow
+          label="Message d'un ami"
+          desc="Toast Steam-style quand un ami t'écrit"
+          checked={friendMsgFlag}
+          onChange={(v) => updateApp({ notifications: { friendMessage: v } })}
+        />
+        <ToggleRow
+          label="Un ami lance un jeu"
+          desc="Toast quand un ami commence à jouer"
+          checked={friendGameFlag}
+          onChange={(v) => updateApp({ notifications: { friendLaunchedGame: v } })}
+        />
+        <ToggleRow
+          label="Demande d'ami"
+          desc="Toast quand quelqu'un t'envoie une friend request"
+          checked={friendReqFlag}
+          onChange={(v) => updateApp({ notifications: { friendRequest: v } })}
+        />
+        <ToggleRow
+          label="Mise à jour disponible"
+          desc="Toast quand le launcher détecte une nouvelle version"
+          checked={updateFlag}
+          onChange={(v) => updateApp({ notifications: { updateAvailable: v } })}
+        />
       </div>
+    </div>
+  )
+}
+
+function ToggleRow({
+  label,
+  desc,
+  checked,
+  onChange,
+}: {
+  label: string
+  desc: string
+  checked: boolean
+  onChange: (v: boolean) => void | Promise<void>
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-fg-primary">{label}</p>
+        <p className="text-xs text-fg-muted mt-0.5">{desc}</p>
+      </div>
+      <Toggle checked={checked} onChange={(v) => void onChange(v)} />
     </div>
   )
 }
