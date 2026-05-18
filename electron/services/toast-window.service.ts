@@ -35,8 +35,8 @@ const RENDERER_DIST = path.join(__dirname, '..', 'dist')
 // Fixed footprint. Toasts stack from the bottom; vertical headroom
 // covers ~5 stacked cards including the gap between them. Width
 // matches the average Steam toast (~360px) plus 16px padding.
-const TOAST_WINDOW_WIDTH = 400
-const TOAST_WINDOW_HEIGHT = 700
+const TOAST_WINDOW_WIDTH = 360
+const TOAST_WINDOW_HEIGHT = 520
 const SCREEN_MARGIN_RIGHT = 16
 const SCREEN_MARGIN_BOTTOM = 16
 

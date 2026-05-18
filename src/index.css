@@ -63,6 +63,15 @@
     overflow: hidden;
     user-select: none;
   }
+  /* Toast overlay mode — the floating Electron window relies on a
+     fully transparent DOM tree so only the toast cards are painted
+     above the desktop. Without this override the body's --bg-primary
+     fills the whole 400×700 window in opaque dark navy and the user
+     sees a giant rectangle instead of a discrete floating toast. */
+  body.toast-overlay,
+  body.toast-overlay #root {
+    background: transparent !important;
+  }
   *,
   *::before,
   *::after {

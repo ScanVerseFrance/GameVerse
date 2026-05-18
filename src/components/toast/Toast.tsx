@@ -125,7 +125,7 @@ export function Toast({ item }: { item: ToastItem }) {
         <X size={12} />
       </button>
 
-      <div className="flex items-stretch gap-3 p-3 pl-4">
+      <div className="flex items-stretch gap-2.5 p-2.5 pl-3">
         {/* Avatar / icon column. Falls back to a circled lucide icon
             tinted with the kind accent when no iconUrl is available. */}
         <div className="shrink-0 self-start">
@@ -133,7 +133,7 @@ export function Toast({ item }: { item: ToastItem }) {
             <img
               src={item.iconUrl}
               alt=""
-              className="w-12 h-12 rounded-full object-cover border border-white/10"
+              className="w-10 h-10 rounded-full object-cover border border-white/10"
               onError={(e) => {
                 // Broken avatar → fall back to the kind icon so the
                 // toast still looks intentional rather than half-loaded.
@@ -142,27 +142,29 @@ export function Toast({ item }: { item: ToastItem }) {
             />
           ) : (
             <div
-              className={`w-12 h-12 rounded-full bg-gradient-to-br ${meta.accent} flex items-center justify-center`}
+              className={`w-10 h-10 rounded-full bg-gradient-to-br ${meta.accent} flex items-center justify-center`}
             >
-              <Icon size={22} className="text-white" />
+              <Icon size={18} className="text-white" />
             </div>
           )}
         </div>
 
         {/* Text column. Fixed width via flex-1 + min-w-0 so the title
             can truncate cleanly when the cover column is also present. */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
+        <div className="flex-1 min-w-0 flex flex-col justify-center gap-px">
           <p
-            className={`text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r ${meta.accent} bg-clip-text text-transparent`}
+            className={`text-[9px] font-bold uppercase tracking-wider bg-gradient-to-r ${meta.accent} bg-clip-text text-transparent`}
           >
             {meta.label}
           </p>
-          <p className="text-sm font-semibold text-white truncate">{item.title}</p>
+          <p className="text-[13px] font-semibold text-white truncate leading-tight">
+            {item.title}
+          </p>
           {item.body && (
-            <p className="text-xs text-white/70 line-clamp-2 leading-snug">{item.body}</p>
+            <p className="text-[11px] text-white/70 line-clamp-2 leading-snug">{item.body}</p>
           )}
           {item.subtitle && (
-            <p className="text-[11px] text-white/40 truncate">{item.subtitle}</p>
+            <p className="text-[10px] text-white/40 truncate">{item.subtitle}</p>
           )}
         </div>
 
@@ -174,7 +176,7 @@ export function Toast({ item }: { item: ToastItem }) {
             <img
               src={item.coverUrl}
               alt=""
-              className="w-14 h-14 rounded-md object-cover border border-white/10"
+              className="w-11 h-11 rounded-md object-cover border border-white/10"
             />
           </div>
         )}
