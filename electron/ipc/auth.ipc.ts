@@ -398,6 +398,39 @@ export function registerAuthIpc() {
 
         const db = getDatabase()
         const now = Date.now()
+
+        // ── Conflict resolution (v0.2.2) ─────────────────────────────
+        // Users coming from v0.1.0/v0.1.1 may already have a LOCAL
+        // user row created via the old register flow — same email
+        // and/or same username as the cloud user, but a different
+        // random id. The naked INSERT below would then fail on the
+        // UNIQUE constraint and the caller would silently see
+        // useAuthStore.user stay null → home page renders blank.
+        //
+        // Strategy: detect such conflicting rows BEFORE the INSERT
+        // and delete them. Their dependents (library_games, friends,
+        // collections etc.) cascade away — acceptable since:
+        //   1. By the time the user upgrades to v0.2+ they typically
+        //      have very little local data (the v0.1.0 social/library
+        //      flow was barely functional).
+        //   2. Any cloud-resident data (cloud saves, cloud friends,
+        //      activity feed) is unaffected — that's stored
+        //      server-side, keyed by the cloud user id.
+        const conflict = db
+          .prepare(
+            `SELECT id FROM users
+             WHERE id != ?
+               AND (
+                 LOWER(username) = LOWER(?)
+                 OR (? IS NOT NULL AND LOWER(email) = LOWER(?))
+               )`
+          )
+          .all(id, username, email, email) as { id: string }[]
+        if (conflict.length > 0) {
+          const stmt = db.prepare('DELETE FROM users WHERE id = ?')
+          for (const c of conflict) stmt.run(c.id)
+        }
+
         const existing = db
           .prepare('SELECT * FROM users WHERE id = ?')
           .get(id) as UserRow | undefined

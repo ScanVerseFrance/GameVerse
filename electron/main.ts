@@ -91,6 +91,22 @@ function createWindow() {
   } else {
     void mainWindow.loadFile(path.join(RENDERER_DIST, 'index.html'))
   }
+
+  // v0.2.2 — beta users get DevTools via Ctrl+Shift+I / F12 even in
+  // production. Electron's default keyboard handler usually wires
+  // these but Big Picture mode's kiosk lock disables it; reattaching
+  // explicitly keeps the shortcut alive in both contexts. Without
+  // this, a user staring at a blank screen has no way to share
+  // what's in the console.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    const isCtrlShiftI =
+      (input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i'
+    const isF12 = input.key === 'F12'
+    if (input.type === 'keyDown' && (isCtrlShiftI || isF12)) {
+      mainWindow?.webContents.toggleDevTools()
+      event.preventDefault()
+    }
+  })
 }
 
 /** State we save when Big Picture is entered, so the regular window

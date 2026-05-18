@@ -56,15 +56,25 @@ function AuthGate() {
   //     CloudAuthGate (it shows "Connexion à Nexus Cloud…")
   //   - if cloud is 'disconnected' (no token saved) → CloudAuthGate
   //     surfaces the register/login form
-  //   - 'connected' or 'offline' (token valid but no network) → app
+  //   - 'connected' or 'offline' (token valid but no network) AND a
+  //     local user row exists → app
   //
-  // We deliberately treat 'offline' as authenticated: the JWT is
-  // still good, the user just can't reach the server right now. The
-  // launcher's library + downloads keep working from the local DB.
+  // v0.2.2: ALSO gate on `user` being non-null. Before, a successful
+  // cloud connect + failed local-mirror (e.g. UNIQUE-constraint race
+  // from a leftover v0.1.x guest row) would land in AppLayout with
+  // useAuthStore.user = null — pages depending on user.id stayed
+  // empty forever. Now we stay on the cloud gate which keeps trying.
   const status = useAuthStore((s) => s.status)
+  const user = useAuthStore((s) => s.user)
   const cloudStatus = useCloudStore((s) => s.status)
   if (status === 'loading') return <FullScreenBoot />
   if (cloudStatus !== 'connected' && cloudStatus !== 'offline') {
+    return <CloudAuthGate />
+  }
+  if (!user) {
+    // Cloud is up but local user wasn't materialised — pause here
+    // rather than hand AppLayout a null user that crashes deep
+    // components.
     return <CloudAuthGate />
   }
   return (
