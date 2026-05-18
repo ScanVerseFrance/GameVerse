@@ -1480,7 +1480,10 @@ function DataSection() {
         </Card>
 
         <p className="text-center text-xs text-fg-muted pt-4">
-          Nexus Launcher · v0.1.0 · plugin-neutre · hors-ligne d'abord
+          Nexus Launcher · v
+          {(window as unknown as { __NEXUS_VERSION__?: string }).__NEXUS_VERSION__ ??
+            '?.?.?'}
+          {' · plugin-neutre · hors-ligne d\'abord'}
         </p>
       </div>
     </div>

@@ -17,6 +17,11 @@ const api = {
      *  should navigate via react-router. Listener wires this once in
      *  App.tsx. */
     onNavGoto: (cb: (link: string) => void) => subscribe('nav:goto', cb),
+    /** Pushed when a toast with an `action:<verb>` link is clicked.
+     *  Renderer maps the verb to an in-app action (e.g. "update-now"
+     *  re-shows the UpdatePopup) rather than navigating to a route. */
+    onToastAction: (cb: (verb: string) => void) =>
+      subscribe('toast:action', cb),
     /** Diagnostic: pop a Windows-OS test toast and return whether
      *  Electron's Notification API even thinks it's supported. Used
      *  by Settings → Notifications → "Tester une notif". */

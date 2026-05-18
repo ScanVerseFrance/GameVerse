@@ -84,6 +84,7 @@ export interface NexusAPI {
     isMaximized: () => Promise<boolean>
     onMaximizedChange: (cb: (max: boolean) => void) => () => void
     onNavGoto: (cb: (link: string) => void) => () => void
+    onToastAction: (cb: (verb: string) => void) => () => void
     testNotif: () => Promise<{
       shown: boolean
       reason?: string

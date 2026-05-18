@@ -224,6 +224,16 @@ export default function App() {
       }
     })
 
+    // Toast actions — clicked toasts with link `action:<verb>` end
+    // up here instead of nav:goto. update-now re-fires the cached
+    // update check so the UpdatePopup pops to the foreground (it
+    // subscribes to update:available which check() re-emits).
+    const unsubToastAction = window.nexus.window.onToastAction((verb) => {
+      if (verb === 'update-now') {
+        void window.nexus.update.check()
+      }
+    })
+
     // Mirror main-process debug log entries into the renderer
     // DevTools console. Free real-time tail for anyone who opens
     // Ctrl+Shift+I — no need to dig into the .log file on disk
@@ -258,6 +268,7 @@ export default function App() {
       unsubCloudEvent()
       unsubUpd()
       unsubNav()
+      unsubToastAction()
       unsubDbg()
     }
   }, [])

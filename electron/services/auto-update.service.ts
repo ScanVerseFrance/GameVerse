@@ -290,8 +290,18 @@ export async function checkForUpdates(opts: {
       toastSvc.pushToast({
         kind: 'update_available',
         title: 'Mise à jour disponible',
-        body: `Nexus Launcher ${info.latestVersion} est dispo — clique pour mettre à jour.`,
-        link: '/settings#update',
+        body: `Nexus Launcher ${info.latestVersion} — clique pour télécharger maintenant.`,
+        // Special link prefix: the renderer's nav handler in App.tsx
+        // intercepts `action:update-now` and re-emits the cached
+        // update:available so UpdatePopup pops back to the foreground
+        // (instead of just dropping the user on /settings, which is
+        // what v0.2.x did and was rightly criticised as a dead end).
+        link: 'action:update-now',
+        // Sticky-long duration. 5 minutes is overkill but covers the
+        // case where the user notices the toast, switches tabs to
+        // finish something else, then comes back to click it. The
+        // user can still dismiss with the X corner button.
+        durationMs: 5 * 60 * 1000,
       })
     } catch {
       /* toast service not ready — in-app popup is still the fallback */

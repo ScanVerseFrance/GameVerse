@@ -327,16 +327,24 @@ function registerToastIpc(): void {
     toastWindow.setIgnoreMouseEvents(ignore, { forward: true })
   })
 
-  // A toast was clicked. Restore + focus the main window and tell
-  // its renderer to navigate. If no link is provided, just bring the
-  // launcher to the front.
+  // A toast was clicked. Restore + focus the main window, then:
+  //  • If the link begins with `action:<verb>` → forward it as a
+  //    separate `toast:action` event the renderer interprets (used
+  //    by update_available to re-trigger the UpdatePopup instead of
+  //    dropping the user on an unrelated route).
+  //  • Else → fire the existing `nav:goto` channel, same behaviour
+  //    as before.
+  //  • Null/empty link → just bring the launcher to the foreground.
   ipcMain.handle('toast:click', (_e, link: string | null) => {
     const main = mainWindowRef?.()
     if (!main || main.isDestroyed()) return
     if (main.isMinimized()) main.restore()
     main.show()
     main.focus()
-    if (link) {
+    if (!link) return
+    if (link.startsWith('action:')) {
+      main.webContents.send('toast:action', link.slice('action:'.length))
+    } else {
       main.webContents.send('nav:goto', link)
     }
   })
