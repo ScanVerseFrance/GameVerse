@@ -97,6 +97,14 @@ const api = {
       subscribe('library:added-from-download', cb),
     onExtractProgress: (cb: (data: unknown) => void) =>
       subscribe('library:extractProgress', cb),
+    /** Async spawn failures from the launch path. spawn() with
+     *  detached/ignore doesn't throw synchronously when the OS
+     *  refuses the exec (antivirus, permissions, broken shortcut);
+     *  it emits on the child process AFTER `library:launch` already
+     *  returned ok. This channel surfaces those late errors so the
+     *  game page can show them. */
+    onLaunchError: (cb: (data: { id: string; error: string }) => void) =>
+      subscribe('library:launchError', cb),
   },
   steamNews: {
     list: (steamAppId: number) => ipcRenderer.invoke('steamNews:list', steamAppId),

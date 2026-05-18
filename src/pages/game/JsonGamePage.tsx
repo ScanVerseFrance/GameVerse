@@ -234,6 +234,18 @@ export default function JsonGamePage() {
     void loadComments(GAME_KIND, gameId)
   }, [gameId, getGame, loadComments])
 
+  // Surface async spawn failures. The launch IPC returns synchronously
+  // after spawn(), but missing/blocked exes only fire 'error' on the
+  // child process AFTER that — without this subscription the page
+  // would silently swallow them and the user would just see a dead
+  // "Jouer" button.
+  useEffect(() => {
+    const off = window.nexus.library.onLaunchError(({ id, error }) => {
+      if (installedGame?.id === id) setLaunchError(error)
+    })
+    return off
+  }, [installedGame?.id])
+
   // Trigger artwork lookup ONCE per gameId. We intentionally don't depend on
   // `artworkCached` — the store dedups; depending on it would cause a re-run
   // every time the value transitions, which is fine on its own but easy to
@@ -914,14 +926,25 @@ export default function JsonGamePage() {
                     )
                   }
                   return (
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      leftIcon={<PlayIcon className="w-3.5 h-3.5" />}
-                      onClick={() => void handlePlay()}
-                    >
-                      Jouer
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        leftIcon={<SettingsIcon className="w-3.5 h-3.5" />}
+                        onClick={() => void handlePickExecutable()}
+                        title={`Exe actuel : ${installedGame.executablePath}`}
+                      >
+                        Changer l'exe
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        leftIcon={<PlayIcon className="w-3.5 h-3.5" />}
+                        onClick={() => void handlePlay()}
+                      >
+                        Jouer
+                      </Button>
+                    </>
                   )
                 }
                 // Setup is being run — poll loop will auto-flip to "Jouer".

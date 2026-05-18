@@ -248,6 +248,13 @@ export interface NexusAPI {
     onRunning: (cb: (data: LibraryRunningEvent) => void) => () => void
     onAddedFromDownload: (cb: (data: LibraryGame) => void) => () => void
     onExtractProgress: (cb: (data: ExtractProgressEvent) => void) => () => void
+    /** Pushed when spawn() emits an asynchronous error after the
+     *  `library:launch` IPC already returned ok — typically antivirus
+     *  blocks (EACCES), permission denials, or a broken shortcut
+     *  whose .lnk target no longer exists. */
+    onLaunchError: (
+      cb: (data: { id: string; error: string }) => void
+    ) => () => void
   }
   steamNews: {
     list: (

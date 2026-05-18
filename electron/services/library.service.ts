@@ -658,6 +658,22 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
     }
   if (running.has(id)) return { ok: false, error: 'Le jeu est déjà en cours' }
 
+  // Pre-flight existence check. spawn() with `detached:true` +
+  // `stdio:'ignore'` doesn't throw synchronously when the target is
+  // missing — it emits 'error' on the child *asynchronously*, which
+  // the caller never sees if we don't listen. So a deleted/moved exe
+  // would silently "succeed" from the UI's point of view, leaving the
+  // user staring at a dead "Jouer" button. Catch it here with a
+  // friendly path-in-the-message error.
+  if (!fs.existsSync(game.executablePath)) {
+    return {
+      ok: false,
+      error:
+        `L'exécutable n'existe plus sur le disque : ${game.executablePath}. ` +
+        "Re-télécharge le jeu ou clique « Choisir l'exe » pour en sélectionner un autre.",
+    }
+  }
+
   try {
     const cwd = path.dirname(game.executablePath)
     // Steam-style launch options — single string the user types in the
@@ -693,6 +709,25 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
     })
     const startedAt = Date.now()
     running.set(id, { child, startedAt })
+
+    // Catch async spawn failures that slipped past existsSync — typical
+    // culprits are antivirus mid-scan blocks (EACCES), the exe being a
+    // broken shortcut (ENOENT on the resolved target rather than the
+    // .lnk), or Windows AppLocker / SmartScreen veto. spawn() with
+    // `detached:true, stdio:'ignore'` emits these on the child instead
+    // of throwing. Without this listener the launcher would believe
+    // the game is running, leave the row in 'in_progress', and the
+    // user would stare at a dead button.
+    child.on('error', (err) => {
+      running.delete(id)
+      emit('library:running', { id, running: false })
+      emit('library:launchError', {
+        id,
+        error: `Le système a refusé de lancer ${path.basename(
+          game.executablePath ?? ''
+        )} (${err.message}). Antivirus, permissions, ou exécutable corrompu — réessaye après avoir mis l'exe en exception.`,
+      })
+    })
 
     const db = getDatabase()
     db.prepare(
