@@ -578,29 +578,24 @@ function NotificationsSection() {
   // whether Electron's Notification API thinks the OS supports it.
   // Catches "I disabled toasts in Windows Settings" and "Focus Assist
   // is on" without us having to dig through OS logs.
-  const [testResult, setTestResult] = useState<
-    | null
-    | {
-        shown: boolean
-        reason?: string
-        supported: boolean
-        platform: string
-        appUserModelId: string
-        startMenuShortcut?: { path: string; exists: boolean; healed: boolean }
-        desktopShortcut?: { path: string; exists: boolean; healed: boolean }
-      }
-  >(null)
+  const [testResult, setTestResult] = useState<null | { shown: boolean }>(null)
   const [testing, setTesting] = useState(false)
   async function runTest(): Promise<void> {
     setTesting(true)
-    const r = await window.nexus.window.testNotif()
-    setTestResult(r)
+    // v0.2.8: the test now pops a Steam-style in-app toast in the
+    // floating overlay window (toast-window.service). We don't need
+    // the OS-level diagnostic anymore — if the toast appears in the
+    // bottom-right of the screen, it works. If it doesn't, the user
+    // has bigger issues (renderer crashed, IPC broken, etc.) and the
+    // DevTools console will say so.
+    const r = await window.nexus.toast.test()
+    setTestResult({ shown: r.ok })
     setTesting(false)
   }
 
   return (
     <div>
-      <SectionHeader icon={Bell} title="Notifications" description="Notifications Windows envoyées par Nexus" />
+      <SectionHeader icon={Bell} title="Notifications" description="Toasts Steam-style affichés par Nexus" />
       <div className="flex flex-col gap-5">
         {/* Diagnostic test toast */}
         <div className="p-3 rounded-md bg-[var(--surface-soft)] border border-glass-border">
@@ -608,8 +603,8 @@ function NotificationsSection() {
             <div>
               <p className="text-sm font-medium text-fg-primary">Tester une notification</p>
               <p className="text-xs text-fg-muted mt-0.5">
-                Vérifie que Windows accepte les toasts. Si rien n'apparaît,
-                vérifie Paramètres Windows → Système → Notifications.
+                Affiche un toast Steam-style dans le coin bas-droit de l'écran,
+                indépendamment de l'état du launcher (minimisé, plein écran…).
               </p>
             </div>
             <button
@@ -621,31 +616,11 @@ function NotificationsSection() {
             </button>
           </div>
           {testResult && (
-            <div className="mt-2 text-xs font-mono space-y-0.5">
-              <p className={testResult.shown ? 'text-success' : 'text-error'}>
-                {testResult.shown
-                  ? '✓ Toast envoyé — tu devrais le voir en bas à droite.'
-                  : `✗ Toast bloqué : ${testResult.reason ?? 'raison inconnue'}`}
-              </p>
-              <p className="text-fg-muted">
-                supported={String(testResult.supported)} · platform={testResult.platform}
-              </p>
-              <p className="text-fg-muted">AUMID: {testResult.appUserModelId}</p>
-              {testResult.startMenuShortcut && (
-                <p className={testResult.startMenuShortcut.healed ? 'text-success' : 'text-fg-muted'}>
-                  Start Menu .lnk: {testResult.startMenuShortcut.exists ? '✓ existe' : '✗ absent'}
-                  {testResult.startMenuShortcut.exists &&
-                    ` · AUMID ${testResult.startMenuShortcut.healed ? 'écrit ✓' : 'échec ✗'}`}
-                </p>
-              )}
-              {testResult.desktopShortcut && (
-                <p className={testResult.desktopShortcut.healed ? 'text-success' : 'text-fg-muted'}>
-                  Bureau .lnk: {testResult.desktopShortcut.exists ? '✓ existe' : '✗ absent'}
-                  {testResult.desktopShortcut.exists &&
-                    ` · AUMID ${testResult.desktopShortcut.healed ? 'écrit ✓' : 'échec ✗'}`}
-                </p>
-              )}
-            </div>
+            <p className={testResult.shown ? 'text-success text-xs' : 'text-error text-xs'}>
+              {testResult.shown
+                ? '✓ Toast envoyé — il devrait apparaître en bas à droite.'
+                : '✗ Échec — vérifie la console DevTools (Ctrl+Shift+I).'}
+            </p>
           )}
         </div>
 

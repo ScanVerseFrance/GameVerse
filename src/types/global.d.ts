@@ -96,6 +96,36 @@ export interface NexusAPI {
     enterBigPicture: () => Promise<{ ok: boolean }>
     exitBigPicture: () => Promise<{ ok: boolean }>
   }
+  /** Toast overlay bridge — `onPush` is wired by the floating
+   *  overlay window's renderer, the other methods can be called
+   *  from any renderer (the test button uses `test`). */
+  toast: {
+    onPush: (
+      cb: (payload: {
+        id?: string
+        kind:
+          | 'download_complete'
+          | 'achievement_unlocked'
+          | 'update_available'
+          | 'friend_message'
+          | 'friend_launched_game'
+          | 'friend_request'
+          | 'cloud_save'
+          | 'test'
+        title: string
+        body?: string | null
+        subtitle?: string | null
+        iconUrl?: string | null
+        coverUrl?: string | null
+        link?: string | null
+        durationMs?: number
+      }) => void,
+    ) => () => void
+    setIgnoreMouse: (ignore: boolean) => Promise<void>
+    click: (link: string | null) => Promise<void>
+    overlayEmpty: () => Promise<void>
+    test: () => Promise<{ ok: boolean }>
+  }
   auth: {
     register: (p: RegisterPayload) => Promise<AuthResult>
     login: (p: LoginPayload) => Promise<AuthResult>

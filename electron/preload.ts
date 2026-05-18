@@ -344,6 +344,39 @@ const api = {
     exportData: (userId: string) => ipcRenderer.invoke('app:exportData', userId),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
   },
+  toast: {
+    // Subscribed by the floating overlay window (ToastOverlayPage)
+    // to receive toasts pushed from the main process. The main
+    // launcher window also subscribes so it can mirror notifications
+    // into the in-app notification center for history.
+    onPush: (
+      cb: (payload: {
+        id?: string
+        kind: string
+        title: string
+        body?: string | null
+        subtitle?: string | null
+        iconUrl?: string | null
+        coverUrl?: string | null
+        link?: string | null
+        durationMs?: number
+      }) => void,
+    ) => subscribe('toast:push', cb),
+    // Flip the overlay window's click-through state — false while
+    // the cursor hovers a toast card so it can receive the click,
+    // true otherwise so empty regions stay click-through.
+    setIgnoreMouse: (ignore: boolean) =>
+      ipcRenderer.invoke('toast:set-ignore-mouse', ignore),
+    // A toast was clicked → focus the main launcher window and
+    // navigate it to the given hash route.
+    click: (link: string | null) => ipcRenderer.invoke('toast:click', link),
+    // The overlay has no more visible toasts → main hides the
+    // floating window to release GPU compositor cycles.
+    overlayEmpty: () => ipcRenderer.invoke('toast:overlay-empty'),
+    // Diagnostic — pops a single decorative toast for the Settings
+    // → Notifications "Tester" button. Bypasses per-kind toggles.
+    test: () => ipcRenderer.invoke('toast:test'),
+  },
   update: {
     // Manual check — fires the same logic as the 4h timer but bypasses
     // the "already notified this session" dedup so the popup will pop

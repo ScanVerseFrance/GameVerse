@@ -283,19 +283,18 @@ export async function checkForUpdates(opts: {
     getMainWindow?.()?.webContents.send('update:available', info)
     // Also fire an OS-native toast so the user notices even when the
     // launcher window is minimised or hidden behind their browser.
-    // Lazy require to avoid pulling native-notif into auto-update's
-    // import graph at the top — it ships an `app` ref that's not
-    // guaranteed to be ready when auto-update.service is first
-    // imported.
+    // Push to the Steam-style floating toast overlay; lazy import
+    // dodges a potential cycle through main.ts during early boot.
     try {
-      const notif = await import('./native-notif.service')
-      notif.showNativeNotif({
+      const toastSvc = await import('./toast-window.service')
+      toastSvc.pushToast({
         kind: 'update_available',
         title: 'Mise à jour disponible',
         body: `Nexus Launcher ${info.latestVersion} est dispo — clique pour mettre à jour.`,
+        link: '/settings#update',
       })
     } catch {
-      /* native-notif not ready — in-app popup is still the fallback */
+      /* toast service not ready — in-app popup is still the fallback */
     }
     return { status: 'available', info }
   } catch (e) {

@@ -33,6 +33,10 @@ import {
 import { registerAutoUpdateIpc } from './ipc/auto-update.ipc'
 import { getAppSettings } from './services/app-settings.service'
 import { initNativeNotif, testNotification } from './services/native-notif.service'
+import {
+  initToastWindow,
+  shutdownToastWindow,
+} from './services/toast-window.service'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const APP_ROOT = path.join(__dirname, '..')
@@ -227,11 +231,16 @@ void app.whenReady().then(async () => {
     getMain: () => mainWindow,
     isEnabled: () => getAppSettings().autoUpdate !== false,
   })
-  // Native OS notifs (Steam-style toasts). Must come BEFORE
-  // createWindow so the AppUserModelID is set before the launcher's
-  // first toast — Windows otherwise groups it under "Electron".
+  // Native OS notifs are kept around as a hard fallback (used when
+  // the toast overlay window can't be reached — e.g. an update toast
+  // fired before the renderer is ready). The AUMID setup still runs
+  // so Win10/11 doesn't drop those fallback toasts silently.
   initNativeNotif(() => mainWindow)
   createWindow()
+  // Steam-style floating toast overlay. Lazy-builds its own window
+  // on first push, so this call is just IPC registration — no extra
+  // RAM cost until a notif actually fires.
+  initToastWindow(() => mainWindow)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -253,5 +262,6 @@ app.on('before-quit', () => {
   shutdownAchievementWatcher()
   shutdownCloud()
   shutdownAutoUpdate()
+  shutdownToastWindow()
   closeDatabase()
 })

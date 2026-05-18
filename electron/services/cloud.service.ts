@@ -119,6 +119,10 @@ let reconnectAttempt = 0
  *  session; no persistence (re-populates on each cloud reconnect via
  *  friend:added replay or our own reloadFriends pull). */
 const peerDisplayNames = new Map<string, string>()
+/** Same lifecycle as peerDisplayNames — populated from friend:added
+ *  / friend:request payloads so toasts can render the peer's avatar
+ *  alongside their name instead of a generic kind icon. */
+const peerAvatarUrls = new Map<string, string>()
 
 export function initCloud(getMain: () => BrowserWindow | null): void {
   getMainWindow = getMain
@@ -306,75 +310,98 @@ async function openSocket(): Promise<void> {
     try {
       const env = JSON.parse(raw.toString()) as CloudWsEnvelope
       emit('cloud:event', env)
-      // Mirror to OS-native Steam-style toasts. We deliberately do
-      // this in main (not renderer) because the toast must appear
-      // even when the launcher window is minimised or hidden behind
-      // Chrome — that's the user's whole point of using a real OS
-      // notification rather than an in-app banner. Lazy require()
-      // dodges a circular import between cloud + native-notif.
+      // Mirror to the Steam-style floating toast overlay. The toast
+      // window is a separate always-on-top BrowserWindow so the user
+      // sees these regardless of whether the main launcher is
+      // focused, minimised, or hidden behind a fullscreen game.
       //
-      // Display-name resolution: the WS payload usually includes
-      // pre-rendered user objects (friend:request.fromUser,
+      // Display-name + avatar resolution: the WS payload usually
+      // includes pre-rendered user objects (friend:request.fromUser,
       // message:new.sender from server-side serialise). When it
-      // doesn't we fall back to the cached `peerDisplayNames` map
-      // populated by friend:added envelopes; if THAT misses we
-      // surface the toast with a generic title rather than waiting
-      // on a synchronous IPC.
+      // doesn't we fall back to the caches populated by friend:added
+      // envelopes; if THOSE miss we surface the toast with a generic
+      // title rather than waiting on a synchronous IPC.
       try {
-        const notif = require('./native-notif.service') as typeof import('./native-notif.service')
+        const toastSvc = require('./toast-window.service') as typeof import('./toast-window.service')
         const me = currentUser?.id ?? null
         if (env.type === 'message:new') {
           const m = env.data
           if (m.senderId !== me) {
             const peerName = peerDisplayNames.get(m.senderId) ?? null
-            notif.showNativeNotif({
+            const peerAvatar = peerAvatarUrls.get(m.senderId) ?? null
+            toastSvc.pushToast({
               kind: 'friend_message',
               title: peerName ?? 'Nouveau message',
               body: m.content.slice(0, 140),
+              iconUrl: peerAvatar,
               link: `/community/chat/${m.senderId}`,
             })
           }
         } else if (env.type === 'activity:new') {
           const a = env.data
           if (a.userId !== me && a.kind === 'game_launched') {
-            const payload = a.payload as { title?: string } | null
+            const payload = a.payload as {
+              title?: string
+              coverUrl?: string | null
+            } | null
             const gameTitle = payload?.title ?? 'un jeu'
             const peerName = peerDisplayNames.get(a.userId) ?? null
-            notif.showNativeNotif({
+            const peerAvatar = peerAvatarUrls.get(a.userId) ?? null
+            toastSvc.pushToast({
               kind: 'friend_launched_game',
               title: peerName ? `${peerName} joue maintenant` : 'Un ami joue',
               body: gameTitle,
+              iconUrl: peerAvatar,
+              coverUrl: payload?.coverUrl ?? null,
               link: `/community/profile/${a.userId}`,
             })
           }
         } else if (env.type === 'friend:added') {
-          // Cache the peer's display name as soon as we see one — used
-          // by subsequent message / activity toasts to produce
-          // "Kazu: hey" instead of "Nouveau message".
-          const u = env.data?.user
+          // Cache the peer's display name + avatar as soon as we see
+          // one — used by subsequent message / activity toasts to
+          // render "Kazu: hey" with avatar instead of "Nouveau
+          // message" with a generic icon.
+          const u = env.data?.user as
+            | {
+                id: string
+                username?: string
+                displayName?: string | null
+                avatarUrl?: string | null
+              }
+            | undefined
           if (u?.id) {
             peerDisplayNames.set(u.id, u.displayName ?? u.username ?? u.id)
+            if (u.avatarUrl) peerAvatarUrls.set(u.id, u.avatarUrl)
           }
         } else if (env.type === 'friend:request') {
           const data = (env as unknown as {
-            data?: { fromUser?: { id?: string; username?: string; displayName?: string | null } }
+            data?: {
+              fromUser?: {
+                id?: string
+                username?: string
+                displayName?: string | null
+                avatarUrl?: string | null
+              }
+            }
           }).data
           const u = data?.fromUser
           if (u?.id) {
-            // Pre-populate the cache so the inevitable accept→message
-            // sequence shows the name immediately.
+            // Pre-populate caches so the inevitable accept→message
+            // sequence shows the name + avatar immediately.
             const label = u.displayName ?? u.username ?? null
             if (label) peerDisplayNames.set(u.id, label)
-            notif.showNativeNotif({
+            if (u.avatarUrl) peerAvatarUrls.set(u.id, u.avatarUrl)
+            toastSvc.pushToast({
               kind: 'friend_request',
-              title: 'Demande d\'ami',
-              body: label ?? 'Un utilisateur veut t\'ajouter',
+              title: "Demande d'ami",
+              body: label ?? "Un utilisateur veut t'ajouter",
+              iconUrl: u.avatarUrl ?? null,
               link: '/community/friends',
             })
           }
         }
       } catch {
-        /* notif helper missing or failed — never block WS dispatch */
+        /* toast service missing or failed — never block WS dispatch */
       }
     } catch {
       /* malformed payload — ignore */

@@ -2,13 +2,24 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { AppErrorBoundary } from './components/common/AppErrorBoundary'
+import { ToastOverlayPage } from './pages/toast/ToastOverlayPage'
 import './index.css'
 
 // Expose the launcher version on `window.__NEXUS_VERSION__` so the
 // error boundary can include it in copy-to-clipboard bug reports
 // without having to thread package.json through Vite separately.
 ;(window as unknown as { __NEXUS_VERSION__?: string }).__NEXUS_VERSION__ =
-  '0.2.7'
+  '0.2.8'
+
+// Toast overlay mode — detected from the URL hash. The toast window
+// service in electron/main loads index.html#/toast-overlay; when we
+// see that we paint ONLY the floating toast stack, no app shell, no
+// router, no error boundary. Stays out of the main launcher bundle
+// only at the React tree level (the JS payload is shared, which is
+// fine — Electron caches it).
+const isToastOverlay =
+  typeof window !== 'undefined' &&
+  window.location.hash.startsWith('#/toast-overlay')
 
 // Unhandled-rejection trap → write to console (DevTools-visible).
 // Without this, a rejected promise from an IPC call leaves the user
@@ -25,8 +36,12 @@ window.addEventListener('error', (e) => {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <AppErrorBoundary>
-      <App />
-    </AppErrorBoundary>
+    {isToastOverlay ? (
+      <ToastOverlayPage />
+    ) : (
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
+    )}
   </React.StrictMode>
 )
