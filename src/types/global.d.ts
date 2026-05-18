@@ -97,6 +97,12 @@ export interface NexusAPI {
     enterBigPicture: () => Promise<{ ok: boolean }>
     exitBigPicture: () => Promise<{ ok: boolean }>
   }
+  /** Uninstall bridge — only used by the custom uninstall window
+   *  spawned when the launcher is invoked with --uninstall. */
+  uninstall: {
+    execute: (opts: { wipeUserData?: boolean }) => Promise<{ ok: boolean }>
+    cancel: () => Promise<void>
+  }
   /** Diagnostic log — main-process services write structured
    *  entries through debugLog(); this bridge surfaces them to
    *  Settings → Diagnostic and the DevTools console. */

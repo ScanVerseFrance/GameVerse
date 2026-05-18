@@ -244,6 +244,25 @@ ipcMain.handle('installer:install', async (_event, opts = {}) => {
   }
 
   try {
+    // 0. Force-kill any running Nexus Launcher.exe before we touch
+    //    the install dir. Without this, manually re-running Setup.exe
+    //    on top of an active install fails at ensureCleanDir with
+    //    EBUSY because Windows refuses to delete the locked .exe.
+    //    Silent-install (auto-update) already does this; the wizard
+    //    flow was the missing leg.
+    win.webContents.send('installer:progress', { phase: 'stop-running' });
+    await new Promise((resolve) => {
+      execFile(
+        'taskkill',
+        ['/IM', APP_EXE, '/F', '/T'],
+        { windowsHide: true },
+        () => resolve(),
+      );
+    });
+    // Brief settle so the OS releases the file handles before we
+    // start rm-ing.
+    await sleep(800);
+
     // 1. Copy the payload into the install path.
     await ensureCleanDir(installPath);
     await copyDir(payload, installPath, (cur, total) => {
@@ -380,13 +399,27 @@ function registerUninstall(installPath, exePath) {
   return new Promise((resolve, reject) => {
     // reg.exe directly — no extra deps, no permissions surprise.
     const version = require('./package.json').version;
+    // UninstallString now points at the launcher with --uninstall.
+    // The launcher detects that flag at boot, skips the regular
+    // services init, and pops a custom Electron uninstall window.
+    // On confirm it spawns a detached cmd.exe cleanup script and
+    // exits — same self-update pattern, just in reverse.
+    //
+    // The old plain-cmd Uninstall.cmd is still written next to the
+    // exe as a manual escape hatch (covers the case where the
+    // launcher .exe is corrupted and won't start), but Apps &
+    // features now hits the friendly UI path.
     const sets = [
       ['DisplayName',     APP_NAME],
       ['DisplayVersion',  version],
       ['Publisher',       APP_PUBLISHER],
       ['DisplayIcon',     exePath],
       ['InstallLocation', installPath],
-      ['UninstallString',
+      ['UninstallString', `"${exePath}" --uninstall`],
+      // QuietUninstallString — some Windows tooling (winget, Chocolatey
+      // remove, MDM) uses this for headless uninstall. Point it at the
+      // legacy .cmd which already runs silently end-to-end.
+      ['QuietUninstallString',
         `cmd.exe /c "${path.join(installPath, 'Uninstall.cmd')}"`],
       ['NoModify',      '1', 'REG_DWORD'],
       ['NoRepair',      '1', 'REG_DWORD'],

@@ -349,6 +349,14 @@ const api = {
     exportData: (userId: string) => ipcRenderer.invoke('app:exportData', userId),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
   },
+  uninstall: {
+    // The renderer of the custom uninstall window calls these to
+    // either trigger the detached cleanup script (execute) or close
+    // cleanly without doing anything (cancel). Both end the process.
+    execute: (opts: { wipeUserData?: boolean }) =>
+      ipcRenderer.invoke('uninstall:execute', opts),
+    cancel: () => ipcRenderer.invoke('uninstall:cancel'),
+  },
   debug: {
     // Last N lines from the main-process debug ring buffer. Used
     // by the Settings → Diagnostic panel so the user can copy-paste

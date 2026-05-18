@@ -48,6 +48,13 @@ const APP_ROOT = path.join(__dirname, '..')
 const RENDERER_DIST = path.join(APP_ROOT, 'dist')
 const MAIN_DIST = path.join(APP_ROOT, 'dist-electron')
 
+// When the launcher's UninstallString registry entry points at this
+// .exe with the --uninstall flag, we skip the entire normal boot
+// (no DB, no cloud, no library) and pop a tiny custom uninstall
+// window instead. This is what makes "Apps and features → Uninstall"
+// actually do something useful instead of just launching the app.
+const IS_UNINSTALL_MODE = process.argv.includes('--uninstall')
+
 let mainWindow: BrowserWindow | null = null
 
 // Last-resort safety net so a stray async error inside WebTorrent / SQLite /
@@ -179,6 +186,15 @@ function registerWindowIpc() {
 }
 
 void app.whenReady().then(async () => {
+  // --uninstall fork: skip everything else, just show the custom
+  // uninstall window. No DB, no cloud, no library scan — the user
+  // wants to remove the app, not start it up. This whole branch
+  // returns early so none of the heavy services boot.
+  if (IS_UNINSTALL_MODE) {
+    bootUninstallWindow()
+    return
+  }
+
   try {
     await initDatabase()
   } catch (err) {
@@ -281,3 +297,106 @@ app.on('before-quit', () => {
   shutdownToastWindow()
   closeDatabase()
 })
+
+// ─────────────────────── UNINSTALL MODE ───────────────────────
+// When the registry's UninstallString invokes "Nexus Launcher.exe
+// --uninstall", we pop this minimal window and wait for the user to
+// confirm. On confirm, the renderer calls `uninstall:execute` which
+// writes a detached cleanup script to %TEMP%, spawns it, then exits
+// the launcher process. The script waits a beat for the launcher to
+// die, then rm -rfs the install dir, the registry key, and the
+// shortcuts. Optionally wipes %APPDATA%/nexus-launcher too.
+
+function bootUninstallWindow(): void {
+  const win = new BrowserWindow({
+    width: 520,
+    height: 380,
+    resizable: false,
+    fullscreenable: false,
+    maximizable: false,
+    minimizable: false,
+    backgroundColor: '#0a0a0f',
+    title: 'Désinstaller Nexus Launcher',
+    frame: false,
+    titleBarStyle: 'hidden',
+    show: false,
+    webPreferences: {
+      preload: path.join(MAIN_DIST, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  })
+  win.once('ready-to-show', () => win.show())
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
+  const url = VITE_DEV_SERVER_URL
+    ? `${VITE_DEV_SERVER_URL}#/uninstall`
+    : `file://${path.join(RENDERER_DIST, 'index.html')}#/uninstall`
+  void win.loadURL(url)
+
+  ipcMain.handle('uninstall:cancel', () => {
+    win.close()
+    app.exit(0)
+  })
+
+  ipcMain.handle(
+    'uninstall:execute',
+    async (_e, opts: { wipeUserData?: boolean } = {}) => {
+      const wipeUserData = !!opts.wipeUserData
+      const installDir = path.dirname(app.getPath('exe'))
+      const userDataDir = app.getPath('userData')
+      const scriptPath = path.join(
+        require('node:os').tmpdir(),
+        `nexus-uninstall-${Date.now()}.cmd`,
+      )
+
+      // Cleanup script — runs detached so it survives our exit and
+      // can rm -rf the install dir whose .exe locked us out a moment
+      // earlier. taskkill is defensive: app.exit should have killed
+      // us cleanly but a half-stuck process would otherwise block
+      // the rmdir step.
+      const lines: string[] = [
+        '@echo off',
+        'chcp 65001 > nul',
+        // Wait for the launcher to fully exit (file handles release).
+        'timeout /t 2 /nobreak > nul',
+        'taskkill /IM "Nexus Launcher.exe" /F > nul 2>&1',
+        'timeout /t 1 /nobreak > nul',
+        // Remove install dir + registry + shortcuts.
+        `rmdir /s /q "${installDir}" > nul 2>&1`,
+        'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\NexusLauncher" /f > nul 2>&1',
+        'del "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Nexus Launcher.lnk" > nul 2>&1',
+        'del "%USERPROFILE%\\Desktop\\Nexus Launcher.lnk" > nul 2>&1',
+        // Also clean the AUMID registry registration we wrote at
+        // boot — Win10/11 carries it across reinstalls otherwise.
+        'reg delete "HKCU\\Software\\Classes\\AppUserModelId\\com.svu.nexuslauncher" /f > nul 2>&1',
+      ]
+      if (wipeUserData) {
+        lines.push(`rmdir /s /q "${userDataDir}" > nul 2>&1`)
+      }
+      // Self-destruct — the script deletes itself last so %TEMP%
+      // stays clean. The `start /b` trick spawns a sub-cmd that
+      // outlives us just long enough to remove the script file.
+      lines.push(
+        '(goto) 2>nul & del "%~f0" > nul 2>&1',
+      )
+
+      const fsm = await import('node:fs/promises')
+      await fsm.writeFile(scriptPath, lines.join('\r\n'), 'utf8')
+
+      const { spawn } = await import('node:child_process')
+      spawn('cmd.exe', ['/c', scriptPath], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      }).unref()
+
+      // Give the spawn syscall a beat to actually launch the
+      // detached process before we vanish; otherwise on slow
+      // systems we'd exit before cmd.exe spawns its child.
+      setTimeout(() => app.exit(0), 300)
+      return { ok: true }
+    },
+  )
+}
