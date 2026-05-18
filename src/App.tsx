@@ -211,6 +211,19 @@ export default function App() {
       }
     })
 
+    // Native-toast click → navigate. The main process emits 'nav:goto'
+    // when the user clicks a Windows toast (new message, friend
+    // launched a game, update available). Calling router.navigate
+    // outside React-tree is fine: it's the same instance the
+    // RouterProvider holds.
+    const unsubNav = window.nexus.window.onNavGoto((link) => {
+      try {
+        void router.navigate(link)
+      } catch {
+        /* link can be malformed if a future server pushes new shapes — ignore */
+      }
+    })
+
     // Update popup → also mirror to the bell so the user has a
     // persistent record (the toast itself is transient).
     const unsubUpd = window.nexus.update.onAvailable((info) => {
@@ -235,6 +248,7 @@ export default function App() {
       unsubCloudStatus()
       unsubCloudEvent()
       unsubUpd()
+      unsubNav()
     }
   }, [])
 

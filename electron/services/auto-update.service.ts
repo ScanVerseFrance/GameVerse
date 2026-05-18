@@ -229,6 +229,22 @@ export async function checkForUpdates(opts: {
 
     // Push to the renderer — it'll show the popup.
     getMainWindow?.()?.webContents.send('update:available', info)
+    // Also fire an OS-native toast so the user notices even when the
+    // launcher window is minimised or hidden behind their browser.
+    // Lazy require to avoid pulling native-notif into auto-update's
+    // import graph at the top — it ships an `app` ref that's not
+    // guaranteed to be ready when auto-update.service is first
+    // imported.
+    try {
+      const notif = await import('./native-notif.service')
+      notif.showNativeNotif({
+        kind: 'update_available',
+        title: 'Mise à jour disponible',
+        body: `Nexus Launcher ${info.latestVersion} est dispo — clique pour mettre à jour.`,
+      })
+    } catch {
+      /* native-notif not ready — in-app popup is still the fallback */
+    }
     return { status: 'available', info }
   } catch (e) {
     return { status: 'error', error: (e as Error).message }

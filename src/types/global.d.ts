@@ -83,6 +83,7 @@ export interface NexusAPI {
     close: () => Promise<void>
     isMaximized: () => Promise<boolean>
     onMaximizedChange: (cb: (max: boolean) => void) => () => void
+    onNavGoto: (cb: (link: string) => void) => () => void
     enterBigPicture: () => Promise<{ ok: boolean }>
     exitBigPicture: () => Promise<{ ok: boolean }>
   }

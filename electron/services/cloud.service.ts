@@ -112,6 +112,13 @@ let currentUser: CloudUser | null = null
 let ws: WebSocket | null = null
 let reconnectTimer: NodeJS.Timeout | null = null
 let reconnectAttempt = 0
+/** userId → display name cache. Populated when WS envelopes carry
+ *  user objects (friend:added.user, friend:request.fromUser). Used by
+ *  the native-notif title resolver — without this every toast would
+ *  say "Nouveau message" instead of "Kazu". Stays in-memory for the
+ *  session; no persistence (re-populates on each cloud reconnect via
+ *  friend:added replay or our own reloadFriends pull). */
+const peerDisplayNames = new Map<string, string>()
 
 export function initCloud(getMain: () => BrowserWindow | null): void {
   getMainWindow = getMain
@@ -299,6 +306,76 @@ async function openSocket(): Promise<void> {
     try {
       const env = JSON.parse(raw.toString()) as CloudWsEnvelope
       emit('cloud:event', env)
+      // Mirror to OS-native Steam-style toasts. We deliberately do
+      // this in main (not renderer) because the toast must appear
+      // even when the launcher window is minimised or hidden behind
+      // Chrome — that's the user's whole point of using a real OS
+      // notification rather than an in-app banner. Lazy require()
+      // dodges a circular import between cloud + native-notif.
+      //
+      // Display-name resolution: the WS payload usually includes
+      // pre-rendered user objects (friend:request.fromUser,
+      // message:new.sender from server-side serialise). When it
+      // doesn't we fall back to the cached `peerDisplayNames` map
+      // populated by friend:added envelopes; if THAT misses we
+      // surface the toast with a generic title rather than waiting
+      // on a synchronous IPC.
+      try {
+        const notif = require('./native-notif.service') as typeof import('./native-notif.service')
+        const me = currentUser?.id ?? null
+        if (env.type === 'message:new') {
+          const m = env.data
+          if (m.senderId !== me) {
+            const peerName = peerDisplayNames.get(m.senderId) ?? null
+            notif.showNativeNotif({
+              kind: 'friend_message',
+              title: peerName ?? 'Nouveau message',
+              body: m.content.slice(0, 140),
+              link: `/community/chat/${m.senderId}`,
+            })
+          }
+        } else if (env.type === 'activity:new') {
+          const a = env.data
+          if (a.userId !== me && a.kind === 'game_launched') {
+            const payload = a.payload as { title?: string } | null
+            const gameTitle = payload?.title ?? 'un jeu'
+            const peerName = peerDisplayNames.get(a.userId) ?? null
+            notif.showNativeNotif({
+              kind: 'friend_launched_game',
+              title: peerName ? `${peerName} joue maintenant` : 'Un ami joue',
+              body: gameTitle,
+              link: `/community/profile/${a.userId}`,
+            })
+          }
+        } else if (env.type === 'friend:added') {
+          // Cache the peer's display name as soon as we see one — used
+          // by subsequent message / activity toasts to produce
+          // "Kazu: hey" instead of "Nouveau message".
+          const u = env.data?.user
+          if (u?.id) {
+            peerDisplayNames.set(u.id, u.displayName ?? u.username ?? u.id)
+          }
+        } else if (env.type === 'friend:request') {
+          const data = (env as unknown as {
+            data?: { fromUser?: { id?: string; username?: string; displayName?: string | null } }
+          }).data
+          const u = data?.fromUser
+          if (u?.id) {
+            // Pre-populate the cache so the inevitable accept→message
+            // sequence shows the name immediately.
+            const label = u.displayName ?? u.username ?? null
+            if (label) peerDisplayNames.set(u.id, label)
+            notif.showNativeNotif({
+              kind: 'friend_request',
+              title: 'Demande d\'ami',
+              body: label ?? 'Un utilisateur veut t\'ajouter',
+              link: '/community/friends',
+            })
+          }
+        }
+      } catch {
+        /* notif helper missing or failed — never block WS dispatch */
+      }
     } catch {
       /* malformed payload — ignore */
     }
@@ -344,6 +421,9 @@ export async function bootConnect(): Promise<CloudConnectResult> {
     })
     currentUser = me.user
     await openSocket()
+    // Warm the peer-name cache in the background so the first
+    // friend-message toast resolves to the real display name.
+    void preloadPeerDisplayNames()
     return { status: 'connected', user: me.user }
   } catch (e) {
     const err = e as HttpError
@@ -374,6 +454,7 @@ export async function loginCloud(
   writeToken(res.token)
   currentUser = res.user
   await openSocket()
+  void preloadPeerDisplayNames()
   return { status: 'connected', user: res.user }
 }
 
@@ -426,4 +507,31 @@ export async function passthroughJson<
 
 export function shutdownCloud(): void {
   closeSocket()
+}
+
+/**
+ * Pre-warm the peerDisplayNames cache from /v1/friends — used by the
+ * native-notif title resolver so the very first message-toast after
+ * a fresh boot already shows "Kazu: hey" instead of "Nouveau message".
+ *
+ * Called from bootConnect on a successful /v1/auth/me; idempotent —
+ * subsequent calls just refresh the cache. Best-effort: any error
+ * (network blip, server down) is silently swallowed — the cache
+ * will get populated lazily via friend:added envelopes anyway.
+ */
+async function preloadPeerDisplayNames(): Promise<void> {
+  try {
+    const res = await cloudJson<{
+      friends: Array<{
+        id: string
+        username: string
+        displayName: string | null
+      }>
+    }>('/v1/friends', { timeoutMs: 5000 })
+    for (const f of res.friends ?? []) {
+      peerDisplayNames.set(f.id, f.displayName ?? f.username ?? f.id)
+    }
+  } catch {
+    /* cache stays cold — friend:added envelopes will warm it lazily */
+  }
 }

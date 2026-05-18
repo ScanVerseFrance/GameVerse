@@ -32,6 +32,7 @@ import {
 } from './services/auto-update.service'
 import { registerAutoUpdateIpc } from './ipc/auto-update.ipc'
 import { getAppSettings } from './services/app-settings.service'
+import { initNativeNotif } from './services/native-notif.service'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const APP_ROOT = path.join(__dirname, '..')
@@ -222,6 +223,10 @@ void app.whenReady().then(async () => {
     getMain: () => mainWindow,
     isEnabled: () => getAppSettings().autoUpdate !== false,
   })
+  // Native OS notifs (Steam-style toasts). Must come BEFORE
+  // createWindow so the AppUserModelID is set before the launcher's
+  // first toast — Windows otherwise groups it under "Electron".
+  initNativeNotif(() => mainWindow)
   createWindow()
 
   app.on('activate', () => {

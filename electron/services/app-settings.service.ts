@@ -11,7 +11,14 @@ function defaultSettings(): AppSettings {
   return {
     autoLaunch: false,
     proxyUrl: '',
-    notifications: { downloadComplete: true, achievementUnlocked: true },
+    notifications: {
+      downloadComplete: true,
+      achievementUnlocked: true,
+      updateAvailable: true,
+      friendMessage: true,
+      friendLaunchedGame: true,
+      friendRequest: true,
+    },
     steamGridDbApiKey: '',
     steamWebApiKey: '',
     // Opt-in by default — silent installs of a launcher with broken
@@ -40,6 +47,10 @@ function loadSettings(): void {
       notifications: {
         downloadComplete: parsed.notifications?.downloadComplete !== false,
         achievementUnlocked: parsed.notifications?.achievementUnlocked !== false,
+        updateAvailable: parsed.notifications?.updateAvailable !== false,
+        friendMessage: parsed.notifications?.friendMessage !== false,
+        friendLaunchedGame: parsed.notifications?.friendLaunchedGame !== false,
+        friendRequest: parsed.notifications?.friendRequest !== false,
       },
       steamGridDbApiKey: typeof parsed.steamGridDbApiKey === 'string' ? parsed.steamGridDbApiKey : '',
       steamWebApiKey: typeof parsed.steamWebApiKey === 'string' ? parsed.steamWebApiKey : '',

@@ -8,6 +8,17 @@ export interface AppSettings {
   notifications: {
     downloadComplete?: boolean
     achievementUnlocked?: boolean
+    /** Native Windows toast fired when the GitHub auto-update poll
+     *  finds a newer version. The in-app popup is still shown for
+     *  click-to-update; this just makes sure the user notices even
+     *  if they're alt-tabbed into Chrome. Default: on. */
+    updateAvailable?: boolean
+    /** Friend sent a chat message — Steam-style "Kazu: hey" toast. */
+    friendMessage?: boolean
+    /** A friend launched a game — Steam-style "Kazu plays Among Us". */
+    friendLaunchedGame?: boolean
+    /** Friend request from another user. */
+    friendRequest?: boolean
   }
   /** SteamGridDB API key — used as a fallback artwork source when Steam's
    * search API doesn't find a match. Optional: covers degrade gracefully to

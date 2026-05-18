@@ -13,6 +13,10 @@ const api = {
     close: () => ipcRenderer.invoke('window:close'),
     isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
     onMaximizedChange: (cb: (max: boolean) => void) => subscribe('window:maximized-change', cb),
+    /** Pushed by the native-notif click handler — the renderer side
+     *  should navigate via react-router. Listener wires this once in
+     *  App.tsx. */
+    onNavGoto: (cb: (link: string) => void) => subscribe('nav:goto', cb),
     /** Big Picture toggles fullscreen + kiosk + always-on-top so the
      *  Windows taskbar can't peek through. State is saved on enter
      *  and restored verbatim on exit. */
