@@ -90,6 +90,8 @@ export interface NexusAPI {
       supported: boolean
       platform: string
       appUserModelId: string
+      startMenuShortcut?: { path: string; exists: boolean; healed: boolean }
+      desktopShortcut?: { path: string; exists: boolean; healed: boolean }
     }>
     enterBigPicture: () => Promise<{ ok: boolean }>
     exitBigPicture: () => Promise<{ ok: boolean }>

@@ -26,6 +26,15 @@ files:
   - "!dist/cosmetics/**/*"
 asarUnpack:
   - "**/*.{node,dll}"
+# PowerShell helpers we shell out to from electron/services. These ride
+# under resources/scripts/ in the packed app so process.resourcesPath
+# is enough to find them — keeps the asar small and lets the .ps1 be
+# auditable on disk.
+extraResources:
+  - from: electron/scripts
+    to: scripts
+    filter:
+      - "**/*.ps1"
 win:
   target:
     # `dir` = bare unpacked output, no installer. The Setup.exe is then

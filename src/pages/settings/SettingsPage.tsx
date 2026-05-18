@@ -586,6 +586,8 @@ function NotificationsSection() {
         supported: boolean
         platform: string
         appUserModelId: string
+        startMenuShortcut?: { path: string; exists: boolean; healed: boolean }
+        desktopShortcut?: { path: string; exists: boolean; healed: boolean }
       }
   >(null)
   const [testing, setTesting] = useState(false)
@@ -629,6 +631,20 @@ function NotificationsSection() {
                 supported={String(testResult.supported)} · platform={testResult.platform}
               </p>
               <p className="text-fg-muted">AUMID: {testResult.appUserModelId}</p>
+              {testResult.startMenuShortcut && (
+                <p className={testResult.startMenuShortcut.healed ? 'text-success' : 'text-fg-muted'}>
+                  Start Menu .lnk: {testResult.startMenuShortcut.exists ? '✓ existe' : '✗ absent'}
+                  {testResult.startMenuShortcut.exists &&
+                    ` · AUMID ${testResult.startMenuShortcut.healed ? 'écrit ✓' : 'échec ✗'}`}
+                </p>
+              )}
+              {testResult.desktopShortcut && (
+                <p className={testResult.desktopShortcut.healed ? 'text-success' : 'text-fg-muted'}>
+                  Bureau .lnk: {testResult.desktopShortcut.exists ? '✓ existe' : '✗ absent'}
+                  {testResult.desktopShortcut.exists &&
+                    ` · AUMID ${testResult.desktopShortcut.healed ? 'écrit ✓' : 'échec ✗'}`}
+                </p>
+              )}
             </div>
           )}
         </div>

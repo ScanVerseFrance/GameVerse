@@ -90,6 +90,11 @@ const APP_EXE        = 'Nexus Launcher.exe';
 const APP_PUBLISHER  = 'SVU';
 const APP_REG_KEY    = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\NexusLauncher';
 const APP_SHORTCUT   = `${APP_NAME}.lnk`;
+// The launcher's AppUserModelID — MUST match the value passed to
+// app.setAppUserModelId() in electron/services/native-notif.service.ts.
+// Without it stamped on the Start-Menu shortcut Windows silently drops
+// every Notification.show() call from the running launcher.
+const APP_AUMID      = 'com.svu.nexuslauncher';
 
 let win = null;
 
@@ -262,19 +267,20 @@ ipcMain.handle('installer:install', async (_event, opts = {}) => {
     // 4. Shortcuts.
     win.webContents.send('installer:progress', { phase: 'shortcuts' });
     if (createStartMenu) {
-      await createShortcut({
-        target: exePath,
-        location: path.join(
-          process.env.APPDATA || os.homedir(),
-          'Microsoft', 'Windows', 'Start Menu', 'Programs', APP_SHORTCUT,
-        ),
-      });
+      const smPath = path.join(
+        process.env.APPDATA || os.homedir(),
+        'Microsoft', 'Windows', 'Start Menu', 'Programs', APP_SHORTCUT,
+      );
+      await createShortcut({ target: exePath, location: smPath });
+      // Critical for Win10/11 toasts — the .lnk needs the AUMID
+      // stamped on it before Notification.show() will actually pop
+      // a toast from the running launcher process.
+      await setShortcutAumid(smPath, APP_AUMID);
     }
     if (createDesktop) {
-      await createShortcut({
-        target: exePath,
-        location: path.join(os.homedir(), 'Desktop', APP_SHORTCUT),
-      });
+      const dtPath = path.join(os.homedir(), 'Desktop', APP_SHORTCUT);
+      await createShortcut({ target: exePath, location: dtPath });
+      await setShortcutAumid(dtPath, APP_AUMID);
     }
 
     // 5. Launch (optional) + quit installer.
@@ -401,6 +407,48 @@ function registerUninstall(installPath, exePath) {
       );
     }
     next();
+  });
+}
+
+/**
+ * Stamp PKEY_AppUserModel_ID onto an existing .lnk via the bundled
+ * set-aumid.ps1 helper. Required for Win10/11 to even consider
+ * showing a toast notification from the launcher.
+ *
+ * Best-effort: swallows all errors (logs to stderr) so a malformed
+ * .lnk or missing PowerShell never aborts the install. The launcher
+ * will retry on its next boot via its own heal pass.
+ */
+function setShortcutAumid(lnkPath, aumid) {
+  return new Promise((resolve) => {
+    const script = path.join(__dirname, 'scripts', 'set-aumid.ps1');
+    if (!fs.existsSync(script)) {
+      // eslint-disable-next-line no-console
+      console.warn('[installer] set-aumid.ps1 not bundled — skipping');
+      resolve();
+      return;
+    }
+    execFile(
+      'powershell',
+      [
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', script,
+        '-LinkPath', lnkPath,
+        '-Aumid', aumid,
+      ],
+      { windowsHide: true },
+      (err, _stdout, stderr) => {
+        if (err) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[installer] set-aumid failed for ${lnkPath}:`,
+            (stderr || '').trim() || err.message,
+          );
+        }
+        resolve();
+      },
+    );
   });
 }
 
