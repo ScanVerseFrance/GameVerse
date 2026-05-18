@@ -96,6 +96,21 @@ export interface NexusAPI {
     enterBigPicture: () => Promise<{ ok: boolean }>
     exitBigPicture: () => Promise<{ ok: boolean }>
   }
+  /** Diagnostic log — main-process services write structured
+   *  entries through debugLog(); this bridge surfaces them to
+   *  Settings → Diagnostic and the DevTools console. */
+  debug: {
+    tail: (n?: number) => Promise<string[]>
+    openLogFile: () => Promise<string>
+    onLog: (
+      cb: (entry: {
+        ts: string
+        tag: string
+        msg: string
+        data: unknown
+      }) => void,
+    ) => () => void
+  }
   /** Toast overlay bridge — `onPush` is wired by the floating
    *  overlay window's renderer, the other methods can be called
    *  from any renderer (the test button uses `test`). */
@@ -124,6 +139,7 @@ export interface NexusAPI {
     setIgnoreMouse: (ignore: boolean) => Promise<void>
     click: (link: string | null) => Promise<void>
     overlayEmpty: () => Promise<void>
+    ready: () => Promise<void>
     test: () => Promise<{ ok: boolean }>
   }
   auth: {

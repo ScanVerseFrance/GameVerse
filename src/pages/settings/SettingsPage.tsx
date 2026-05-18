@@ -35,6 +35,7 @@ import { useSettingsStore } from '@/stores/settings.store'
 import { useDownloadStore } from '@/stores/download.store'
 import { useAddonStore } from '@/stores/addon.store'
 import type { AppSettings, SessionInfo, StorageUsage, SystemMetrics } from '@/types/app-settings.types'
+import { cn } from '@/utils/cn'
 
 // 10 MB ceiling for avatar + banner uploads — same cap ComicScan uses.
 // Stored as a data URL in SQLite (acceptable for 10 MB; SQLite has no
@@ -664,7 +665,146 @@ function NotificationsSection() {
           checked={updateFlag}
           onChange={(v) => updateApp({ notifications: { updateAvailable: v } })}
         />
+
+        {/* Snooze — pause-all for a chosen window. Update-available
+            toasts are still surfaced so security patches aren't
+            missed. */}
+        <SnoozeRow
+          snoozeUntil={appSettings?.notifications.snoozeUntil ?? null}
+          onSnooze={(minutes) =>
+            updateApp({
+              notifications: {
+                snoozeUntil: minutes > 0 ? Date.now() + minutes * 60 * 1000 : null,
+              },
+            })
+          }
+        />
+
+        {/* Diagnostic dump — tails the main-process debug log and
+            lets the user open the .log file. Critical when chasing
+            "test toast works, friend toast doesn't" regressions. */}
+        <DiagnosticRow />
       </div>
+    </div>
+  )
+}
+
+function SnoozeRow({
+  snoozeUntil,
+  onSnooze,
+}: {
+  snoozeUntil: number | null
+  onSnooze: (minutes: number) => Promise<void> | void
+}) {
+  const active = snoozeUntil != null && snoozeUntil > Date.now()
+  // Re-render once a second while a snooze is active so the
+  // countdown stays accurate without a full settings re-fetch.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (!active) return
+    const id = window.setInterval(() => setTick((t) => t + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [active])
+  const remaining = active && snoozeUntil ? Math.max(0, snoozeUntil - Date.now()) : 0
+  const hrs = Math.floor(remaining / 3600_000)
+  const mins = Math.floor((remaining % 3600_000) / 60_000)
+  const label = active
+    ? `Silence actif · ${hrs > 0 ? `${hrs}h ` : ''}${mins.toString().padStart(2, '0')}min`
+    : 'Aucun silence actif'
+  return (
+    <div className="p-3 rounded-md bg-[var(--surface-soft)] border border-glass-border">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div>
+          <p className="text-sm font-medium text-fg-primary">Mode silence</p>
+          <p className="text-xs text-fg-muted mt-0.5">
+            Mute tous les toasts (sauf MAJ critiques) pendant la durée choisie.
+          </p>
+          <p
+            className={cn(
+              'text-xs mt-1 font-mono',
+              active ? 'text-accent-primary' : 'text-fg-muted',
+            )}
+          >
+            {label}
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {[15, 60, 240].map((m) => (
+          <button
+            key={m}
+            onClick={() => void onSnooze(m)}
+            className="h-7 px-3 rounded-md bg-[var(--surface-soft-hover)] hover:bg-accent-primary/20 hover:text-accent-primary text-xs font-medium border border-glass-border transition-colors"
+          >
+            {m < 60 ? `${m} min` : `${m / 60}h`}
+          </button>
+        ))}
+        <button
+          onClick={() => void onSnooze(0)}
+          disabled={!active}
+          className="h-7 px-3 rounded-md bg-[var(--surface-soft-hover)] hover:bg-error/20 hover:text-error text-xs font-medium border border-glass-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Réactiver
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function DiagnosticRow() {
+  const [lines, setLines] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  async function fetchTail(): Promise<void> {
+    setLoading(true)
+    try {
+      const tail = await window.nexus.debug.tail(150)
+      setLines(tail)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="p-3 rounded-md bg-[var(--surface-soft)] border border-glass-border">
+      <div className="flex items-start justify-between gap-3 mb-2">
+        <div>
+          <p className="text-sm font-medium text-fg-primary">Journal diagnostique</p>
+          <p className="text-xs text-fg-muted mt-0.5">
+            Trace en direct du pipeline toasts + WebSocket. Utile pour
+            comprendre pourquoi une notif n'apparaît pas.
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={() => {
+              void fetchTail().then(() => setExpanded(true))
+            }}
+            disabled={loading}
+            className="h-7 px-3 rounded-md bg-[var(--surface-soft-hover)] hover:bg-accent-primary/20 hover:text-accent-primary text-xs font-medium border border-glass-border transition-colors disabled:opacity-50"
+          >
+            {loading ? '…' : expanded ? 'Rafraîchir' : 'Afficher'}
+          </button>
+          <button
+            onClick={() => void window.nexus.debug.openLogFile()}
+            className="h-7 px-3 rounded-md bg-[var(--surface-soft-hover)] hover:bg-accent-primary/20 hover:text-accent-primary text-xs font-medium border border-glass-border transition-colors"
+          >
+            Fichier
+          </button>
+        </div>
+      </div>
+      {expanded && lines.length > 0 && (
+        <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-black/40 p-2 text-[10px] font-mono leading-relaxed text-fg-muted whitespace-pre-wrap">
+          {lines.join('\n')}
+        </pre>
+      )}
+      {expanded && lines.length === 0 && (
+        <p className="text-xs text-fg-muted italic mt-2">
+          Journal vide — boote le launcher et essaie de recevoir un message
+          pour générer des entrées.
+        </p>
+      )}
     </div>
   )
 }

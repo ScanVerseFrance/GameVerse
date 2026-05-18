@@ -28,6 +28,7 @@
 import { BrowserWindow, screen, ipcMain, app } from 'electron'
 import path from 'node:path'
 import { getAppSettings } from './app-settings.service'
+import { debugLog } from './debug-log.service'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const RENDERER_DIST = path.join(__dirname, '..', 'dist')
@@ -42,6 +43,22 @@ const SCREEN_MARGIN_BOTTOM = 16
 
 let toastWindow: BrowserWindow | null = null
 let mainWindowRef: (() => BrowserWindow | null) | null = null
+/**
+ * Once the toast renderer signals it has its IPC listener mounted
+ * (via the `toast:ready` channel), this flips true and stays true
+ * for the lifetime of the window. Until it does, every pushToast()
+ * call queues the payload — drained as a single burst the moment
+ * the renderer reports ready.
+ *
+ * Without this, the very first pushToast call after window creation
+ * raced React's first useEffect: the IPC message arrived before the
+ * onPush listener installed and was silently dropped. Symptom:
+ * "Test" toast worked (because by then the renderer had subscribed)
+ * but the FIRST friend-message toast was lost. Subsequent ones too,
+ * once a queue had accumulated.
+ */
+let toastRendererReady = false
+const pendingPayloads: ToastPayload[] = []
 
 /**
  * Each kind of toast can be silenced independently via app settings.
@@ -87,6 +104,15 @@ function isKindEnabled(kind: ToastKind): boolean {
   if (kind === 'test') return true
   try {
     const s = getAppSettings().notifications ?? {}
+
+    // Snooze takes precedence over per-kind toggles — except for
+    // `update_available` which is too important to swallow (security
+    // patches, critical fixes) and `test` which is bypassed above.
+    const snooze = typeof s.snoozeUntil === 'number' ? s.snoozeUntil : 0
+    if (snooze > Date.now() && kind !== 'update_available') {
+      return false
+    }
+
     const map: Record<Exclude<ToastKind, 'test'>, boolean> = {
       download_complete: s.downloadComplete !== false,
       achievement_unlocked: s.achievementUnlocked !== false,
@@ -180,6 +206,11 @@ function createToastWindow(): BrowserWindow {
 
   win.on('closed', () => {
     toastWindow = null
+    // Reset the ready flag so the next ensureToastWindow rebuilds
+    // cleanly. Pending queue is preserved across windows — if a
+    // closed window had unsent toasts they'll surface in the new
+    // one (rare but matches Steam's "queued during reload" pattern).
+    toastRendererReady = false
   })
 
   // Reposition on display layout changes (monitor disconnected,
@@ -217,33 +248,70 @@ function ensureToastWindow(): BrowserWindow {
  * really need the user to see it — none currently do).
  */
 export function pushToast(payload: ToastPayload): boolean {
+  debugLog('toast', 'pushToast called', {
+    kind: payload.kind,
+    title: payload.title,
+    hasIcon: !!payload.iconUrl,
+    hasCover: !!payload.coverUrl,
+  })
   if (!isKindEnabled(payload.kind)) {
+    debugLog('toast', 'suppressed by settings', { kind: payload.kind })
     return false
   }
-  const win = ensureToastWindow()
-  // Wait until the renderer has signalled it's ready before sending —
-  // otherwise we race the page-load and the toast never lands. Cheap
-  // approach: try immediately; if the renderer hasn't subscribed yet
-  // it queues internally. The renderer sets up its IPC handler in a
-  // useEffect that fires after first paint.
-  const send = (): void => {
-    if (win.isDestroyed()) return
-    win.webContents.send('toast:push', payload)
-  }
-  if (win.webContents.isLoading()) {
-    win.webContents.once('did-finish-load', send)
-  } else {
-    send()
+  let win: BrowserWindow
+  try {
+    win = ensureToastWindow()
+  } catch (err) {
+    debugLog('toast', 'ensureToastWindow threw', {
+      kind: payload.kind,
+      error: (err as Error).message,
+    })
+    return false
   }
 
-  // Show the window if it was hidden. We use `showInactive` (or the
-  // equivalent on a focusable:false window — which on Windows means
-  // a no-op show that doesn't take focus) so the user's current
-  // focus context is preserved.
+  // Two-phase delivery to dodge the renderer mount race:
+  //   1. If the renderer has already signalled ready via the
+  //      `toast:ready` IPC, send directly.
+  //   2. Otherwise queue the payload — the toast:ready handler
+  //      drains the queue in arrival order.
+  if (toastRendererReady && !win.webContents.isLoading()) {
+    if (!win.isDestroyed()) {
+      debugLog('toast', "webContents.send('toast:push') [immediate]", {
+        kind: payload.kind,
+      })
+      win.webContents.send('toast:push', payload)
+    }
+  } else {
+    debugLog('toast', 'renderer not ready, queuing payload', {
+      kind: payload.kind,
+      queueSize: pendingPayloads.length + 1,
+    })
+    pendingPayloads.push(payload)
+  }
+
+  // Show the window if it was hidden. `showInactive` on a
+  // focusable:false window doesn't steal focus from whatever the
+  // user is doing.
   if (!win.isVisible()) {
     win.showInactive()
   }
   return true
+}
+
+/**
+ * Drain any pending payloads to the now-ready renderer. Called by
+ * the `toast:ready` IPC handler the moment the overlay's onPush
+ * useEffect installs its listener.
+ */
+function drainPendingPayloads(): void {
+  if (!toastWindow || toastWindow.isDestroyed()) return
+  if (pendingPayloads.length === 0) return
+  debugLog('toast', `draining ${pendingPayloads.length} pending payload(s)`)
+  const copy = pendingPayloads.slice()
+  pendingPayloads.length = 0
+  for (const p of copy) {
+    toastWindow.webContents.send('toast:push', p)
+  }
 }
 
 /**
@@ -279,6 +347,17 @@ function registerToastIpc(): void {
   ipcMain.handle('toast:overlay-empty', () => {
     if (!toastWindow || toastWindow.isDestroyed()) return
     if (toastWindow.isVisible()) toastWindow.hide()
+  })
+
+  // Renderer signals it has mounted and its onPush listener is
+  // installed. Toggles the ready flag and drains any payloads that
+  // were queued during the boot race window.
+  ipcMain.handle('toast:ready', () => {
+    debugLog('toast', 'renderer signalled ready', {
+      pending: pendingPayloads.length,
+    })
+    toastRendererReady = true
+    drainPendingPayloads()
   })
 
   // Diagnostic test hook used by Settings → Notifications. Bypasses

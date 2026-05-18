@@ -224,6 +224,15 @@ export default function App() {
       }
     })
 
+    // Mirror main-process debug log entries into the renderer
+    // DevTools console. Free real-time tail for anyone who opens
+    // Ctrl+Shift+I — no need to dig into the .log file on disk
+    // when chasing a regression in the WS pipeline.
+    const unsubDbg = window.nexus.debug.onLog((entry) => {
+      // eslint-disable-next-line no-console
+      console.log(`%c[${entry.tag}]%c ${entry.msg}`, 'color:#7dd3fc', '', entry.data ?? '')
+    })
+
     // Update popup → also mirror to the bell so the user has a
     // persistent record (the toast itself is transient).
     const unsubUpd = window.nexus.update.onAvailable((info) => {
@@ -249,6 +258,7 @@ export default function App() {
       unsubCloudEvent()
       unsubUpd()
       unsubNav()
+      unsubDbg()
     }
   }, [])
 

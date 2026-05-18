@@ -19,6 +19,11 @@ export interface AppSettings {
     friendLaunchedGame?: boolean
     /** Friend request from another user. */
     friendRequest?: boolean
+    /** Snooze timestamp (Unix ms). When set in the future, every toast
+     *  kind except `update_available` and `test` is suppressed. Lets the
+     *  user mute the overlay while gaming / focusing without flipping
+     *  individual per-kind toggles. */
+    snoozeUntil?: number | null
   }
   /** SteamGridDB API key — used as a fallback artwork source when Steam's
    * search API doesn't find a match. Optional: covers degrade gracefully to

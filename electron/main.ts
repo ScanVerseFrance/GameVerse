@@ -37,6 +37,11 @@ import {
   initToastWindow,
   shutdownToastWindow,
 } from './services/toast-window.service'
+import {
+  initDebugLog,
+  tailDebugLog,
+  getDebugLogPath,
+} from './services/debug-log.service'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const APP_ROOT = path.join(__dirname, '..')
@@ -182,6 +187,11 @@ void app.whenReady().then(async () => {
     return
   }
   initAppSettings()
+  // Debug log goes up first so every other service's init() is
+  // already covered by the file logger / renderer mirror. Without
+  // this, silent failures in e.g. the toast pipeline have no
+  // visible signal in packed builds (no terminal output).
+  initDebugLog(() => mainWindow)
   // Only wipe the *negative* artwork rows on boot (entries cached as
   // "no match" with a 1-hour TTL). Previously we wiped the entire
   // artwork table on every launch because the SGDB-first strategy was
@@ -223,6 +233,12 @@ void app.whenReady().then(async () => {
   // panel so a user reporting "no toasts" can self-check rather than
   // sending us console logs blind.
   ipcMain.handle('notifs:test', async () => testNotification())
+  // Debug log access for the Settings → Diagnostic panel. tail
+  // returns the last N lines from the in-memory ring; openFile
+  // pops the .log in the OS default text editor so the user can
+  // copy-paste the full transcript when reporting a bug.
+  ipcMain.handle('debug:tail', (_e, n: number = 200) => tailDebugLog(n))
+  ipcMain.handle('debug:openLogFile', () => shell.openPath(getDebugLogPath()))
   // Auto-update polls GitHub Releases on a 4h cadence. The setting
   // is queried lazily on every check so flipping it off in the
   // Paramètres pane takes effect at the next interval without

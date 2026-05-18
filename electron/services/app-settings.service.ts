@@ -18,6 +18,7 @@ function defaultSettings(): AppSettings {
       friendMessage: true,
       friendLaunchedGame: true,
       friendRequest: true,
+      snoozeUntil: null,
     },
     steamGridDbApiKey: '',
     steamWebApiKey: '',
@@ -51,6 +52,10 @@ function loadSettings(): void {
         friendMessage: parsed.notifications?.friendMessage !== false,
         friendLaunchedGame: parsed.notifications?.friendLaunchedGame !== false,
         friendRequest: parsed.notifications?.friendRequest !== false,
+        snoozeUntil:
+          typeof parsed.notifications?.snoozeUntil === 'number'
+            ? parsed.notifications.snoozeUntil
+            : null,
       },
       steamGridDbApiKey: typeof parsed.steamGridDbApiKey === 'string' ? parsed.steamGridDbApiKey : '',
       steamWebApiKey: typeof parsed.steamWebApiKey === 'string' ? parsed.steamWebApiKey : '',

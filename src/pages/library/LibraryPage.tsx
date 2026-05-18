@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Library as LibraryIcon, Search, X, Star, Compass, FolderTree, Settings2 } from 'lucide-react'
+import { Library as LibraryIcon, Search, X, Star, Compass, FolderTree, Settings2, ArrowUpDown } from 'lucide-react'
 import { useLibraryStore } from '@/stores/library.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCollectionStore } from '@/stores/collection.store'
@@ -22,6 +22,14 @@ const FILTERS: { value: LibraryStatus | 'all'; label: string }[] = [
   { value: 'abandoned', label: 'Abandonnés' },
 ]
 
+type SortMode = 'recent_played' | 'recent_added' | 'alpha' | 'playtime'
+const SORTS: { value: SortMode; label: string }[] = [
+  { value: 'recent_played', label: 'Joué récemment' },
+  { value: 'recent_added', label: 'Ajouté récemment' },
+  { value: 'alpha', label: 'A → Z' },
+  { value: 'playtime', label: 'Temps de jeu' },
+]
+
 export default function LibraryPage() {
   const user = useAuthStore((s) => s.user)
   const games = useLibraryStore((s) => s.games)
@@ -39,6 +47,20 @@ export default function LibraryPage() {
   const [statusFilter, setStatusFilter] = useState<LibraryStatus | 'all'>('all')
   const [collectionFilter, setCollectionFilter] = useState<string | null>(null)
   const [favoritesOnly, setFavoritesOnly] = useState(false)
+  // Sort preference is persisted in localStorage so flipping tabs
+  // / re-launching the app keeps the user's choice. Falls back to
+  // "joué récemment" — same default Steam picks.
+  const [sortMode, setSortModeRaw] = useState<SortMode>(() => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('nexus.library.sort') : null
+    if (raw === 'recent_played' || raw === 'recent_added' || raw === 'alpha' || raw === 'playtime') {
+      return raw
+    }
+    return 'recent_played'
+  })
+  const setSortMode = (m: SortMode): void => {
+    setSortModeRaw(m)
+    try { localStorage.setItem('nexus.library.sort', m) } catch { /* quota → ignore */ }
+  }
   const [editing, setEditing] = useState<LibraryGame | null>(null)
   const [launchError, setLaunchError] = useState<string | null>(null)
   const [manageCollectionsOpen, setManageCollectionsOpen] = useState(false)
@@ -90,7 +112,7 @@ export default function LibraryPage() {
   }, [collectionFilter, games, gameMemberships, loadForGame])
 
   const filtered = useMemo(() => {
-    return games.filter((g) => {
+    const list = games.filter((g) => {
       if (statusFilter !== 'all' && g.status !== statusFilter) return false
       if (favoritesOnly && !g.isFavorite) return false
       if (collectionFilter) {
@@ -103,7 +125,27 @@ export default function LibraryPage() {
       }
       return true
     })
-  }, [games, statusFilter, favoritesOnly, collectionFilter, gameMemberships, debouncedQuery])
+    // Sort in-place on the post-filter list to avoid disturbing the
+    // store's reference identity. null/zero values sink to the
+    // bottom for time-based sorts (Hydra does the same).
+    const sorted = [...list]
+    switch (sortMode) {
+      case 'alpha':
+        sorted.sort((a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' }))
+        break
+      case 'playtime':
+        sorted.sort((a, b) => (b.totalPlaytimeSeconds ?? 0) - (a.totalPlaytimeSeconds ?? 0))
+        break
+      case 'recent_added':
+        sorted.sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0))
+        break
+      case 'recent_played':
+      default:
+        sorted.sort((a, b) => (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0))
+        break
+    }
+    return sorted
+  }, [games, statusFilter, favoritesOnly, collectionFilter, gameMemberships, debouncedQuery, sortMode])
 
   async function handlePlay(game: LibraryGame) {
     setLaunchError(null)
@@ -173,6 +215,27 @@ export default function LibraryPage() {
             >
               <Star className={cn('w-4 h-4', favoritesOnly && 'fill-current')} /> Favoris
             </button>
+            {/*
+              Sort dropdown — Steam-style native <select> styled to
+              match. Inline because the launcher's design system doesn't
+              expose a Select primitive yet and a custom popover would
+              be overkill for 4 options.
+            */}
+            <div className="relative">
+              <ArrowUpDown className="w-4 h-4 text-fg-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as SortMode)}
+                className="h-11 pl-9 pr-3 rounded-md text-sm font-medium border border-glass-border bg-[var(--surface-soft)] hover:bg-[var(--surface-soft-hover)] text-fg-secondary appearance-none cursor-pointer focus:outline-none focus:border-accent-primary/60"
+                aria-label="Trier la bibliothèque"
+              >
+                {SORTS.map((s) => (
+                  <option key={s.value} value={s.value} className="bg-[#1a1f2e]">
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">

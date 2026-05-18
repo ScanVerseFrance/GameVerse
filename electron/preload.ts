@@ -344,6 +344,25 @@ const api = {
     exportData: (userId: string) => ipcRenderer.invoke('app:exportData', userId),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
   },
+  debug: {
+    // Last N lines from the main-process debug ring buffer. Used
+    // by the Settings → Diagnostic panel so the user can copy-paste
+    // when reporting a bug.
+    tail: (n: number = 200) => ipcRenderer.invoke('debug:tail', n),
+    // Open the .log file in the OS default text editor.
+    openLogFile: () => ipcRenderer.invoke('debug:openLogFile'),
+    // Subscribe to live log entries — the cloud + toast services
+    // forward every log line so the renderer DevTools console shows
+    // a live tail when DevTools are open.
+    onLog: (
+      cb: (entry: {
+        ts: string
+        tag: string
+        msg: string
+        data: unknown
+      }) => void,
+    ) => subscribe('debug:log', cb),
+  },
   toast: {
     // Subscribed by the floating overlay window (ToastOverlayPage)
     // to receive toasts pushed from the main process. The main
@@ -373,6 +392,10 @@ const api = {
     // The overlay has no more visible toasts → main hides the
     // floating window to release GPU compositor cycles.
     overlayEmpty: () => ipcRenderer.invoke('toast:overlay-empty'),
+    // Renderer → main: "I've installed my onPush listener, drain
+    // anything you queued during the mount race." Called once from
+    // ToastOverlayPage's first useEffect.
+    ready: () => ipcRenderer.invoke('toast:ready'),
     // Diagnostic — pops a single decorative toast for the Settings
     // → Notifications "Tester" button. Bypasses per-kind toggles.
     test: () => ipcRenderer.invoke('toast:test'),

@@ -23,13 +23,15 @@ export function ToastOverlayPage() {
   const push = useToastStore((s) => s.push)
 
   useEffect(() => {
-    // The preload exposes a typed listener; the main process sends
-    // toast payloads via `toast:push`. Returning the unsubscribe
-    // keeps StrictMode's double-mount in dev from leaving a stale
-    // listener behind.
+    // Install the listener FIRST, then signal main that we're
+    // ready. Main keeps a queue of payloads pushed before the
+    // renderer mounted and drains them through this same channel.
+    // The order matters — if we signalled ready before subscribing,
+    // the drain would arrive at a non-listener and get lost.
     const off = window.nexus.toast?.onPush((payload) => {
       push(payload)
     })
+    void window.nexus.toast?.ready()
     return () => {
       if (off) off()
     }

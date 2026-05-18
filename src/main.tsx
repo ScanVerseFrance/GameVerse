@@ -9,7 +9,7 @@ import './index.css'
 // error boundary can include it in copy-to-clipboard bug reports
 // without having to thread package.json through Vite separately.
 ;(window as unknown as { __NEXUS_VERSION__?: string }).__NEXUS_VERSION__ =
-  '0.2.10'
+  '0.2.11'
 
 // Toast overlay mode — detected from the URL hash. The toast window
 // service in electron/main loads index.html#/toast-overlay; when we

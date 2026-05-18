@@ -35,6 +35,7 @@ import type {
   CloudUser,
   CloudWsEnvelope,
 } from '@/types/cloud.types'
+import { debugLog } from './debug-log.service'
 
 // Hard-coded production URL. v0.2.1 removed the user-overridable
 // editor because it generated more support traffic than it solved
@@ -307,104 +308,181 @@ async function openSocket(): Promise<void> {
     setStatus('connected')
   })
   ws.on('message', (raw) => {
+    let env: CloudWsEnvelope | null = null
     try {
-      const env = JSON.parse(raw.toString()) as CloudWsEnvelope
-      emit('cloud:event', env)
-      // Mirror to the Steam-style floating toast overlay. The toast
-      // window is a separate always-on-top BrowserWindow so the user
-      // sees these regardless of whether the main launcher is
-      // focused, minimised, or hidden behind a fullscreen game.
-      //
-      // Display-name + avatar resolution: the WS payload usually
-      // includes pre-rendered user objects (friend:request.fromUser,
-      // message:new.sender from server-side serialise). When it
-      // doesn't we fall back to the caches populated by friend:added
-      // envelopes; if THOSE miss we surface the toast with a generic
-      // title rather than waiting on a synchronous IPC.
-      try {
-        const toastSvc = require('./toast-window.service') as typeof import('./toast-window.service')
-        const me = currentUser?.id ?? null
-        if (env.type === 'message:new') {
-          const m = env.data
-          if (m.senderId !== me) {
-            const peerName = peerDisplayNames.get(m.senderId) ?? null
-            const peerAvatar = peerAvatarUrls.get(m.senderId) ?? null
-            toastSvc.pushToast({
-              kind: 'friend_message',
-              title: peerName ?? 'Nouveau message',
-              body: m.content.slice(0, 140),
-              iconUrl: peerAvatar,
-              link: `/community/chat/${m.senderId}`,
-            })
-          }
-        } else if (env.type === 'activity:new') {
-          const a = env.data
-          if (a.userId !== me && a.kind === 'game_launched') {
-            const payload = a.payload as {
-              title?: string
-              coverUrl?: string | null
-            } | null
-            const gameTitle = payload?.title ?? 'un jeu'
-            const peerName = peerDisplayNames.get(a.userId) ?? null
-            const peerAvatar = peerAvatarUrls.get(a.userId) ?? null
-            toastSvc.pushToast({
-              kind: 'friend_launched_game',
-              title: peerName ? `${peerName} joue maintenant` : 'Un ami joue',
-              body: gameTitle,
-              iconUrl: peerAvatar,
-              coverUrl: payload?.coverUrl ?? null,
-              link: `/community/profile/${a.userId}`,
-            })
-          }
-        } else if (env.type === 'friend:added') {
-          // Cache the peer's display name + avatar as soon as we see
-          // one — used by subsequent message / activity toasts to
-          // render "Kazu: hey" with avatar instead of "Nouveau
-          // message" with a generic icon.
-          const u = env.data?.user as
-            | {
-                id: string
-                username?: string
-                displayName?: string | null
-                avatarUrl?: string | null
-              }
-            | undefined
-          if (u?.id) {
-            peerDisplayNames.set(u.id, u.displayName ?? u.username ?? u.id)
-            if (u.avatarUrl) peerAvatarUrls.set(u.id, u.avatarUrl)
-          }
-        } else if (env.type === 'friend:request') {
-          const data = (env as unknown as {
-            data?: {
-              fromUser?: {
-                id?: string
-                username?: string
-                displayName?: string | null
-                avatarUrl?: string | null
-              }
-            }
-          }).data
-          const u = data?.fromUser
-          if (u?.id) {
-            // Pre-populate caches so the inevitable accept→message
-            // sequence shows the name + avatar immediately.
-            const label = u.displayName ?? u.username ?? null
-            if (label) peerDisplayNames.set(u.id, label)
-            if (u.avatarUrl) peerAvatarUrls.set(u.id, u.avatarUrl)
-            toastSvc.pushToast({
-              kind: 'friend_request',
-              title: "Demande d'ami",
-              body: label ?? "Un utilisateur veut t'ajouter",
-              iconUrl: u.avatarUrl ?? null,
-              link: '/community/friends',
-            })
-          }
+      env = JSON.parse(raw.toString()) as CloudWsEnvelope
+    } catch (err) {
+      debugLog('cloud-ws', 'malformed payload', { error: (err as Error).message })
+      return
+    }
+    emit('cloud:event', env)
+
+    // Mirror to the Steam-style floating toast overlay. Errors are
+    // logged loudly (NOT swallowed) — silent failure is what got us
+    // into the v0.2.8 regression where the friend toasts looked
+    // wired up but never appeared. If anything throws here we want
+    // to SEE it in the debug log and renderer DevTools.
+    try {
+      const toastSvc = require('./toast-window.service') as typeof import('./toast-window.service')
+      const me = currentUser?.id ?? null
+      debugLog('cloud-ws', 'event received', {
+        type: env.type,
+        me,
+        hasCurrentUser: !!currentUser,
+      })
+
+      if (env.type === 'message:new') {
+        const m = env.data
+        if (!m || typeof m !== 'object') {
+          debugLog('cloud-ws', 'message:new with no data', { env })
+          return
         }
-      } catch {
-        /* toast service missing or failed — never block WS dispatch */
+        if (m.senderId === me) {
+          debugLog('cloud-ws', 'message:new from self → no toast', {
+            senderId: m.senderId,
+          })
+          return
+        }
+        const peerName = peerDisplayNames.get(m.senderId) ?? null
+        const peerAvatar = peerAvatarUrls.get(m.senderId) ?? null
+        debugLog('cloud-ws', 'message:new → pushToast', {
+          senderId: m.senderId,
+          peerName,
+          hasAvatar: !!peerAvatar,
+        })
+        toastSvc.pushToast({
+          kind: 'friend_message',
+          title: peerName ?? 'Nouveau message',
+          body: m.content.slice(0, 140),
+          iconUrl: peerAvatar,
+          link: `/community/chat/${m.senderId}`,
+        })
+      } else if (env.type === 'activity:new') {
+        const a = env.data
+        if (!a || typeof a !== 'object') {
+          debugLog('cloud-ws', 'activity:new with no data', { env })
+          return
+        }
+        if (a.userId === me) {
+          debugLog('cloud-ws', 'activity:new from self → no toast', {
+            userId: a.userId,
+          })
+          return
+        }
+        if (a.kind !== 'game_launched') {
+          debugLog('cloud-ws', 'activity:new unsupported kind', { kind: a.kind })
+          return
+        }
+        const payload = a.payload as {
+          title?: string
+          coverUrl?: string | null
+        } | null
+        const gameTitle = payload?.title ?? 'un jeu'
+        // Activity envelopes embed `user: CloudPublicUser` directly —
+        // use it as the primary source for displayName + avatar so
+        // we don't need a warm cache. Fall back to caches only if
+        // the embed is somehow missing.
+        const embedded = (a as unknown as {
+          user?: {
+            id?: string
+            username?: string
+            displayName?: string | null
+            avatarUrl?: string | null
+          }
+        }).user
+        const peerName =
+          embedded?.displayName ??
+          embedded?.username ??
+          peerDisplayNames.get(a.userId) ??
+          null
+        const peerAvatar =
+          embedded?.avatarUrl ?? peerAvatarUrls.get(a.userId) ?? null
+        // Warm the caches with whatever we learned for the next event.
+        if (peerName) peerDisplayNames.set(a.userId, peerName)
+        if (peerAvatar) peerAvatarUrls.set(a.userId, peerAvatar)
+        debugLog('cloud-ws', 'activity:new game_launched → pushToast', {
+          userId: a.userId,
+          peerName,
+          gameTitle,
+        })
+        toastSvc.pushToast({
+          kind: 'friend_launched_game',
+          title: peerName ? `${peerName} joue maintenant` : 'Un ami joue',
+          body: gameTitle,
+          iconUrl: peerAvatar,
+          coverUrl: payload?.coverUrl ?? null,
+          link: `/community/profile/${a.userId}`,
+        })
+      } else if (env.type === 'friend:added') {
+        // Cache the peer's display name + avatar as soon as we see
+        // one — used by subsequent message / activity toasts to
+        // render "Kazu: hey" with avatar instead of "Nouveau
+        // message" with a generic icon.
+        const u = env.data?.user as
+          | {
+              id: string
+              username?: string
+              displayName?: string | null
+              avatarUrl?: string | null
+            }
+          | undefined
+        if (u?.id) {
+          peerDisplayNames.set(u.id, u.displayName ?? u.username ?? u.id)
+          if (u.avatarUrl) peerAvatarUrls.set(u.id, u.avatarUrl)
+          debugLog('cloud-ws', 'friend:added cached', {
+            id: u.id,
+            displayName: u.displayName ?? u.username,
+            hasAvatar: !!u.avatarUrl,
+          })
+        }
+      } else if (env.type === 'friend:request') {
+        // ⚠ v0.2.8/9/10 had this field named `fromUser` (matching an
+        // earlier server contract); the current server sends `from`
+        // per the CloudWsEnvelope TypeScript type. Read both for
+        // resilience while the server-side rolls.
+        const dataAny = (env as unknown as {
+          data?: {
+            from?: {
+              id?: string
+              username?: string
+              displayName?: string | null
+              avatarUrl?: string | null
+            }
+            fromUser?: {
+              id?: string
+              username?: string
+              displayName?: string | null
+              avatarUrl?: string | null
+            }
+          }
+        }).data
+        const u = dataAny?.from ?? dataAny?.fromUser
+        if (u?.id) {
+          const label = u.displayName ?? u.username ?? null
+          if (label) peerDisplayNames.set(u.id, label)
+          if (u.avatarUrl) peerAvatarUrls.set(u.id, u.avatarUrl)
+          debugLog('cloud-ws', 'friend:request → pushToast', {
+            id: u.id,
+            label,
+          })
+          toastSvc.pushToast({
+            kind: 'friend_request',
+            title: "Demande d'ami",
+            body: label ?? "Un utilisateur veut t'ajouter",
+            iconUrl: u.avatarUrl ?? null,
+            link: '/community/friends',
+          })
+        }
       }
-    } catch {
-      /* malformed payload — ignore */
+    } catch (err) {
+      // Loud failure — surfaces in the debug log AND the renderer
+      // DevTools so we see what's going wrong instead of silently
+      // dropping events.
+      debugLog('cloud-ws', 'toast pipeline threw', {
+        type: env?.type,
+        error: (err as Error).message,
+        stack: (err as Error).stack?.split('\n').slice(0, 3).join(' | '),
+      })
     }
   })
   ws.on('close', () => {
