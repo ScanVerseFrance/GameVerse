@@ -8,7 +8,7 @@ import './index.css'
 // error boundary can include it in copy-to-clipboard bug reports
 // without having to thread package.json through Vite separately.
 ;(window as unknown as { __NEXUS_VERSION__?: string }).__NEXUS_VERSION__ =
-  '0.2.5'
+  '0.2.6'
 
 // Unhandled-rejection trap → write to console (DevTools-visible).
 // Without this, a rejected promise from an IPC call leaves the user

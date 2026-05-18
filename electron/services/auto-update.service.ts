@@ -96,15 +96,67 @@ export function initAutoUpdate(deps: {
   getMainWindow = deps.getMain
   isCheckSettingEnabled = deps.isEnabled
 
-  // First check happens 30s after boot — the launcher has more pressing
-  // things to do at startup (cloud bootConnect, library hydrate, etc.)
-  // and the network might not even be ready yet on a cold boot.
+  // Sweep stale update installers left behind by previous self-updates
+  // (~140 MB each, accumulates in %TEMP%). Delayed by 5s so the
+  // installer that JUST upgraded us has time to release its file
+  // lock before we try to unlink. Best-effort — EBUSY entries get
+  // skipped and tried again at next boot.
+  setTimeout(() => {
+    void cleanupOldUpdateInstallers()
+  }, 5_000)
+
+  // First check happens 8s after boot — matches the ScanVerse webview
+  // cadence. Long enough to let cloud bootConnect resolve first, short
+  // enough that the user notices the popup quickly on launch.
   setTimeout(() => {
     void checkForUpdates({ source: 'auto' })
   }, INITIAL_DELAY_MS)
   pollTimer = setInterval(() => {
     void checkForUpdates({ source: 'auto' })
   }, POLL_INTERVAL_MS)
+}
+
+/**
+ * Remove `nexus-launcher-update-<timestamp>.exe` files from %TEMP%.
+ * The download/spawn flow leaves the installer there after launching
+ * it (the new launcher process can't unlink a file currently being
+ * executed); the next launcher boot is the right moment to clean
+ * them up — by then the installer has long exited and released
+ * its lock.
+ *
+ * We deliberately match ONLY our own naming pattern so we never
+ * touch user files or unrelated installers in temp.
+ */
+async function cleanupOldUpdateInstallers(): Promise<void> {
+  const tmpDir = os.tmpdir()
+  let entries: string[]
+  try {
+    entries = await fsp.readdir(tmpDir)
+  } catch {
+    return
+  }
+  const pattern = /^nexus-launcher-update-\d+\.exe$/i
+  let cleaned = 0
+  let skipped = 0
+  for (const name of entries) {
+    if (!pattern.test(name)) continue
+    const full = path.join(tmpDir, name)
+    try {
+      await fsp.unlink(full)
+      cleaned++
+    } catch {
+      // EBUSY (still locked by the installer that just spawned us),
+      // EACCES, ENOENT — all non-fatal. We'll retry on next boot.
+      skipped++
+    }
+  }
+  if (cleaned > 0 || skipped > 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[auto-update] %TEMP% sweep: removed ${cleaned} old installer(s)` +
+        (skipped > 0 ? `, ${skipped} still locked (will retry next boot)` : ''),
+    )
+  }
 }
 
 export function shutdownAutoUpdate(): void {
