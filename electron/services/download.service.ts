@@ -1,7 +1,9 @@
 import { app, BrowserWindow, Notification } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
+import os from 'node:os'
 import crypto from 'node:crypto'
+import { execFile } from 'node:child_process'
 import { getDatabase } from './database.service'
 import { startHttpDownload, type HttpHandle } from './http-downloader'
 import { startTorrentDownload, setGlobalThrottle, type TorrentHandle } from './torrent-downloader'
@@ -11,6 +13,7 @@ import {
   type BridgeHandle,
 } from './ankergames-bridge.service'
 import { upsertLibraryFromDownload } from './library.service'
+import { getAppSettings } from './app-settings.service'
 import type {
   DownloadRecord,
   DownloadSettings,
@@ -383,9 +386,77 @@ function registerCompletedGame(record: DownloadRecord, installPath: string): voi
     if (updated) {
       // Push to the renderer so /library refreshes without manual reload.
       getMainWindow?.()?.webContents.send('library:added-from-download', updated)
+      // Hydra 3.8.2-style auto-shortcuts: when the auto-detected exe
+      // exists and the user hasn't opted out, drop Desktop + Start
+      // Menu .lnk files pointing at it. Best-effort, fire-and-forget;
+      // errors only get logged.
+      if (updated.executablePath) {
+        void createGameShortcutsIfAllowed(updated)
+      }
     }
   } catch (e) {
     console.warn('[downloads] failed to add to library:', (e as Error).message)
+  }
+}
+
+/**
+ * Drop Desktop + Start Menu .lnk shortcuts pointing at the game's
+ * executable, with the cover URL used as the icon when present (falls
+ * back to the .exe's own icon). Gated by `app-settings.autoCreateShortcuts`
+ * so users who keep their desktop clean can opt out.
+ *
+ * Windows-only — on macOS / Linux this is a no-op. The PowerShell COM
+ * pattern is the same one we use in installer/main.js for the launcher's
+ * own shortcuts; lifting it inline here avoids depending on a native
+ * .lnk library.
+ */
+async function createGameShortcutsIfAllowed(game: {
+  title: string
+  executablePath: string | null
+}): Promise<void> {
+  if (process.platform !== 'win32') return
+  if (!game.executablePath) return
+  try {
+    const settings = getAppSettings()
+    if (settings.autoCreateShortcuts === false) return
+  } catch {
+    // Settings not loaded yet — default to the safe "yes, create them"
+    // behaviour to match the schema default.
+  }
+  const target = game.executablePath
+  // Sanitise the filename — strip path separators, colons and other
+  // chars Windows refuses in a .lnk name. Truncate to 200 chars so
+  // long repack titles don't trip the 260-char filesystem cap.
+  const safeName = game.title
+    .replace(/[<>:"/\\|?* -]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)
+  if (!safeName) return
+  const startMenu = path.join(
+    process.env.APPDATA ?? os.homedir(),
+    'Microsoft', 'Windows', 'Start Menu', 'Programs',
+    `${safeName}.lnk`,
+  )
+  const desktop = path.join(os.homedir(), 'Desktop', `${safeName}.lnk`)
+  const wd = path.dirname(target)
+  const ps = (location: string): string =>
+    [
+      `$s = (New-Object -ComObject WScript.Shell).CreateShortcut('${location.replace(/'/g, "''")}');`,
+      `$s.TargetPath = '${target.replace(/'/g, "''")}';`,
+      `$s.WorkingDirectory = '${wd.replace(/'/g, "''")}';`,
+      `$s.IconLocation = '${target.replace(/'/g, "''")},0';`,
+      `$s.Save()`,
+    ].join(' ')
+  for (const location of [startMenu, desktop]) {
+    await new Promise<void>((resolve) => {
+      execFile(
+        'powershell',
+        ['-NoProfile', '-Command', ps(location)],
+        { windowsHide: true },
+        () => resolve(),
+      )
+    })
   }
 }
 

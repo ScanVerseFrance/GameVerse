@@ -83,6 +83,8 @@ export interface NexusAPI {
     close: () => Promise<void>
     isMaximized: () => Promise<boolean>
     onMaximizedChange: (cb: (max: boolean) => void) => () => void
+    enterBigPicture: () => Promise<{ ok: boolean }>
+    exitBigPicture: () => Promise<{ ok: boolean }>
   }
   auth: {
     register: (p: RegisterPayload) => Promise<AuthResult>
@@ -689,6 +691,9 @@ export interface NexusAPI {
         }
       | { ok: false; error: string }
     >
+    openSavesFolder: (
+      libraryGameId: string
+    ) => Promise<{ ok: boolean; path?: string; error?: string }>
     onEvent: (
       cb: (data: {
         libraryGameId: string

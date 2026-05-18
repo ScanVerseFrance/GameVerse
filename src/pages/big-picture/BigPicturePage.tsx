@@ -26,6 +26,7 @@ import { useCloudStore } from '@/stores/cloud.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { Username } from '@/components/common/Username'
+import { useGamepad } from '@/hooks/useGamepad'
 import { cn } from '@/utils/cn'
 import type { LibraryGame } from '@/types/library.types'
 
@@ -96,6 +97,26 @@ export default function BigPicturePage() {
     const i = setInterval(() => setClock(new Date()), 30_000)
     return () => clearInterval(i)
   }, [])
+
+  // Push the Electron window into fullscreen + kiosk + always-on-top
+  // on enter, restore on exit. Without this the Windows taskbar peeks
+  // over the bottom of Big Picture and the title bar of the launcher
+  // stays visible — neither acceptable for a Steam-Big-Picture-style
+  // 10-foot UI. The IPC saves the regular window state and brings it
+  // back verbatim so the user lands back exactly where they were.
+  useEffect(() => {
+    void window.nexus.window.enterBigPicture()
+    return () => {
+      void window.nexus.window.exitBigPicture()
+    }
+  }, [])
+
+  // Bridge physical controllers to keyboard events. The polling loop
+  // dispatches synthetic Arrow / Enter / Escape KeyboardEvents so the
+  // existing geometric-focus walker (see the onKey effect below)
+  // transparently handles D-pad and analog stick input. `connected`
+  // + `label` drive the "Manette: Xbox" badge in the header.
+  const gamepad = useGamepad(true)
 
   // Keyboard navigation à la Steam Big Picture:
   //   • Escape         — close detail overlay or exit Big Picture
@@ -211,7 +232,7 @@ export default function BigPicturePage() {
 
         {/* Main content area — scrollable, view-dependent. */}
         <div className="flex-1 flex flex-col min-w-0">
-          <BigPictureHeader view={view} clock={clock} />
+          <BigPictureHeader view={view} clock={clock} gamepad={gamepad} />
 
           <div className="flex-1 overflow-y-auto overflow-x-hidden pb-20">
             {view === 'home' && (
@@ -402,7 +423,15 @@ function BigPictureRail({
 
 /* ──────────────── Header (title + clock) ──────────────── */
 
-function BigPictureHeader({ view, clock }: { view: View; clock: Date }) {
+function BigPictureHeader({
+  view,
+  clock,
+  gamepad,
+}: {
+  view: View
+  clock: Date
+  gamepad: { connected: boolean; label: string }
+}) {
   const titles: Record<View, string> = {
     home: 'Accueil',
     library: 'Bibliothèque',
@@ -416,6 +445,28 @@ function BigPictureHeader({ view, clock }: { view: View; clock: Date }) {
         {titles[view]}
       </h1>
       <div className="flex items-center gap-4 text-fg-secondary">
+        {/* Controller badge — only shown when a pad is plugged in.
+            The pretty label comes from useGamepad's stripping of the
+            "(XInput STANDARD GAMEPAD)" OS suffix. Green pulse dot to
+            differentiate from "En ligne" (cloud) at a glance. */}
+        {gamepad.connected && (
+          <motion.div
+            initial={{ opacity: 0, x: 8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 8 }}
+            className="hidden md:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md bg-[var(--surface-soft)] border border-glass-border"
+            title={gamepad.label}
+          >
+            <span className="relative inline-flex">
+              <span className="w-1.5 h-1.5 rounded-full bg-success" />
+              <span className="absolute inset-0 w-1.5 h-1.5 rounded-full bg-success animate-ping opacity-60" />
+            </span>
+            <Gamepad2 className="w-3.5 h-3.5 text-success" />
+            <span className="font-mono max-w-[180px] truncate">
+              {gamepad.label || 'Manette'}
+            </span>
+          </motion.div>
+        )}
         <div className="hidden lg:flex items-center gap-1.5 text-xs">
           <Wifi className="w-3.5 h-3.5 text-success" />
           <span className="font-mono">En ligne</span>

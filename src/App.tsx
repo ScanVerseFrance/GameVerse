@@ -141,6 +141,86 @@ export default function App() {
     })
     const unsubCloudEvent = window.nexus.cloud.onEvent((env) => {
       cloudStore.applyEvent(env)
+      // Mirror cloud envelope events into the notification bell so
+      // friend reqs, accepts, incoming chat, and review likes show up
+      // in the same dropdown the user already pulls down for downloads
+      // and achievements. We deliberately do NOT push for the current
+      // user's OWN echoes (e.g. message:new with senderId === me) —
+      // the cloud broadcasts those for multi-device sync, not for
+      // self-notification. dedupe is handled inside the store.
+      const me = cloudStore.user?.id ?? null
+      switch (env.type) {
+        case 'friend:added': {
+          notifStore.push({
+            kind: 'friend_added',
+            title: 'Nouvel ami',
+            body: env.data.user.displayName ?? env.data.user.username,
+            link: `/community/profile/${env.data.user.id}`,
+            thumbnailUrl: env.data.user.avatarPath ?? null,
+          })
+          break
+        }
+        case 'friend:request': {
+          // Server emits this when a new incoming request lands.
+          // Tolerant of an undefined event shape — older servers
+          // might not ship the `request` envelope yet.
+          const data = (env as unknown as { data?: {
+            fromUser?: { id?: string; username?: string; displayName?: string; avatarPath?: string | null }
+          } }).data
+          if (data?.fromUser) {
+            notifStore.push({
+              kind: 'friend_request_received',
+              title: 'Demande d\'ami',
+              body: data.fromUser.displayName ?? data.fromUser.username ?? null,
+              link: '/community/friends',
+              thumbnailUrl: data.fromUser.avatarPath ?? null,
+            })
+          }
+          break
+        }
+        case 'message:new': {
+          const msg = env.data
+          if (msg.senderId !== me) {
+            const peer = cloudStore.friends.find((f) => f.id === msg.senderId)
+            notifStore.push({
+              kind: 'message_received',
+              title: peer?.displayName ?? peer?.username ?? 'Nouveau message',
+              body: msg.content.slice(0, 120),
+              link: `/community/chat/${msg.senderId}`,
+              thumbnailUrl: peer?.avatarPath ?? null,
+            })
+          }
+          break
+        }
+        case 'activity:new': {
+          // Most activity events are friend "joue à X" entries —
+          // those clutter the bell. We only surface the explicit
+          // ones the user typically wants to know about.
+          const kind = env.data.kind
+          if (kind === 'review_liked') {
+            notifStore.push({
+              kind: 'review_liked',
+              title: 'Quelqu\'un a aimé ton avis',
+              body: null,
+              link: `/community/profile/${env.data.userId}`,
+              thumbnailUrl: null,
+            })
+          }
+          break
+        }
+      }
+    })
+
+    // Update popup → also mirror to the bell so the user has a
+    // persistent record (the toast itself is transient).
+    const unsubUpd = window.nexus.update.onAvailable((info) => {
+      notifStore.push({
+        kind: 'update_available',
+        title: 'Mise à jour disponible',
+        body: `Nexus Launcher ${info.latestVersion}`,
+        link: null,
+        thumbnailUrl: null,
+      })
     })
 
     return () => {
@@ -154,6 +234,7 @@ export default function App() {
       unsubPres()
       unsubCloudStatus()
       unsubCloudEvent()
+      unsubUpd()
     }
   }, [])
 

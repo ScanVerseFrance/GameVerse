@@ -351,16 +351,15 @@ export function CloudAuthGate() {
             </button>
           </div>
 
-          {/* No `layout` props anywhere — earlier we used framer-motion's
-              layout-animation to interpolate the form's height when
-              fields swapped, but that re-fires on EVERY paint (focus,
-              hover, input keystrokes via the strength meter etc.) and
-              produced visible jitter when typing in the form.
-              Solution: fix the field-swap area to a min-height equal
-              to the tallest variant (register, 3 fields ≈ 280 px) so
-              login mode has extra padding below but never reflows. The
-              morphism = pure crossfade + slight translate of the inner
-              content, no layout interpolation.  */}
+          {/* History: v0.1.1 used framer-motion `layout` everywhere → re-
+              fired on every keystroke, jitter. v0.1.2-0.1.4 pinned a
+              fat min-h-[280px] to stop reflow → looked stupid in login
+              mode (200px of dead space). v0.1.5 lands on a CSS-grid
+              trick: the morph container has `grid-template-rows: 1fr`
+              and lets browser reflow the size naturally as content
+              swaps, while AnimatePresence cross-fades the variants.
+              No framer layout interpolation = no input-keystroke
+              jitter; no fixed height = no absurd spacing. */}
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -368,7 +367,7 @@ export function CloudAuthGate() {
             }}
             className="flex flex-col gap-3"
           >
-            <div className="relative min-h-[280px]">
+            <div className="relative">
               <AnimatePresence mode="wait" initial={false}>
                 {tab === 'login' ? (
                   <motion.div

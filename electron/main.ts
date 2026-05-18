@@ -93,6 +93,13 @@ function createWindow() {
   }
 }
 
+/** State we save when Big Picture is entered, so the regular window
+ *  state can be restored verbatim on exit. Captured once per enter
+ *  cycle. Undefined while in regular mode. */
+let bigPictureRestoreState:
+  | { maximized: boolean; bounds: ReturnType<BrowserWindow['getBounds']> }
+  | undefined
+
 function registerWindowIpc() {
   ipcMain.handle('window:minimize', () => mainWindow?.minimize())
   ipcMain.handle('window:maximize', () => {
@@ -102,6 +109,47 @@ function registerWindowIpc() {
   })
   ipcMain.handle('window:close', () => mainWindow?.close())
   ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
+
+  // ── Big Picture mode ───────────────────────────────────────────────
+  // Renderer calls window:enterBigPicture when navigating to /big-picture
+  // and window:exitBigPicture when leaving. We push the window into
+  // fullscreen + kiosk + always-on-top so the Windows taskbar can't
+  // peek over Steam-Big-Picture-style content. Bounds + maximized
+  // state are saved on enter so the regular launcher view restores
+  // exactly to where it was on exit.
+  ipcMain.handle('window:enterBigPicture', () => {
+    if (!mainWindow) return { ok: false }
+    if (!bigPictureRestoreState) {
+      bigPictureRestoreState = {
+        maximized: mainWindow.isMaximized(),
+        bounds: mainWindow.getBounds(),
+      }
+    }
+    // Order matters: setKiosk first hides the taskbar reliably on
+    // Windows; setFullScreen alone leaves a 1-pixel taskbar peek on
+    // some multi-monitor setups. setAlwaysOnTop nails it for the
+    // edge case of an external overlay (Discord pop-up, etc.).
+    mainWindow.setKiosk(true)
+    mainWindow.setFullScreen(true)
+    mainWindow.setAlwaysOnTop(true, 'screen-saver')
+    return { ok: true }
+  })
+
+  ipcMain.handle('window:exitBigPicture', () => {
+    if (!mainWindow) return { ok: false }
+    mainWindow.setAlwaysOnTop(false)
+    mainWindow.setKiosk(false)
+    mainWindow.setFullScreen(false)
+    if (bigPictureRestoreState) {
+      if (bigPictureRestoreState.maximized) {
+        mainWindow.maximize()
+      } else {
+        mainWindow.setBounds(bigPictureRestoreState.bounds)
+      }
+      bigPictureRestoreState = undefined
+    }
+    return { ok: true }
+  })
 }
 
 void app.whenReady().then(async () => {

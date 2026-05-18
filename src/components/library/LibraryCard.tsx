@@ -67,6 +67,19 @@ function formatPlaytime(seconds: number, lastPlayedAt: number | null): string {
   return mins > 0 ? `${hours} h ${mins} min` : `${hours} h`
 }
 
+/** Pretty-print install size next to the playtime. Hydra 3.8.2
+ *  cribbed this from Steam — "the user wants to know how much space
+ *  this is taking before they fire it up". Skipped when sizeBytes is
+ *  missing (legacy rows, or downloads whose addon didn't report size). */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+  }
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
 export function LibraryCard({ game, onPlay, onEdit, onToggleFavorite }: LibraryCardProps) {
   const href = detailHref(game)
   const navigate = useNavigate()
@@ -240,11 +253,26 @@ export function LibraryCard({ game, onPlay, onEdit, onToggleFavorite }: LibraryC
             <Clock className="w-3 h-3" />
             {formatPlaytime(game.totalPlaytimeSeconds, game.lastPlayedAt)}
           </span>
-          {game.lastPlayedAt && (
-            <span className="text-[11px] text-fg-muted truncate" title={new Date(game.lastPlayedAt).toLocaleString()}>
-              {new Date(game.lastPlayedAt).toLocaleDateString()}
-            </span>
-          )}
+          {/* Right-aligned cluster: installed size first (only when we
+              actually know it — the field is nullable for legacy rows),
+              then the last-played date. Both are muted so the playtime
+              on the left stays the dominant info; size is "context"
+              info per Hydra's pattern. */}
+          <div className="flex items-center gap-2 min-w-0">
+            {game.sizeBytes != null && game.sizeBytes > 0 && (
+              <span
+                className="text-[11px] text-fg-muted shrink-0 font-mono"
+                title="Taille installée"
+              >
+                {formatBytes(game.sizeBytes)}
+              </span>
+            )}
+            {game.lastPlayedAt && (
+              <span className="text-[11px] text-fg-muted truncate" title={new Date(game.lastPlayedAt).toLocaleString()}>
+                {new Date(game.lastPlayedAt).toLocaleDateString()}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </Card>

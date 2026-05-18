@@ -13,6 +13,11 @@ const api = {
     close: () => ipcRenderer.invoke('window:close'),
     isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
     onMaximizedChange: (cb: (max: boolean) => void) => subscribe('window:maximized-change', cb),
+    /** Big Picture toggles fullscreen + kiosk + always-on-top so the
+     *  Windows taskbar can't peek through. State is saved on enter
+     *  and restored verbatim on exit. */
+    enterBigPicture: () => ipcRenderer.invoke('window:enterBigPicture'),
+    exitBigPicture: () => ipcRenderer.invoke('window:exitBigPicture'),
   },
   auth: {
     register: (p: unknown) => ipcRenderer.invoke('auth:register', p),
@@ -286,6 +291,12 @@ const api = {
       ipcRenderer.invoke('cloudSave:restore', libraryGameId, artifactId),
     checkConflict: (libraryGameId: string) =>
       ipcRenderer.invoke('cloudSave:checkConflict', libraryGameId),
+    /** Ouvre le dossier des sauvegardes du jeu via le file manager OS.
+     *  Résout le chemin via Ludusavi puis shell.openPath. Renvoie le
+     *  chemin résolu en cas de succès pour pouvoir l'afficher dans
+     *  un toast. */
+    openSavesFolder: (libraryGameId: string) =>
+      ipcRenderer.invoke('cloudSave:openSavesFolder', libraryGameId),
     /** Toasts emitted by the post-exit auto-upload pipeline. */
     onEvent: (
       cb: (data: {

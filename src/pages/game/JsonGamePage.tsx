@@ -27,6 +27,7 @@ import {
   Users,
   Heart,
   FileArchive,
+  Save,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -855,6 +856,26 @@ export default function JsonGamePage() {
                 onClick={handleOpenInstallFolder}
               >
                 Ouvrir le dossier
+              </Button>
+            )}
+            {/* Open saves folder — Hydra 3.8.2 introduced this shortcut.
+                Resolves via Ludusavi → shell.openPath. Shows a toast
+                error when the game has no Ludusavi mapping (most
+                won't have saves on first launch). */}
+            {isInstalled && installedGame && (
+              <Button
+                size="sm"
+                variant="ghost"
+                leftIcon={<Save className="w-3.5 h-3.5" />}
+                onClick={async () => {
+                  const res = await window.nexus.cloudSave.openSavesFolder(
+                    installedGame.id
+                  )
+                  if (!res.ok) setLaunchError(res.error ?? 'Dossier introuvable')
+                }}
+                title="Ouvrir le dossier des sauvegardes (via Ludusavi)"
+              >
+                Sauvegardes
               </Button>
             )}
             {isInstalled && (

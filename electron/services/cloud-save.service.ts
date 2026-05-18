@@ -72,6 +72,41 @@ interface BackupPreview {
  * dialog to decide whether to show "Aucune save trouvée" vs "Push
  * 12 fichiers (24 MB)".
  */
+/**
+ * Resolve the OS-native folder where this game stores its save files
+ * (per Ludusavi / PCGamingWiki). Used by the "Ouvrir le dossier de
+ * sauvegarde" button — Hydra 3.8.2 shipped the same shortcut.
+ *
+ * Strategy: run Ludusavi --preview, take the FIRST file path it
+ * reports, and return its containing directory. The directory may
+ * not yet exist (the game might not have written a save), in which
+ * case the caller can fall back to creating it or just surfacing
+ * "Aucune sauvegarde trouvée" to the user.
+ */
+export async function resolveSavesFolder(
+  game: LibraryGame
+): Promise<{ ok: boolean; path?: string; error?: string }> {
+  const { objectId } = deriveShop(game)
+  const dir = workdir(game.id)
+  await fsp.mkdir(dir, { recursive: true })
+  try {
+    const res = await runBackup(objectId, dir, /* preview */ true)
+    // Take the first file we see. The save files of a single game are
+    // typically siblings under one folder, so any of them yields the
+    // right dirname. If the user has e.g. saves in BOTH
+    // %APPDATA%/Game AND My Documents/Game, the picker can be added
+    // later (Hydra has the same single-folder UX).
+    for (const g of Object.values(res.games ?? {})) {
+      for (const filePath of Object.keys(g.files ?? {})) {
+        return { ok: true, path: path.dirname(filePath) }
+      }
+    }
+    return { ok: false, error: 'no_saves_found' }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
 export async function previewBackup(
   game: LibraryGame
 ): Promise<BackupPreview> {

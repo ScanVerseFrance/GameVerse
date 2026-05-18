@@ -13,9 +13,11 @@ import { getLibraryGame } from '../services/library.service'
 import {
   checkConflict,
   previewBackup,
+  resolveSavesFolder,
   restoreArtifact,
   uploadGameSave,
 } from '../services/cloud-save.service'
+import { shell } from 'electron'
 import { sanitizeString } from '../utils/security'
 
 export function registerCloudSaveIpc(): void {
@@ -71,4 +73,34 @@ export function registerCloudSaveIpc(): void {
       return { ok: false, error: (e as Error).message }
     }
   })
+
+  // ── cloudSave:openSavesFolder ─────────────────────────────────────
+  // Hydra 3.8.2 added a "open saves folder" shortcut in the game's
+  // settings menu — the user clicks it, the OS file manager opens
+  // pointing at the game's save directory. We use Ludusavi to
+  // resolve the path (PCGamingWiki-backed), then shell.openPath it.
+  ipcMain.handle(
+    'cloudSave:openSavesFolder',
+    async (_e, libraryGameId: unknown) => {
+      if (typeof libraryGameId !== 'string')
+        return { ok: false, error: 'libraryGameId required' }
+      const game = getLibraryGame(sanitizeString(libraryGameId, 64))
+      if (!game) return { ok: false, error: 'Jeu introuvable' }
+      const res = await resolveSavesFolder(game)
+      if (!res.ok || !res.path) {
+        return {
+          ok: false,
+          error:
+            res.error === 'no_saves_found'
+              ? 'Aucune sauvegarde trouvée pour ce jeu — joue une fois et réessaie.'
+              : res.error ?? 'Résolution impossible',
+        }
+      }
+      const openErr = await shell.openPath(res.path)
+      if (openErr) {
+        return { ok: false, error: openErr, path: res.path }
+      }
+      return { ok: true, path: res.path }
+    }
+  )
 }

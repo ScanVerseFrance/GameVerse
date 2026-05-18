@@ -13,6 +13,12 @@ export type NotificationKind =
   | 'library_added'
   | 'achievement_unlocked'
   | 'friend_added'
+  | 'friend_request_received'
+  | 'friend_request_accepted'
+  | 'message_received'
+  | 'review_liked'
+  | 'extraction_completed'
+  | 'update_available'
   | 'info'
 
 export interface NotificationItem {

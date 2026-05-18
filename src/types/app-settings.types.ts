@@ -23,6 +23,11 @@ export interface AppSettings {
    *  also fired manually from Paramètres → Avancé → Mises à jour.
    *  Default: true. */
   autoUpdate: boolean
+  /** When true, completing a download triggers automatic creation of
+   *  Desktop + Start Menu shortcuts pointing at the auto-detected
+   *  game executable (Hydra 3.8.2 added the same toggle). Falls back
+   *  to no-op when the exe path couldn't be detected. Default: true. */
+  autoCreateShortcuts: boolean
 }
 
 export interface SystemMetrics {

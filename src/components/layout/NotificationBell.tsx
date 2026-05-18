@@ -12,6 +12,10 @@ import {
   Trash2,
   AlertTriangle,
   Info,
+  MessageCircle,
+  Heart,
+  FileArchive,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 import { useNotificationsStore } from '@/stores/notifications.store'
@@ -24,6 +28,12 @@ const KIND_ICON: Record<NotificationKind, LucideIcon> = {
   library_added: LibraryIcon,
   achievement_unlocked: Trophy,
   friend_added: UserPlus,
+  friend_request_received: UserPlus,
+  friend_request_accepted: UserPlus,
+  message_received: MessageCircle,
+  review_liked: Heart,
+  extraction_completed: FileArchive,
+  update_available: Sparkles,
   info: Info,
 }
 
@@ -33,6 +43,12 @@ const KIND_COLOR: Record<NotificationKind, string> = {
   library_added: 'text-accent-primary',
   achievement_unlocked: 'text-warning',
   friend_added: 'text-accent-secondary',
+  friend_request_received: 'text-accent-primary',
+  friend_request_accepted: 'text-success',
+  message_received: 'text-accent-primary',
+  review_liked: 'text-pink-400',
+  extraction_completed: 'text-success',
+  update_available: 'text-accent-primary',
   info: 'text-fg-muted',
 }
 

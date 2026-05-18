@@ -19,6 +19,10 @@ function defaultSettings(): AppSettings {
     // blocking and gated behind explicit consent ("Mettre à jour"
     // button) so this is "check + ask", not "check + apply".
     autoUpdate: true,
+    // Auto-create shortcuts after a download completes — Steam-and-
+    // Hydra-style "make it easy to relaunch from desktop". Toggleable
+    // for users who keep their desktop clean.
+    autoCreateShortcuts: true,
   }
 }
 
@@ -40,6 +44,7 @@ function loadSettings(): void {
       steamGridDbApiKey: typeof parsed.steamGridDbApiKey === 'string' ? parsed.steamGridDbApiKey : '',
       steamWebApiKey: typeof parsed.steamWebApiKey === 'string' ? parsed.steamWebApiKey : '',
       autoUpdate: typeof parsed.autoUpdate === 'boolean' ? parsed.autoUpdate : true,
+      autoCreateShortcuts: typeof parsed.autoCreateShortcuts === 'boolean' ? parsed.autoCreateShortcuts : true,
     }
   } catch {
     settings = defaultSettings()
@@ -108,6 +113,9 @@ export function updateAppSettings(patch: Partial<AppSettings>): AppSettings {
   }
   if (patch.autoUpdate !== undefined) {
     settings.autoUpdate = !!patch.autoUpdate
+  }
+  if (patch.autoCreateShortcuts !== undefined) {
+    settings.autoCreateShortcuts = !!patch.autoCreateShortcuts
   }
   saveSettings()
   return getAppSettings()
