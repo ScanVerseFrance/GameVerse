@@ -4,7 +4,7 @@
  * Responsibilities:
  *   1. Persist the JWT to a tiny file under userData (so the user
  *      doesn't re-log on every launcher restart).
- *   2. Issue authenticated REST calls to api.scanverse.online — every
+ *   2. Issue authenticated REST calls to nexus.scanverse.online — every
  *      other service calls through here so token refresh / 401 →
  *      logout flow is centralised.
  *   3. Maintain a single WebSocket connection. Forwards every server

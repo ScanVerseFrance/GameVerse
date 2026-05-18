@@ -23,6 +23,13 @@ const api = {
     updateProfile: (token: string, patch: unknown) => ipcRenderer.invoke('auth:updateProfile', token, patch),
     requestRecoveryCode: (id: string) => ipcRenderer.invoke('auth:requestRecoveryCode', id),
     consumeRecoveryCode: (code: string, pw: string) => ipcRenderer.invoke('auth:consumeRecoveryCode', code, pw),
+    /** Upsert the local user row from a Nexus Cloud user object and
+     *  issue a local session token. Called by the cloud store after a
+     *  successful cloud login/register so the rest of the launcher
+     *  (library, friends, achievements — all keyed on local user.id)
+     *  gets a user without the user typing credentials twice. */
+    adoptCloudUser: (cloudUser: unknown) =>
+      ipcRenderer.invoke('auth:adoptCloudUser', cloudUser),
   },
   themes: {
     list: () => ipcRenderer.invoke('themes:list'),

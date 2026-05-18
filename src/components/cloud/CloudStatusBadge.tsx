@@ -14,7 +14,7 @@ import { cn } from '@/utils/cn'
 /**
  * Compact cloud connection chip for the top nav. Shows one of:
  *
- *   ☁ Connecté (Kazu)        — green dot, dropdown with profile + logout
+ *   ☁ Connecté (pseudo)      — green dot, dropdown with profile + logout
  *   ☁ Connexion…             — spinner
  *   ☁ Hors ligne (retry)     — orange dot, click to reconnect
  *   ☁ Non connecté           — grey, click to open the login dialog

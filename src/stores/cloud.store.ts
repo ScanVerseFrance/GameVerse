@@ -20,6 +20,28 @@ import type {
   CloudUser,
   CloudWsEnvelope,
 } from '@/types/cloud.types'
+import { useAuthStore } from './auth.store'
+
+/** Whenever the cloud confirms a user, mirror them into the local
+ *  auth store. v0.1.1 unified the two registration flows: there's no
+ *  separate local LoginPage anymore, so the rest of the launcher
+ *  needs SOMEONE to populate useAuthStore.user — that someone is now
+ *  the cloud store. Idempotent: skips work if the local store already
+ *  has the same user id.  */
+async function mirrorCloudToLocal(cloudUser: CloudUser | null): Promise<void> {
+  if (!cloudUser) return
+  const local = useAuthStore.getState().user
+  if (local?.id === cloudUser.id) return
+  await useAuthStore.getState().adoptFromCloud({
+    id: cloudUser.id,
+    username: cloudUser.username,
+    email: cloudUser.email ?? null,
+    displayName: cloudUser.displayName ?? null,
+    avatarPath: cloudUser.avatarPath ?? null,
+    bannerPath: cloudUser.bannerPath ?? null,
+    bio: cloudUser.bio ?? null,
+  })
+}
 
 interface CloudState {
   status: CloudConnectionStatus
@@ -95,6 +117,10 @@ export const useCloudStore = create<CloudState>((set, get) => ({
     const res = await window.nexus.cloud.bootConnect()
     set({ status: res.status, user: res.user, reason: res.reason ?? null })
     if (res.status === 'connected') {
+      // Mirror to local auth FIRST so AuthGate sees a user as soon
+      // as bootConnect resolves — avoids a brief CloudAuthGate flash
+      // for already-signed-in users on launcher restart.
+      await mirrorCloudToLocal(res.user)
       // Eager hydrate the caches so the friend pane / chat sidebar
       // are populated by the time the user navigates there.
       await Promise.all([
@@ -115,6 +141,7 @@ export const useCloudStore = create<CloudState>((set, get) => ({
     // the warm caches — the renderer might have been showing stale
     // data from an old session.
     if (data.status === 'connected') {
+      void mirrorCloudToLocal(data.user)
       void get().reloadFriends()
       void get().reloadPresences()
       void get().reloadThreads()
@@ -131,6 +158,10 @@ export const useCloudStore = create<CloudState>((set, get) => ({
     const res = await window.nexus.cloud.login(identifier, password)
     if (!res.ok) return { ok: false, error: res.error }
     set({ status: res.status, user: res.user, reason: null })
+    // Mirror BEFORE warming caches: the local user id is what most
+    // local-store actions key on (library, friends, achievements),
+    // and they kick off as soon as useAuthStore.user populates.
+    await mirrorCloudToLocal(res.user)
     await Promise.all([
       get().reloadFriends(),
       get().reloadPresences(),
@@ -143,11 +174,15 @@ export const useCloudStore = create<CloudState>((set, get) => ({
     const res = await window.nexus.cloud.register(payload)
     if (!res.ok) return { ok: false, error: res.error }
     set({ status: res.status, user: res.user, reason: null })
+    await mirrorCloudToLocal(res.user)
     return { ok: true }
   },
 
   logout: async () => {
     await window.nexus.cloud.logout()
+    // Drop the local session too — they're locked together since
+    // v0.1.1. The "Se déconnecter" button is one click, not two.
+    void useAuthStore.getState().logout()
     set({
       status: 'disconnected',
       user: null,

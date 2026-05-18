@@ -162,7 +162,7 @@ export function CloudConnectDialog({
                 label="Nom d'utilisateur"
                 value={username}
                 onChange={setUsername}
-                placeholder="kazu"
+                placeholder="ton-pseudo"
                 autoComplete="username"
                 disabled={busy || success}
                 required
@@ -185,7 +185,7 @@ export function CloudConnectDialog({
                     label="E-mail (optionnel)"
                     value={email}
                     onChange={setEmail}
-                    placeholder="kazu@scanverse.online"
+                    placeholder="ton-email@scanverse.fr"
                     type="email"
                     autoComplete="email"
                     disabled={busy || success}
@@ -194,7 +194,7 @@ export function CloudConnectDialog({
                     label="Nom affiché (optionnel)"
                     value={displayName}
                     onChange={setDisplayName}
-                    placeholder="Kazu"
+                    placeholder="Ton nom"
                     disabled={busy || success}
                   />
                 </>

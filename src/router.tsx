@@ -6,9 +6,12 @@ import AppLayout from './components/layout/AppLayout'
 import { CloudAuthGate } from './components/cloud/CloudAuthGate'
 import { LoadingSpinner } from './components/ui/LoadingSpinner'
 
-const LoginPage = lazy(() => import('./pages/auth/LoginPage'))
-const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'))
-const ForgotPage = lazy(() => import('./pages/auth/ForgotPage'))
+// v0.1.1: the separate local LoginPage / RegisterPage / ForgotPage
+// routes were removed. Creating or signing into a Nexus Cloud account
+// is now the SINGLE auth flow — the cloud user gets mirrored into the
+// local DB automatically (see cloud.store::mirrorCloudToLocal), so
+// the rest of the launcher still sees a populated useAuthStore.user
+// without the user ever filling a second form.
 const HomePage = lazy(() => import('./pages/home/HomePage'))
 const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'))
 const PrivacyPage = lazy(() => import('./pages/settings/PrivacyPage'))
@@ -43,21 +46,24 @@ function lazyElement(Component: LazyExoticComponent<ComponentType>) {
 }
 
 function AuthGate() {
+  // Single gate, single source of truth: Nexus Cloud.
+  //
+  // The local useAuthStore.user is populated automatically once cloud
+  // auth resolves (cloud.store::mirrorCloudToLocal upserts the local
+  // row and issues a local session token). So:
+  //   - while local restoreSession() is still loading → spinner
+  //   - if cloud is still connecting (first boot) → spinner inside
+  //     CloudAuthGate (it shows "Connexion à Nexus Cloud…")
+  //   - if cloud is 'disconnected' (no token saved) → CloudAuthGate
+  //     surfaces the register/login form
+  //   - 'connected' or 'offline' (token valid but no network) → app
+  //
+  // We deliberately treat 'offline' as authenticated: the JWT is
+  // still good, the user just can't reach the server right now. The
+  // launcher's library + downloads keep working from the local DB.
   const status = useAuthStore((s) => s.status)
-  const user = useAuthStore((s) => s.user)
-  // Mandatory Nexus Cloud sign-in: any session state other than
-  // 'connected' or 'offline' (token saved but server unreachable)
-  // shows the full-screen CloudAuthGate. Without this the new
-  // social / chat / save features look broken to first-time users
-  // who never went near the cloud login dialog.
-  // - 'offline' lets users keep playing locally when the wifi
-  //   dies mid-session — they're already authenticated, the
-  //   token is just unconfirmed.
-  // - 'connecting' shows the gate's centred spinner.
-  // - 'disconnected' means no token at all → force the auth form.
   const cloudStatus = useCloudStore((s) => s.status)
   if (status === 'loading') return <FullScreenBoot />
-  if (!user) return <Navigate to="/login" replace />
   if (cloudStatus !== 'connected' && cloudStatus !== 'offline') {
     return <CloudAuthGate />
   }
@@ -70,27 +76,11 @@ function AuthGate() {
   )
 }
 
-function GuestGate() {
-  const status = useAuthStore((s) => s.status)
-  const user = useAuthStore((s) => s.user)
-  if (status === 'loading') return <FullScreenBoot />
-  if (user) return <Navigate to="/" replace />
-  return (
-    <Suspense fallback={<FullScreenBoot />}>
-      <Outlet />
-    </Suspense>
-  )
-}
-
 export const router = createHashRouter([
-  {
-    element: <GuestGate />,
-    children: [
-      { path: '/login', element: lazyElement(LoginPage) },
-      { path: '/register', element: lazyElement(RegisterPage) },
-      { path: '/forgot', element: lazyElement(ForgotPage) },
-    ],
-  },
+  // Legacy local auth routes (`/login`, `/register`, `/forgot`) were
+  // removed in v0.1.1 — every entrypoint funnels through AuthGate
+  // which shows CloudAuthGate when needed. Any leftover deep link
+  // gets caught by the catchall at the bottom.
   {
     path: '/',
     element: <AuthGate />,

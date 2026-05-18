@@ -93,6 +93,18 @@ export interface NexusAPI {
     updateProfile: (token: string, patch: ProfilePatch) => Promise<AuthResult>
     requestRecoveryCode: (identifier: string) => Promise<RecoveryCodeResult>
     consumeRecoveryCode: (code: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>
+    /** Upsert local user row from a cloud user + issue local session
+     *  token. Used after a successful cloud auth to derive the local
+     *  identity transparently (no second register/login UI). */
+    adoptCloudUser: (cloudUser: {
+      id: string
+      username: string
+      email?: string | null
+      displayName?: string | null
+      avatarPath?: string | null
+      bannerPath?: string | null
+      bio?: string | null
+    }) => Promise<AuthResult>
   }
   themes: {
     list: () => Promise<{ ok: boolean; error?: string; themes?: Theme[] }>

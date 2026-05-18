@@ -12,6 +12,20 @@ interface AuthState {
   login: (username: string, password: string) => Promise<boolean>
   loginGuest: () => Promise<boolean>
   register: (payload: RegisterPayload) => Promise<boolean>
+  /** Set local auth from a Nexus Cloud user. The launcher dropped its
+   *  separate register/login flow in v0.1.1 — cloud is the source of
+   *  truth, and this action mirrors the cloud identity into the local
+   *  DB so the rest of the launcher (library, friends, achievements
+   *  keyed on user.id) sees a consistent user. */
+  adoptFromCloud: (cloudUser: {
+    id: string
+    username: string
+    email?: string | null
+    displayName?: string | null
+    avatarPath?: string | null
+    bannerPath?: string | null
+    bio?: string | null
+  }) => Promise<boolean>
   logout: () => Promise<void>
   updateProfile: (patch: ProfilePatch) => Promise<boolean>
   clearError: () => void
@@ -71,6 +85,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return true
     }
     set({ status: 'idle', error: res.error ?? 'Registration failed' })
+    return false
+  },
+
+  adoptFromCloud: async (cloudUser) => {
+    set({ status: 'authenticating', error: null })
+    const res = await window.nexus.auth.adoptCloudUser(cloudUser)
+    if (res.ok && res.user && res.token) {
+      localStorage.setItem(TOKEN_KEY, res.token)
+      set({ status: 'idle', user: res.user, token: res.token, error: null })
+      return true
+    }
+    set({ status: 'idle', error: res.error ?? 'adopt failed' })
     return false
   },
 

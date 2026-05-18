@@ -1,6 +1,6 @@
 /**
  * Wire shapes shared between the launcher (renderer + main) and the
- * Nexus Cloud backend at api.scanverse.online. Mirrors the backend's
+ * Nexus Cloud backend at nexus.scanverse.online. Mirrors the backend's
  * lib/schemas.ts — keep both in lockstep when fields change.
  */
 

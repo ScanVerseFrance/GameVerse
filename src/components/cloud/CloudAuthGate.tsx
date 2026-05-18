@@ -351,129 +351,114 @@ export function CloudAuthGate() {
             </button>
           </div>
 
-          {/* The form container uses `layout` so its height interpolates
-              smoothly when the field count changes (1 ↔ 3 fields). The
-              fields themselves swap via AnimatePresence inside, giving
-              a "morphism" feel rather than an abrupt rebuild. Setting
-              the inner field group as a single key={tab} block means
-              the whole stack cross-fades atomically — cleaner than
-              animating each field in/out independently. */}
-          <motion.form
-            layout
-            transition={{
-              layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] },
-            }}
+          {/* No `layout` props anywhere — earlier we used framer-motion's
+              layout-animation to interpolate the form's height when
+              fields swapped, but that re-fires on EVERY paint (focus,
+              hover, input keystrokes via the strength meter etc.) and
+              produced visible jitter when typing in the form.
+              Solution: fix the field-swap area to a min-height equal
+              to the tallest variant (register, 3 fields ≈ 280 px) so
+              login mode has extra padding below but never reflows. The
+              morphism = pure crossfade + slight translate of the inner
+              content, no layout interpolation.  */}
+          <form
             onSubmit={(e) => {
               e.preventDefault()
               if (canSubmit) void handleSubmit()
             }}
             className="flex flex-col gap-3"
           >
-            <AnimatePresence mode="wait" initial={false}>
-              {tab === 'login' ? (
-                <motion.div
-                  key="login-fields"
-                  layout
-                  initial={{ opacity: 0, y: -8, filter: 'blur(6px)' }}
-                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, y: 8, filter: 'blur(6px)' }}
-                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-                  className="flex flex-col gap-3"
-                >
-                  <Field
-                    label="E-mail"
-                    hint="L'adresse de ton compte Nexus"
-                    value={loginIdentifier}
-                    onChange={setLoginIdentifier}
-                    placeholder="kazu@scanverse.online"
-                    type="email"
-                    autoComplete="email"
-                    disabled={busy || success}
-                    required
-                  />
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="register-fields"
-                  layout
-                  initial={{ opacity: 0, y: -8, filter: 'blur(6px)' }}
-                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, y: 8, filter: 'blur(6px)' }}
-                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-                  className="flex flex-col gap-3"
-                >
-                  <Field
-                    label="Nom d'utilisateur (@)"
-                    hint="3-32 caractères · lettres, chiffres, . _ -"
-                    value={username}
-                    onChange={setUsername}
-                    placeholder="kazu"
-                    autoComplete="username"
-                    disabled={busy || success}
-                    required
-                  />
-                  <Field
-                    label="E-mail"
-                    hint="Pour récupérer ton compte"
-                    value={email}
-                    onChange={setEmail}
-                    placeholder="kazu@scanverse.online"
-                    type="email"
-                    autoComplete="email"
-                    disabled={busy || success}
-                    required
-                  />
-                  <Field
-                    label="Nom affiché"
-                    hint="Le nom visible par tes amis"
-                    value={displayName}
-                    onChange={setDisplayName}
-                    placeholder="Kazu"
-                    autoComplete="nickname"
-                    disabled={busy || success}
-                    required
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <div className="relative min-h-[280px]">
+              <AnimatePresence mode="wait" initial={false}>
+                {tab === 'login' ? (
+                  <motion.div
+                    key="login-fields"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    className="flex flex-col gap-3"
+                  >
+                    <Field
+                      label="E-mail"
+                      hint="L'adresse de ton compte Nexus"
+                      value={loginIdentifier}
+                      onChange={setLoginIdentifier}
+                      placeholder="ton-email@scanverse.fr"
+                      type="email"
+                      autoComplete="email"
+                      disabled={busy || success}
+                      required
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="register-fields"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    className="flex flex-col gap-3"
+                  >
+                    <Field
+                      label="Nom d'utilisateur (@)"
+                      hint="3-32 caractères · lettres, chiffres, . _ -"
+                      value={username}
+                      onChange={setUsername}
+                      placeholder="ton-pseudo"
+                      autoComplete="username"
+                      disabled={busy || success}
+                      required
+                    />
+                    <Field
+                      label="E-mail"
+                      hint="Pour récupérer ton compte"
+                      value={email}
+                      onChange={setEmail}
+                      placeholder="ton-email@scanverse.fr"
+                      type="email"
+                      autoComplete="email"
+                      disabled={busy || success}
+                      required
+                    />
+                    <Field
+                      label="Nom affiché"
+                      hint="Le nom visible par tes amis"
+                      value={displayName}
+                      onChange={setDisplayName}
+                      placeholder="Ton nom"
+                      autoComplete="nickname"
+                      disabled={busy || success}
+                      required
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
-            <motion.div layout>
-              <Field
-                label="Mot de passe"
-                hint="8 caractères minimum"
-                value={password}
-                onChange={setPassword}
-                placeholder="••••••••"
-                type="password"
-                autoComplete={
-                  tab === 'register' ? 'new-password' : 'current-password'
-                }
-                disabled={busy || success}
-                required
-              />
-            </motion.div>
+            <Field
+              label="Mot de passe"
+              hint="8 caractères minimum"
+              value={password}
+              onChange={setPassword}
+              placeholder="••••••••"
+              type="password"
+              autoComplete={
+                tab === 'register' ? 'new-password' : 'current-password'
+              }
+              disabled={busy || success}
+              required
+            />
             {/* Strength meter — only at register time. We pass the
                 username so the scorer can penalise "password contains
-                your username" combos. AnimatePresence so it crossfades
-                rather than abruptly appearing on tab flip. */}
-            <AnimatePresence initial={false}>
-              {tab === 'register' && (
-                <motion.div
-                  key="strength"
-                  layout
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                  className="overflow-hidden"
-                >
-                  <PasswordStrength
-                    password={password}
-                    username={username}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+                your username" combos. Simple opacity fade — no height
+                animation so it doesn't disturb the form layout. */}
+            {tab === 'register' && (
+              <PasswordStrength
+                password={password}
+                username={username}
+              />
+            )}
 
             {error && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-error/10 border border-error/30 text-sm text-error">
@@ -554,7 +539,7 @@ export function CloudAuthGate() {
                 </>
               )}
             </p>
-          </motion.form>
+          </form>
         </motion.div>
       </main>
     </div>

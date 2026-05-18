@@ -11,6 +11,14 @@ directories:
   output: release
 files:
   - "**/*"
+  # The payload dirs live INSIDE installer/ so they get caught by the
+  # default `files: **/*` glob. They're handled separately by
+  # extraResources below — keeping them out of the asar avoids
+  # ballooning the installer wrapper to several GB.
+  - "!payload"
+  - "!payload-active"
+  - "!payload-*"
+  - "!node_modules"
 extraResources:
   # Points at the junction maintained by scripts/build-installer.mjs.
   # Always refers to the freshly-built launcher win-unpacked tree;

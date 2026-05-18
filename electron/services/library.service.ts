@@ -98,7 +98,7 @@ async function notifyWatcherGameStopped(libraryGameId: string): Promise<void> {
 
 /**
  * RPC Nexus broadcast — pushes a rich-presence payload to the cloud
- * so friends see "Kazu joue à Hollow Knight Silksong" in their
+ * so friends see e.g. "alice joue à Hollow Knight Silksong" in their
  * friend strip / status badge popover. Cleared (richPresence: null)
  * when the game exits.
  *
@@ -715,7 +715,7 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
     updatePresence(game.userId, 'in_game')
 
     // RPC Nexus — push rich presence to the cloud so friends see
-    // "Kazu joue à Hollow Knight Silksong" in their friend strip.
+    // e.g. "alice joue à Hollow Knight Silksong" in their friend strip.
     // Fire-and-forget; gracefully no-ops when cloud is disconnected.
     void broadcastRichPresenceForGame(game, true)
 
@@ -729,7 +729,7 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
     })
 
     // Friend-launched toast — broadcast so any friend currently logged
-    // in on the same machine sees a Steam-style "Kazu lance Geometry
+    // in on the same machine sees a Steam-style "alice lance Geometry
     // Dash" card slide in from the bottom-right. The renderer filters
     // out non-friend events client-side. Pull the user's display info
     // from the DB so the toast can render the avatar.

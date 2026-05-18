@@ -345,4 +345,73 @@ export function registerAuthIpc() {
       return { ok: false, error: (err as Error).message }
     }
   })
+
+  // ── auth:adoptCloudUser ──────────────────────────────────────────
+  // The launcher dropped its separate local register/login flow in
+  // v0.1.1 — Nexus Cloud is now the sole identity provider. This
+  // handler is called by the cloud store after a successful cloud
+  // login or register: it upserts a local user row whose `id` matches
+  // the cloud user id and issues a local session token so the rest
+  // of the launcher (which keys friend lists, library rows, etc. on
+  // the local user id) keeps working unchanged.
+  //
+  // No password is stored locally — auth is delegated to the cloud,
+  // and the local session token expires/refreshes alongside it.
+  ipcMain.handle(
+    'auth:adoptCloudUser',
+    async (
+      _e,
+      cloudUser: {
+        id: string
+        username: string
+        email?: string | null
+        displayName?: string | null
+        avatarPath?: string | null
+        bannerPath?: string | null
+        bio?: string | null
+      } | null
+    ): Promise<AuthResult> => {
+      try {
+        if (!cloudUser || typeof cloudUser !== 'object' || !cloudUser.id) {
+          return { ok: false, error: 'cloud user required' }
+        }
+        const id = sanitizeString(cloudUser.id, 64)
+        if (!id) return { ok: false, error: 'invalid cloud user id' }
+        const username = sanitizeString(cloudUser.username, 32) || id
+        const email = cloudUser.email ? sanitizeString(cloudUser.email, 254).toLowerCase() || null : null
+        const displayName =
+          sanitizeString(cloudUser.displayName ?? '', 64) || username
+        const bio = cloudUser.bio ? sanitizeString(cloudUser.bio, 300) : null
+        const avatarPath = cloudUser.avatarPath ? sanitizeString(cloudUser.avatarPath, 14 * 1024 * 1024) : null
+        const bannerPath = cloudUser.bannerPath ? sanitizeString(cloudUser.bannerPath, 14 * 1024 * 1024) : null
+
+        const db = getDatabase()
+        const now = Date.now()
+        const existing = db
+          .prepare('SELECT * FROM users WHERE id = ?')
+          .get(id) as UserRow | undefined
+        if (existing) {
+          db.prepare(
+            `UPDATE users SET username = ?, email = ?, display_name = ?,
+              bio = COALESCE(?, bio),
+              avatar_path = COALESCE(?, avatar_path),
+              banner_path = COALESCE(?, banner_path),
+              is_guest = 0,
+              updated_at = ?
+             WHERE id = ?`
+          ).run(username, email, displayName, bio, avatarPath, bannerPath, now, id)
+        } else {
+          db.prepare(
+            `INSERT INTO users (id, username, email, password_hash, display_name, bio, avatar_path, banner_path, is_guest, created_at, updated_at)
+             VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 0, ?, ?)`
+          ).run(id, username, email, displayName, bio, avatarPath, bannerPath, now, now)
+        }
+        const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow
+        const token = issueToken(row.id)
+        return { ok: true, user: toPublic(row), token }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    }
+  )
 }
