@@ -191,7 +191,17 @@ export async function cloudFetch(
     })
     // 401 from any authenticated call → token is dead; drop it and
     // flip to disconnected so the renderer prompts a re-login.
-    if (res.status === 401 && !opts.anonymous) {
+    // 404 specifically from /v1/auth/me means "JWT signature is fine
+    // but the user it points at no longer exists" (their account was
+    // deleted server-side). Treat it identically: nuke the token,
+    // surface the auth gate. Without this, a deleted user's launcher
+    // sits in "offline" state forever showing a ghost cloud user
+    // pulled from the previous successful boot's cache.
+    const isMe = pathSuffix === '/v1/auth/me'
+    if (
+      !opts.anonymous &&
+      (res.status === 401 || (res.status === 404 && isMe))
+    ) {
       clearToken()
       currentUser = null
       closeSocket()
@@ -332,8 +342,11 @@ export async function bootConnect(): Promise<CloudConnectResult> {
     return { status: 'connected', user: me.user }
   } catch (e) {
     const err = e as HttpError
-    if (err.status === 401) {
-      // bootConnect already cleared the token via cloudFetch's 401 path.
+    if (err.status === 401 || err.status === 404) {
+      // 401 = JWT invalid. 404 = JWT valid but user gone from DB
+      // (account deleted server-side). cloudFetch already cleared
+      // the token in both cases — return disconnected so the renderer
+      // surfaces the cloud auth gate.
       return { status: 'disconnected', user: null, reason: 'session_expired' }
     }
     setStatus('offline', err.message)

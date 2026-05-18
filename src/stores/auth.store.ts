@@ -45,7 +45,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return
     }
     const res = await window.nexus.auth.getSession(token)
-    if (res.ok && res.user) {
+    // v0.1.3: NEVER restore a guest. The launcher dropped local-only
+    // auth in v0.1.1; every user must come through cloud adoption.
+    // A surviving guest from a v0.1.0 install would otherwise race
+    // the cloud mirror (cloud sets user=Kazu, then restoreSession's
+    // late-resolving IPC overwrites it back to user=Guest). Dropping
+    // guests here makes the cloud's adoptFromCloud the sole writer.
+    if (res.ok && res.user && !res.user.isGuest) {
       set({ status: 'idle', user: res.user, token })
     } else {
       localStorage.removeItem(TOKEN_KEY)
