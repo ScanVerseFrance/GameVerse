@@ -97,6 +97,19 @@ export interface NexusAPI {
     enterBigPicture: () => Promise<{ ok: boolean }>
     exitBigPicture: () => Promise<{ ok: boolean }>
   }
+  /** On-demand text translation. Proxied through main so the
+   *  renderer doesn't deal with CORS; cached per (text, target). */
+  translation: {
+    translate: (
+      text: string,
+      target?: string,
+    ) => Promise<{
+      ok: boolean
+      translation?: string
+      sourceLang?: string
+      error?: string
+    }>
+  }
   /** Uninstall bridge — only used by the custom uninstall window
    *  spawned when the launcher is invoked with --uninstall. */
   uninstall: {

@@ -349,6 +349,14 @@ const api = {
     exportData: (userId: string) => ipcRenderer.invoke('app:exportData', userId),
     resetAllData: () => ipcRenderer.invoke('app:resetAllData'),
   },
+  translation: {
+    // Translate arbitrary text to a target ISO code (default `fr`).
+    // Hits Google Translate's unofficial gtx endpoint through main
+    // so the renderer doesn't deal with CORS and we cache responses
+    // once per (text, target) pair.
+    translate: (text: string, target?: string) =>
+      ipcRenderer.invoke('translation:translate', text, target),
+  },
   uninstall: {
     // The renderer of the custom uninstall window calls these to
     // either trigger the detached cleanup script (execute) or close

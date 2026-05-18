@@ -255,6 +255,20 @@ void app.whenReady().then(async () => {
   // copy-paste the full transcript when reporting a bug.
   ipcMain.handle('debug:tail', (_e, n: number = 200) => tailDebugLog(n))
   ipcMain.handle('debug:openLogFile', () => shell.openPath(getDebugLogPath()))
+  // On-demand text translation — used by ReviewsSection's "Traduire"
+  // button. Proxied through main so the renderer doesn't need any
+  // CORS workaround and the cache survives across React mounts.
+  ipcMain.handle(
+    'translation:translate',
+    async (_e, text: unknown, target: unknown) => {
+      if (typeof text !== 'string' || text.length === 0) {
+        return { ok: false, error: 'no text' }
+      }
+      const t = typeof target === 'string' && target.length > 0 ? target : 'fr'
+      const mod = await import('./services/translation.service')
+      return mod.translateText(text, t)
+    },
+  )
   // Auto-update polls GitHub Releases on a 4h cadence. The setting
   // is queried lazily on every check so flipping it off in the
   // Paramètres pane takes effect at the next interval without

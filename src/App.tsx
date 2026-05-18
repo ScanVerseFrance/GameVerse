@@ -12,6 +12,7 @@ import { useNotificationsStore } from './stores/notifications.store'
 import { useCloudStore } from './stores/cloud.store'
 import { useApplyTheme } from './hooks/useApplyTheme'
 import { UpdatePopup } from './components/common/UpdatePopup'
+import { CommandPalette } from './components/common/CommandPalette'
 
 export default function App() {
   const restore = useAuthStore((s) => s.restoreSession)
@@ -280,6 +281,10 @@ export default function App() {
     <>
       <RouterProvider router={router} />
       <UpdatePopup />
+      {/* Global Ctrl/Cmd+K command palette — searches library,
+          catalogues and friends. Mounted outside RouterProvider so
+          the keyboard listener binds once for the whole session. */}
+      <CommandPalette />
     </>
   )
 }
