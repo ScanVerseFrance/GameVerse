@@ -141,7 +141,18 @@ export default function HomePage() {
   }
 
   if (games.length === 0) {
-    return <EmptyHome user={user} />
+    // Empty library is the FIRST-INSTALL case. Even without games
+    // we still want to surface the social side (friends online,
+    // recent toasts) so /accueil doesn't read as a dead page when
+    // the launcher has been used for chatting before any download.
+    return (
+      <EmptyHome
+        user={user}
+        cloudFriends={cloudFriends}
+        presences={presences}
+        notifs={notifs}
+      />
+    )
   }
 
   return (
@@ -422,19 +433,44 @@ function FeaturedHero({ game, onLaunch }: { game: LibraryGame; onLaunch: () => v
             )}
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={onLaunch}
-              disabled={game.isRunning || !game.executablePath}
-              className={cn(
-                'h-13 px-7 py-3 rounded-sm bg-accent-gradient text-white font-bold text-sm inline-flex items-center gap-2.5 shadow-lift',
-                'hover:shadow-glow transition-shadow',
-                'disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none'
-              )}
-              title={!game.executablePath ? 'Aucun exécutable configuré' : cleanTitle(game.title)}
-            >
-              <Play className="w-4 h-4 fill-white" />
-              {game.isRunning ? 'Déjà lancé' : 'Lancer'}
-            </button>
+            {/* Installed → Lancer / not installed → Télécharger (navigate
+                to the source detail page so the user lands on the
+                download confirm flow). Game can be in the library
+                without an install_path when added from wishlist or
+                after an uninstall that kept the row. */}
+            {game.installPath ? (
+              <button
+                onClick={onLaunch}
+                disabled={game.isRunning || !game.executablePath}
+                className={cn(
+                  'h-13 px-7 py-3 rounded-sm bg-accent-gradient text-white font-bold text-sm inline-flex items-center gap-2.5 shadow-lift',
+                  'hover:shadow-glow transition-shadow',
+                  'disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none'
+                )}
+                title={!game.executablePath ? 'Aucun exécutable configuré' : cleanTitle(game.title)}
+              >
+                <Play className="w-4 h-4 fill-white" />
+                {game.isRunning ? 'Déjà lancé' : 'Lancer'}
+              </button>
+            ) : href ? (
+              <Link
+                to={href}
+                className="h-13 px-7 py-3 rounded-sm bg-accent-gradient text-white font-bold text-sm inline-flex items-center gap-2.5 shadow-lift hover:shadow-glow transition-shadow"
+                title={`Télécharger ${cleanTitle(game.title)}`}
+              >
+                <DownloadIcon className="w-4 h-4" />
+                Télécharger
+              </Link>
+            ) : (
+              <button
+                disabled
+                className="h-13 px-7 py-3 rounded-sm bg-accent-gradient text-white font-bold text-sm inline-flex items-center gap-2.5 opacity-50 cursor-not-allowed"
+                title="Source indisponible"
+              >
+                <DownloadIcon className="w-4 h-4" />
+                Télécharger
+              </button>
+            )}
             {href && (
               <Link
                 to={href}
@@ -548,22 +584,39 @@ function Tile({ game, onLaunch }: { game: LibraryGame; onLaunch: () => void }) {
         <p className="text-[10px] text-white/70 font-mono mt-0.5">
           {formatPlaytime(game.totalPlaytimeSeconds)}
         </p>
-        <button
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            onLaunch()
-          }}
-          disabled={game.isRunning || !game.executablePath}
-          className={cn(
-            'mt-2 w-full h-8 rounded-sm bg-accent-gradient text-white text-[11px] font-bold inline-flex items-center justify-center gap-1.5 transition-shadow',
-            game.isRunning || !game.executablePath
-              ? 'opacity-50 cursor-not-allowed'
-              : 'hover:shadow-glow'
-          )}
-        >
-          <Play className="w-3 h-3 fill-white" /> {game.isRunning ? 'En cours' : 'Lancer'}
-        </button>
+        {/* Installed → Lancer (stopPropagation so the parent Link
+            doesn't navigate); not installed → let the click bubble to
+            the Link wrapper which already routes to the game page. */}
+        {game.installPath ? (
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onLaunch()
+            }}
+            disabled={game.isRunning || !game.executablePath}
+            className={cn(
+              'mt-2 w-full h-8 rounded-sm bg-accent-gradient text-white text-[11px] font-bold inline-flex items-center justify-center gap-1.5 transition-shadow',
+              game.isRunning || !game.executablePath
+                ? 'opacity-50 cursor-not-allowed'
+                : 'hover:shadow-glow'
+            )}
+          >
+            <Play className="w-3 h-3 fill-white" /> {game.isRunning ? 'En cours' : 'Lancer'}
+          </button>
+        ) : href ? (
+          <Link
+            to={href}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-2 w-full h-8 rounded-sm bg-accent-gradient text-white text-[11px] font-bold inline-flex items-center justify-center gap-1.5 hover:shadow-glow transition-shadow"
+          >
+            <DownloadIcon className="w-3 h-3" /> Télécharger
+          </Link>
+        ) : (
+          <div className="mt-2 w-full h-8 rounded-sm bg-accent-gradient text-white text-[11px] font-bold inline-flex items-center justify-center gap-1.5 opacity-50 cursor-not-allowed">
+            <DownloadIcon className="w-3 h-3" /> Télécharger
+          </div>
+        )}
       </div>
 
       <div className="absolute top-1.5 left-1.5 flex gap-1">
@@ -724,45 +777,70 @@ function AllGamesStrip({ games }: { games: LibraryGame[] }) {
 
 /* ──────────────── Empty state ──────────────── */
 
-function EmptyHome({ user }: { user: ReturnType<typeof useAuthStore.getState>['user'] }) {
+function EmptyHome({
+  user,
+  cloudFriends,
+  presences,
+  notifs,
+}: {
+  user: ReturnType<typeof useAuthStore.getState>['user']
+  cloudFriends: ReturnType<typeof useCloudStore.getState>['friends']
+  presences: ReturnType<typeof useCloudStore.getState>['presences']
+  notifs: ReturnType<typeof useNotificationsStore.getState>['items']
+}) {
+  const hasSocialContent = cloudFriends.length > 0 || notifs.length > 0
   return (
-    <div className="px-8 py-16 max-w-4xl mx-auto text-center">
-      <p className="text-sm text-fg-secondary mb-2">Bienvenue,</p>
-      <h1 className="font-display font-black text-5xl text-fg-primary mb-6">
-        {user ? (
-          user.usernameColor || user.usernameAnimation ? (
-            <Username user={user} />
+    <div className="px-8 py-12 max-w-5xl mx-auto">
+      {/* Hero — same welcome but compressed so it sits above the
+          social rails rather than dominating the viewport. */}
+      <div className="text-center mb-10">
+        <p className="text-sm text-fg-secondary mb-2">Bienvenue,</p>
+        <h1 className="font-display font-black text-4xl md:text-5xl text-fg-primary mb-5">
+          {user ? (
+            user.usernameColor || user.usernameAnimation ? (
+              <Username user={user} />
+            ) : (
+              <span className="text-gradient">{user.displayName ?? user.username}</span>
+            )
           ) : (
-            <span className="text-gradient">{user.displayName ?? user.username}</span>
-          )
-        ) : (
-          <span className="text-gradient">Joueur</span>
-        )}
-      </h1>
-      <div className="w-20 h-20 rounded-2xl bg-accent-primary/10 border border-accent-primary/40 flex items-center justify-center mx-auto mb-5">
-        <LibraryIcon className="w-10 h-10 text-accent-primary" />
+            <span className="text-gradient">Joueur</span>
+          )}
+        </h1>
+        <div className="w-16 h-16 rounded-2xl bg-accent-primary/10 border border-accent-primary/40 flex items-center justify-center mx-auto mb-4">
+          <LibraryIcon className="w-8 h-8 text-accent-primary" />
+        </div>
+        <h2 className="font-display font-bold text-xl text-fg-primary mb-2">
+          Ta bibliothèque est vide
+        </h2>
+        <p className="text-sm text-fg-secondary leading-relaxed max-w-md mx-auto mb-5">
+          Importe un catalogue JSON ou parcours Découvrir pour ajouter ton premier jeu.
+        </p>
+        <div className="inline-flex items-center gap-2">
+          <Link
+            to="/discover"
+            className="inline-flex items-center gap-2 h-10 px-4 rounded-sm bg-accent-gradient text-sm font-bold text-white hover:shadow-glow transition-shadow"
+          >
+            <Compass className="w-4 h-4" /> Découvrir
+          </Link>
+          <Link
+            to="/addons"
+            className="inline-flex items-center gap-2 h-10 px-4 rounded-sm bg-[var(--surface-soft)] border border-glass-border text-sm font-bold text-fg-primary hover:bg-[var(--surface-soft-hover)] transition-colors"
+          >
+            Importer un JSON
+          </Link>
+        </div>
       </div>
-      <h2 className="font-display font-bold text-2xl text-fg-primary mb-2">
-        Ta bibliothèque est vide
-      </h2>
-      <p className="text-fg-secondary leading-relaxed max-w-md mx-auto mb-6">
-        Importe un catalogue JSON ou parcours Découvrir pour ajouter ton premier jeu.
-        Quand tu auras lancé quelque chose, il atterrira ici en mode hero plein écran.
-      </p>
-      <div className="inline-flex items-center gap-2">
-        <Link
-          to="/discover"
-          className="inline-flex items-center gap-2 h-11 px-5 rounded-sm bg-accent-gradient text-sm font-bold text-white hover:shadow-glow transition-shadow"
-        >
-          <Compass className="w-4 h-4" /> Découvrir
-        </Link>
-        <Link
-          to="/addons"
-          className="inline-flex items-center gap-2 h-11 px-5 rounded-sm bg-[var(--surface-soft)] border border-glass-border text-sm font-bold text-fg-primary hover:bg-[var(--surface-soft-hover)] transition-colors"
-        >
-          Importer un JSON
-        </Link>
-      </div>
+
+      {/* Social rails — same component as in the populated view.
+          Only rendered when there's actual content so first-time
+          users without friends/notifs still get the clean welcome
+          card without empty placeholder rails dangling below. */}
+      {hasSocialContent && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <FriendsRail friends={cloudFriends} presences={presences} />
+          <RecentActivityRail items={notifs} />
+        </div>
+      )}
     </div>
   )
 }

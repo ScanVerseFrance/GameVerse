@@ -31,6 +31,30 @@ function defaultSettings(): AppSettings {
     // Hydra-style "make it easy to relaunch from desktop". Toggleable
     // for users who keep their desktop clean.
     autoCreateShortcuts: true,
+    // Hydra-style catalog freshness: 6h default cadence between
+    // automatic re-fetches of JSON sources. 0 disables auto-refresh
+    // (user must trigger via the Réessayer button).
+    catalogRefreshHours: 6,
+    // Debrid services — empty by default. Stored encrypted-at-rest
+    // by the underlying JSON file's filesystem permissions (0o600
+    // since v0.2.1). Keys are sent only over the matching debrid
+    // provider's HTTPS API.
+    debrid: {
+      realDebridApiKey: '',
+      allDebridApiKey: '',
+      torboxApiKey: '',
+      premiumizeApiKey: '',
+      preferred: 'none',
+    },
+    // External process watcher: poll system processes every 5s and
+    // match against library executables to detect Steam/Epic/standalone
+    // launches outside Nexus. Off by default — opt-in because it costs
+    // ~1% CPU on cheap laptops.
+    externalProcessWatcher: false,
+    // UI theme preset: built-in only for now (custom themes ship in
+    // PersonalisationSection's Tier 2). Default = the dark scanverse
+    // theme that every screenshot in this thread uses.
+    themePreset: 'scanverse-dark',
   }
 }
 
@@ -61,6 +85,33 @@ function loadSettings(): void {
       steamWebApiKey: typeof parsed.steamWebApiKey === 'string' ? parsed.steamWebApiKey : '',
       autoUpdate: typeof parsed.autoUpdate === 'boolean' ? parsed.autoUpdate : true,
       autoCreateShortcuts: typeof parsed.autoCreateShortcuts === 'boolean' ? parsed.autoCreateShortcuts : true,
+      catalogRefreshHours:
+        typeof parsed.catalogRefreshHours === 'number' && parsed.catalogRefreshHours >= 0
+          ? parsed.catalogRefreshHours
+          : 6,
+      debrid: {
+        realDebridApiKey:
+          typeof parsed.debrid?.realDebridApiKey === 'string' ? parsed.debrid.realDebridApiKey : '',
+        allDebridApiKey:
+          typeof parsed.debrid?.allDebridApiKey === 'string' ? parsed.debrid.allDebridApiKey : '',
+        torboxApiKey:
+          typeof parsed.debrid?.torboxApiKey === 'string' ? parsed.debrid.torboxApiKey : '',
+        premiumizeApiKey:
+          typeof parsed.debrid?.premiumizeApiKey === 'string' ? parsed.debrid.premiumizeApiKey : '',
+        preferred:
+          parsed.debrid?.preferred === 'real-debrid' ||
+          parsed.debrid?.preferred === 'all-debrid' ||
+          parsed.debrid?.preferred === 'torbox' ||
+          parsed.debrid?.preferred === 'premiumize'
+            ? parsed.debrid.preferred
+            : 'none',
+      },
+      externalProcessWatcher:
+        typeof parsed.externalProcessWatcher === 'boolean' ? parsed.externalProcessWatcher : false,
+      themePreset:
+        typeof parsed.themePreset === 'string' && parsed.themePreset
+          ? parsed.themePreset
+          : 'scanverse-dark',
     }
   } catch {
     settings = defaultSettings()
@@ -132,6 +183,44 @@ export function updateAppSettings(patch: Partial<AppSettings>): AppSettings {
   }
   if (patch.autoCreateShortcuts !== undefined) {
     settings.autoCreateShortcuts = !!patch.autoCreateShortcuts
+  }
+  if (patch.catalogRefreshHours !== undefined) {
+    const hrs = Number(patch.catalogRefreshHours)
+    settings.catalogRefreshHours = Number.isFinite(hrs) && hrs >= 0 ? hrs : 6
+  }
+  if (patch.debrid) {
+    settings.debrid = {
+      realDebridApiKey:
+        typeof patch.debrid.realDebridApiKey === 'string'
+          ? patch.debrid.realDebridApiKey.trim().slice(0, 400)
+          : settings.debrid.realDebridApiKey,
+      allDebridApiKey:
+        typeof patch.debrid.allDebridApiKey === 'string'
+          ? patch.debrid.allDebridApiKey.trim().slice(0, 400)
+          : settings.debrid.allDebridApiKey,
+      torboxApiKey:
+        typeof patch.debrid.torboxApiKey === 'string'
+          ? patch.debrid.torboxApiKey.trim().slice(0, 400)
+          : settings.debrid.torboxApiKey,
+      premiumizeApiKey:
+        typeof patch.debrid.premiumizeApiKey === 'string'
+          ? patch.debrid.premiumizeApiKey.trim().slice(0, 400)
+          : settings.debrid.premiumizeApiKey,
+      preferred:
+        patch.debrid.preferred === 'real-debrid' ||
+        patch.debrid.preferred === 'all-debrid' ||
+        patch.debrid.preferred === 'torbox' ||
+        patch.debrid.preferred === 'premiumize' ||
+        patch.debrid.preferred === 'none'
+          ? patch.debrid.preferred
+          : settings.debrid.preferred,
+    }
+  }
+  if (patch.externalProcessWatcher !== undefined) {
+    settings.externalProcessWatcher = !!patch.externalProcessWatcher
+  }
+  if (patch.themePreset !== undefined && typeof patch.themePreset === 'string') {
+    settings.themePreset = patch.themePreset.slice(0, 80)
   }
   saveSettings()
   return getAppSettings()

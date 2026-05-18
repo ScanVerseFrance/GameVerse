@@ -44,6 +44,26 @@ export interface AppSettings {
    *  game executable (Hydra 3.8.2 added the same toggle). Falls back
    *  to no-op when the exe path couldn't be detected. Default: true. */
   autoCreateShortcuts: boolean
+  /** Hydra-style: cadence (hours) between automatic re-fetches of
+   *  imported JSON catalogues. 0 disables auto-refresh. Default: 6. */
+  catalogRefreshHours: number
+  /** Debrid services — convert torrent / magnet URLs into direct HTTP
+   *  downloads via a debrid provider. Empty key = service disabled.
+   *  `preferred` picks which service the renderer offers first when
+   *  the user clicks Télécharger on a magnet. */
+  debrid: {
+    realDebridApiKey: string
+    allDebridApiKey: string
+    torboxApiKey: string
+    premiumizeApiKey: string
+    preferred: 'none' | 'real-debrid' | 'all-debrid' | 'torbox' | 'premiumize'
+  }
+  /** Watch external processes (Steam / Epic / standalone) and start
+   *  the playtime timer for matching library exes. Off by default. */
+  externalProcessWatcher: boolean
+  /** UI theme preset id (built-in themes only for now). Custom CSS
+   *  themes ride on top via the PersonalisationSection upload box. */
+  themePreset: string
 }
 
 export interface SystemMetrics {

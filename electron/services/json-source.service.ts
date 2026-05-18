@@ -77,27 +77,101 @@ export interface JsonSourceSearchHit extends JsonSourceGame {
 }
 
 /**
- * Full-text search across all imported JSON source games by title.
- * Uses SQL LIKE — fine for the catalog sizes we see (thousands, not millions).
- * Joins on the source name so the UI can show "X from FitGirl" without an
- * extra round-trip per row.
+ * Tokenise the user query into alphanumeric word fragments. Anything
+ * non-alphanumeric is treated as a separator — so "spider-man" and
+ * "spider man" both yield ["spider", "man"] which is exactly what we
+ * want at search time. Without this, typing "spider-" would degrade
+ * the SQL match to a literal LIKE '%spider-%' which excludes any
+ * catalogue that stores the title with a different separator
+ * ("Spider Man" or "SpiderMan"). Returns at most 8 tokens to keep
+ * the SQL plan bounded.
+ *
+ * Apostrophes get **removed** rather than treated as separators —
+ * "Marvel's" becomes ["marvels"] (one token) instead of ["marvel",
+ * "s"] (two tokens, the second one is a stray single letter that
+ * would over-match unrelated titles containing 's'). This is the
+ * other half of the apostrophe fix; the SQL side strips apostrophes
+ * from the title column so `%marvels%` matches "Marvel's Spider-Man".
  */
-export function searchJsonSourceGames(query: string, limit = 200): JsonSourceSearchHit[] {
-  const q = query.trim()
+function tokeniseQuery(q: string): string[] {
+  return q
+    .toLowerCase()
+    .replace(/['’`]/g, '')           // collapse apostrophes (don't split)
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 0)
+    .slice(0, 8)
+}
+
+/**
+ * Full-text search across all imported JSON source games by title.
+ * Uses SQL LIKE with one clause per query token — fine for the
+ * catalog sizes we see (thousands, not millions). Joins on the
+ * source name so the UI can show "X from FitGirl" without an extra
+ * round-trip per row.
+ *
+ * Tokenised matching: a query of "spider-man" becomes
+ * `title LIKE '%spider%' AND title LIKE '%man%'`, so a row stored
+ * as "Spider Man" (no hyphen, separate words) and a row stored as
+ * "Marvel's Spider-Man 2" both match — the user sees both AnkerGames
+ * and FitGirl variants regardless of how they punctuated the query.
+ */
+export function searchJsonSourceGames(
+  query: string,
+  limit = 200,
+  sourceIds?: string[],
+): JsonSourceSearchHit[] {
+  const tokens = tokeniseQuery(query)
   const db = getDatabase()
-  const rows = (
-    q.length === 0
-      ? db
-          .prepare(
-            'SELECT g.*, s.name AS source_name FROM json_source_games g JOIN json_sources s ON s.id = g.source_id ORDER BY g.added_at DESC LIMIT ?'
-          )
-          .all(limit)
-      : db
-          .prepare(
-            'SELECT g.*, s.name AS source_name FROM json_source_games g JOIN json_sources s ON s.id = g.source_id WHERE g.title LIKE ? ORDER BY g.title LIMIT ?'
-          )
-          .all(`%${q}%`, limit)
-  ) as Array<GameRow & { source_name: string }>
+
+  // Optional source-id filter — pushed down to SQL so the renderer
+  // doesn't get a result set biased toward whichever catalogue was
+  // imported last. Without this, the post-fetch client-side filter
+  // ran out of rows when AnkerGames (imported after FitGirl)
+  // monopolised the first `limit` rows.
+  const useSourceFilter = Array.isArray(sourceIds) && sourceIds.length > 0
+  const sourceClause = useSourceFilter
+    ? ` AND g.source_id IN (${sourceIds!.map(() => '?').join(',')})`
+    : ''
+
+  const baseSelect =
+    'SELECT g.*, s.name AS source_name FROM json_source_games g JOIN json_sources s ON s.id = g.source_id'
+
+  let sql: string
+  let params: unknown[]
+  if (tokens.length === 0) {
+    // Empty query → alphabetical title sort. We deliberately don't
+    // use added_at DESC because that biased the result set toward
+    // the most-recently-imported catalogue (the user saw zero
+    // FitGirl tiles when AnkerGames was imported last). With
+    // alphabetical + optional sourceClause, every per-source filter
+    // surfaces enough games to render.
+    sql = useSourceFilter
+      ? `${baseSelect} WHERE 1=1${sourceClause} ORDER BY g.title COLLATE NOCASE LIMIT ?`
+      : `${baseSelect} ORDER BY g.title COLLATE NOCASE LIMIT ?`
+    params = useSourceFilter ? [...sourceIds!, limit] : [limit]
+  } else {
+    // One LIKE clause per token, ANDed. NOCASE so "Spider" matches
+    // "spider" — without it, SQLite's LIKE is case-sensitive for
+    // non-ASCII paths and case-insensitive for ASCII (footgun).
+    //
+    // The REPLACE strips apostrophes from the title column at match
+    // time — needed so a query of "marvels" hits "Marvel's
+    // Spider-Man". SQLite has no built-in regex-replace, but stacked
+    // REPLACE calls handle the common confusables (straight quote,
+    // curly quote, backtick). The strip is read-only — it does NOT
+    // mutate stored rows.
+    const titleExpr =
+      "REPLACE(REPLACE(REPLACE(g.title, '''', ''), '’', ''), '`', '')"
+    const tokenClauses = tokens.map(() => `${titleExpr} LIKE ? COLLATE NOCASE`).join(' AND ')
+    sql = useSourceFilter
+      ? `${baseSelect} WHERE ${tokenClauses}${sourceClause} ORDER BY g.title COLLATE NOCASE LIMIT ?`
+      : `${baseSelect} WHERE ${tokenClauses} ORDER BY g.title COLLATE NOCASE LIMIT ?`
+    const tokenParams = tokens.map((t) => `%${t}%`)
+    params = useSourceFilter
+      ? [...tokenParams, ...sourceIds!, limit]
+      : [...tokenParams, limit]
+  }
+  const rows = db.prepare(sql).all(...params) as Array<GameRow & { source_name: string }>
   return rows.map((r) => ({ ...toGame(r), sourceName: r.source_name }))
 }
 
@@ -327,6 +401,129 @@ export function importJsonSourceFromFile(filePath: string): ImportJsonSourceResu
     return { ok: false, error: `Lecture impossible : ${(e as Error).message}` }
   }
   return importJsonSourceFromText(text, filePath)
+}
+
+/**
+ * Refresh an already-imported JSON source from its origin URL.
+ *
+ * Hydra's download-sources-checker model: keep the originPath URL,
+ * re-fetch it on a schedule, diff against existing rows, insert
+ * what's new, and update game_count + updated_at. We never DELETE
+ * games — a game disappearing from the upstream JSON usually just
+ * means the catalogue rebuilt with a stale snapshot, and dropping
+ * library favourites because of that would be devastating. Stale
+ * games stay queryable; the user can manually remove them via
+ * "Re-importer ce catalogue" if they want a clean state.
+ *
+ * Returns the count of NEW games inserted (zero when up-to-date).
+ * Only handles URL origins (http/https); file:// origins return 0
+ * since the user must re-pick the file manually.
+ */
+export async function refreshJsonSource(
+  sourceId: string,
+): Promise<{ ok: true; newGames: number; updated: boolean } | { ok: false; error: string }> {
+  const db = getDatabase()
+  const row = db
+    .prepare('SELECT * FROM json_sources WHERE id = ?')
+    .get(sourceId) as SourceRow | undefined
+  if (!row) return { ok: false, error: 'Source introuvable.' }
+
+  const origin = row.origin_path?.trim() ?? ''
+  if (!origin || !/^https?:\/\//i.test(origin)) {
+    // File-system origins can't be auto-refreshed — return success
+    // with zero new games so the periodic loop doesn't keep
+    // retrying.
+    return { ok: true, newGames: 0, updated: false }
+  }
+
+  let text: string
+  try {
+    const res = await fetch(origin, { signal: AbortSignal.timeout(20_000) })
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
+    text = await res.text()
+  } catch (e) {
+    return { ok: false, error: `Lecture distante : ${(e as Error).message}` }
+  }
+
+  const parsed = parseJsonSource(text)
+  if (!parsed.ok) return { ok: false, error: parsed.error }
+
+  // Diff: which incoming titles are NOT already in the DB? We key
+  // on `title` (the natural ID upstream). Repacks bumping versions
+  // mid-cycle (e.g. "FitGirl Spider-Man v1.0 → v1.1") will create
+  // a new row with the new title — that's intentional, the user
+  // gets both visible until they manually delete the stale one.
+  const existingTitles = new Set(
+    (db
+      .prepare('SELECT title FROM json_source_games WHERE source_id = ?')
+      .all(row.id) as Array<{ title: string }>).map((r) => r.title),
+  )
+
+  const newDownloads = parsed.data.downloads.filter((d) => !existingTitles.has(d.title))
+  if (newDownloads.length === 0) {
+    db.prepare('UPDATE json_sources SET updated_at = ? WHERE id = ?').run(Date.now(), row.id)
+    return { ok: true, newGames: 0, updated: false }
+  }
+
+  const insertGame = db.prepare(
+    'INSERT INTO json_source_games (id, source_id, title, upload_date, file_size, uris_json, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  )
+  const updateSource = db.prepare(
+    'UPDATE json_sources SET game_count = ?, updated_at = ? WHERE id = ?',
+  )
+  const totalCount = existingTitles.size + newDownloads.length
+  const now = Date.now()
+  const txn = db.transaction(() => {
+    for (const d of newDownloads) {
+      insertGame.run(
+        `jsg-${crypto.randomBytes(8).toString('hex')}`,
+        row.id,
+        d.title,
+        d.uploadDate ?? null,
+        d.fileSize ?? null,
+        JSON.stringify(d.uris),
+        now,
+      )
+    }
+    updateSource.run(totalCount, now, row.id)
+  })
+
+  try {
+    txn()
+  } catch (e) {
+    return { ok: false, error: `Écriture DB : ${(e as Error).message}` }
+  }
+
+  return { ok: true, newGames: newDownloads.length, updated: true }
+}
+
+/**
+ * Iterate every imported source, refresh those with URL origins.
+ * Called from the main-loop interval (see catalog-refresh.service)
+ * AND on user demand via the IPC. Errors per-source are swallowed
+ * — one bad origin shouldn't block the rest.
+ */
+export async function refreshAllJsonSources(): Promise<{
+  total: number
+  refreshed: number
+  newGamesTotal: number
+}> {
+  const sources = listJsonSources()
+  let refreshed = 0
+  let newGamesTotal = 0
+  for (const s of sources) {
+    if (!s.originPath || !/^https?:\/\//i.test(s.originPath)) continue
+    try {
+      const res = await refreshJsonSource(s.id)
+      if (res.ok) {
+        if (res.updated) refreshed += 1
+        newGamesTotal += res.newGames
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+  return { total: sources.length, refreshed, newGamesTotal }
 }
 
 export function importJsonSourceFromText(

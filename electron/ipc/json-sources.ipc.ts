@@ -59,11 +59,23 @@ export function registerJsonSourcesIpc() {
     return { ok: true }
   })
 
-  ipcMain.handle('jsonSources:searchGames', async (_e, query: string, limit?: number) => {
+  ipcMain.handle('jsonSources:searchGames', async (
+    _e,
+    query: string,
+    limit?: number,
+    sourceIds?: string[],
+  ) => {
     try {
       const q = sanitizeString(query ?? '', 200)
       const lim = typeof limit === 'number' && limit > 0 && limit <= 1000 ? Math.floor(limit) : 200
-      return { ok: true, games: svc.searchJsonSourceGames(q, lim) }
+      // Sanitize the source-id filter — strict whitelist of UUID-like
+      // strings, max 32 entries (enough for any realistic install).
+      const ids = Array.isArray(sourceIds)
+        ? sourceIds
+            .filter((s): s is string => typeof s === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(s))
+            .slice(0, 32)
+        : undefined
+      return { ok: true, games: svc.searchJsonSourceGames(q, lim, ids) }
     } catch (e) {
       return { ok: false, error: (e as Error).message, games: [] }
     }

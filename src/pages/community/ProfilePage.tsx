@@ -30,6 +30,7 @@ import { Card } from '@/components/ui/Card'
 import { ActivityFeedItem } from '@/components/community/ActivityFeedItem'
 import { PlaytimeHeatmap } from '@/components/community/PlaytimeHeatmap'
 import { AchievementsTab } from '@/components/community/AchievementsTab'
+import { Top5Games } from '@/components/community/Top5Games'
 import { ProfileCustomiseDialog } from '@/components/community/ProfileCustomiseDialog'
 import { AvatarActionPopup } from '@/components/community/AvatarActionPopup'
 import { AvatarLightbox } from '@/components/common/AvatarLightbox'
@@ -854,18 +855,27 @@ export default function ProfilePage() {
               </Card>
             )}
             {tab === 'favorites' && (
-              <Card padding="lg">
-                <TabPlaceholder
-                  icon={Heart}
-                  title="Favoris"
-                  message={
-                    isSelf
-                      ? "Les jeux que tu marques en favori (★) apparaîtront ici."
-                      : 'Les favoris publics arrivent bientôt.'
-                  }
-                  cta={isSelf ? { label: 'Marquer des favoris', to: '/library' } : null}
-                />
-              </Card>
+              <div className="flex flex-col gap-6">
+                {/* Top 5 GAMES showcase — ScanVerse-style. Owner picks
+                    5 favourite library games to feature; viewers see
+                    the slots the owner filled in (empty slots hidden
+                    for non-owners by the component itself). Lives at
+                    the top of the Favoris tab so it's the first thing
+                    a visitor sees after the stats strip. */}
+                <Top5Games userId={profile.id} />
+                <Card padding="lg">
+                  <TabPlaceholder
+                    icon={Heart}
+                    title="Tous les favoris"
+                    message={
+                      isSelf
+                        ? "Les jeux que tu marques en favori (★) apparaîtront ici."
+                        : 'Les favoris publics arrivent bientôt.'
+                    }
+                    cta={isSelf ? { label: 'Marquer des favoris', to: '/library' } : null}
+                  />
+                </Card>
+              </div>
             )}
             {tab === 'reviews' && (
               <Card padding="lg">

@@ -33,6 +33,7 @@ import {
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
+import { Modal } from '@/components/ui/Modal'
 import { useJsonSourceStore } from '@/stores/json-source.store'
 import { useArtworkStore } from '@/stores/artwork.store'
 import { useCommentsStore } from '@/stores/comments.store'
@@ -48,6 +49,9 @@ import { StopGameConfirmDialog } from '@/components/library/StopGameConfirmDialo
 import { SaveConflictDialog } from '@/components/cloud/SaveConflictDialog'
 import { SteamNewsSection } from '@/components/game/SteamNewsSection'
 import { SteamMetaSection } from '@/components/game/SteamMetaSection'
+import { HowLongToBeatSection } from '@/components/game/HowLongToBeatSection'
+import { SourcePicker } from '@/components/game/SourcePicker'
+import { useGameVariants } from '@/hooks/useGameVariants'
 import type { JsonSourceSearchHit } from '@/types/json-source.types'
 import type { GameArtwork, GameComment } from '@/types/artwork.types'
 import type { DownloadKind, DownloadRecord } from '@/types/download.types'
@@ -215,6 +219,19 @@ export default function JsonGamePage() {
   const [achievementsPartial, setAchievementsPartial] = useState(false)
   const [achievementsTotal, setAchievementsTotal] = useState(0)
   const [achievementsLoading, setAchievementsLoading] = useState(false)
+  // Modal-driven "Voir tous les succès" flow. Sidebar renders the first 10
+  // for at-a-glance browsing; clicking the button opens a full-screen modal
+  // grid with the rest. Without this the sidebar grew to ~120 cards on big
+  // games (Spider-Man 2, #BLUD) and pushed the page footer out of reach.
+  const [achievementsModalOpen, setAchievementsModalOpen] = useState(false)
+  const ACHIEVEMENTS_SIDEBAR_LIMIT = 10
+
+  // Cross-source variant list — shared with the SourcePicker sidebar
+  // AND the DownloadConfirmDialog source picker so all three views
+  // agree on order + which is the recommended pick. Loads in parallel
+  // with everything else; while loading the dialog falls back to the
+  // current game as the sole option.
+  const { variants: gameVariants } = useGameVariants(game)
 
   // Map each URI on this page to an existing download record (if any) so we
   // can flip the button between "Télécharger" → "Reprendre" / "Pause" / "Voir"
@@ -450,18 +467,31 @@ export default function JsonGamePage() {
     setPendingDownload({ uri, idx })
   }
 
-  async function handleConfirmDownload(folder: string) {
+  async function handleConfirmDownload(
+    folder: string,
+    variant: JsonSourceSearchHit | null,
+  ) {
     if (!user || !gameId || !game || !pendingDownload) return
     const { uri, idx } = pendingDownload
     setPendingDownload(null)
     setDownloadingIdx(idx)
+    // When the user picked a different variant in the dialog, swap to
+    // that variant's first URI + title + game id so the queued
+    // download (and the library entry it creates on completion) tracks
+    // the chosen source rather than the page they happened to open
+    // from. Falls back to the page's own URI when no variant list was
+    // passed (single-source game).
+    const useVariant = variant && variant.id !== game.id
+    const targetUri = useVariant ? variant!.uris[0] ?? uri : uri
+    const targetTitle = useVariant ? variant!.title : game.title
+    const targetGameId = useVariant ? `json:${variant!.id}` : `json:${gameId}`
     const res = await startDownload({
       userId: user.id,
-      gameTitle: game.title,
-      gameId: `json:${gameId}`,
-      sourceUrl: uri,
-      kind: detectKind(uri),
-      magnetOrUrl: uri,
+      gameTitle: targetTitle,
+      gameId: targetGameId,
+      sourceUrl: targetUri,
+      kind: detectKind(targetUri),
+      magnetOrUrl: targetUri,
       coverUrl: artwork?.coverUrl ?? undefined,
       targetFolder: folder || undefined,
     })
@@ -842,7 +872,11 @@ export default function JsonGamePage() {
         </div>
       </div>
 
-      <div className="px-10 max-w-6xl mx-auto pt-6">
+      {/* Wider page (was max-w-6xl). Hydra-style: stretch to ~1600px
+          so the 2-column content/sidebar below has breathing room
+          on wide displays. Below lg breakpoint the sidebar drops
+          beneath the main content so nothing gets cramped. */}
+      <div className="px-6 lg:px-10 max-w-[1600px] mx-auto pt-6">
         {/* Top action bar — flows in normal layout below the hero so the buttons
             never get clipped by the hero's overflow:hidden. Single row that
             wraps; metadata status on the left, action cluster on the right. */}
@@ -965,6 +999,7 @@ export default function JsonGamePage() {
                 leftIcon={<Trash2 className="w-3.5 h-3.5" />}
                 onClick={() => void handleRemoveFromLibrary()}
                 title="Retirer complètement le jeu de la bibliothèque"
+                className="whitespace-nowrap shrink-0"
               >
                 Retirer de la biblio
               </Button>
@@ -987,8 +1022,9 @@ export default function JsonGamePage() {
                 leftIcon={<Folder className="w-3.5 h-3.5" />}
                 onClick={() => void handleAddToLibrary()}
                 title="Ajouter à la bibliothèque sans télécharger"
+                className="whitespace-nowrap shrink-0"
               >
-                Ajouter à la biblio
+                Ajouter à la bibliothèque
               </Button>
             )}
 
@@ -1212,6 +1248,14 @@ export default function JsonGamePage() {
           </div>
         )}
 
+        {/* 2-column content layout (Hydra-style): wide main
+            column on the left for description + media +
+            achievements + comments; sticky 380px sidebar on the
+            right holds the source picker + download links so
+            they stay visible while the user scrolls the page. */}
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-6">
+          <div className="min-w-0">
+
         {/* Description + tags */}
         {(artwork?.description || (artwork?.genres && artwork.genres.length > 0)) && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
@@ -1244,6 +1288,38 @@ export default function JsonGamePage() {
               )}
             </Card>
           </motion.div>
+        )}
+
+        {/* Screenshots */}
+        {artwork?.screenshots && artwork.screenshots.length > 0 && (
+          <Section title="Captures d'écran" count={artwork.screenshots.length}>
+            <ScrollGallery>
+              {artwork.screenshots.map((s, i) => (
+                <a
+                  key={i}
+                  href={s}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    void window.nexus.system.openExternal(s)
+                  }}
+                  className="block w-[420px] h-[236px] rounded-md overflow-hidden shrink-0 border border-glass-border hover:border-accent-primary/50 transition-colors"
+                >
+                  <img src={s} alt="" className="w-full h-full object-cover" loading="lazy" />
+                </a>
+              ))}
+            </ScrollGallery>
+          </Section>
+        )}
+
+        {/* Videos */}
+        {artwork?.videos && artwork.videos.length > 0 && (
+          <Section title="Vidéos">
+            <ScrollGallery>
+              {artwork.videos.map((v, i) => (
+                <VideoPlayer key={i} src={v} />
+              ))}
+            </ScrollGallery>
+          </Section>
         )}
 
         {/* Contenu additionnel — DLCs / éditions / bonus / multiplayer
@@ -1290,94 +1366,127 @@ export default function JsonGamePage() {
             actually has achievements. Tier 1 (no key) shows the top-10 Steam
             "highlighted" achievements; Tier 2 (with user-provided Steam Web
             API key) shows the full list with descriptions + grayscale icons. */}
-        {steamAppId && (achievements.length > 0 || achievementsLoading) && (
-          <Section title="Succès" count={achievementsTotal || achievements.length || undefined}>
-            <Card padding="lg">
-              {achievementsLoading ? (
-                <div className="py-6 text-center text-sm text-fg-muted inline-flex items-center gap-2 justify-center w-full">
-                  <LoadingSpinner size="sm" /> Chargement des succès…
-                </div>
-              ) : (
-                <>
-                  <AchievementProgress
-                    unlocked={achievements.filter((a) => a.unlockedAt != null).length}
-                    total={achievementsTotal || achievements.length}
-                  />
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-4">
-                    {achievements.map((a) => (
-                      <AchievementCard key={a.apiName} achievement={a} />
-                    ))}
-                  </div>
-                  {achievementsPartial && (
-                    <div className="mt-4 p-3 rounded-md bg-accent-primary/5 border border-accent-primary/20">
-                      <p className="text-xs text-fg-secondary leading-relaxed">
-                        <Trophy className="inline w-3.5 h-3.5 mr-1 -mt-0.5 text-accent-primary" />
-                        Tu vois les {achievements.length} succès mis en avant par Steam (sur {achievementsTotal}{' '}
-                        au total). Pour la liste complète avec descriptions et icônes grisées, configure une clé
-                        Steam Web API dans{' '}
-                        <Link to="/settings" className="text-accent-primary hover:underline">
-                          Paramètres → Addons
-                        </Link>
-                        .
-                      </p>
-                    </div>
-                  )}
-                  <p className="text-[11px] text-fg-muted mt-3 leading-relaxed">
-                    <Trophy className="inline w-3 h-3 mr-1 -mt-0.5" />
-                    Les succès se débloquent automatiquement quand le jeu est lancé — le watcher
-                    scanne les saves de Goldberg / CODEX / OnlineFix / EMPRESS toutes les 2 secondes.
-                  </p>
-                </>
-              )}
-            </Card>
-          </Section>
-        )}
 
         {/* Steam Meta — Metacritic + Configuration requise. Renders
             null internally when both fields are empty, so we don't have
             to gate on data here. */}
-        {steamAppId && <SteamMetaSection steamAppId={steamAppId} />}
+        {/* Main content: Metacritic + Configuration requise.
+            The release-date + Modes & Manette + Langues block was
+            moved to the right sidebar (see <SteamMetaSection
+            sidebarOnly /> below) to match Hydra's layout — those
+            three info chunks are short and benefit from sitting next
+            to the SourcePicker + Succès rather than competing with
+            the body's screenshots / news. */}
+        {steamAppId && <SteamMetaSection steamAppId={steamAppId} bodyOnly />}
 
-        {/* Steam News — keyless ISteamNews/GetNewsForApp feed. Renders
-            silently (returns null) when the appid has no announcements,
-            so we don't leave an empty heading on quiet games. */}
+
+
+
+
+        {/* Actualités — compact / collapsible. The full Steam news
+            feed is loud and most users only check it occasionally.
+            Wrapped in <details> so the section sits as a one-line
+            tease until the user expands it. */}
         {steamAppId && (
-          <Section title="Actualités">
-            <SteamNewsSection steamAppId={steamAppId} />
-          </Section>
+          <details className="mb-6 group">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-widest text-fg-secondary hover:text-fg-primary transition-colors py-2 px-1 inline-flex items-center gap-2">
+              <span>Actualités Steam</span>
+              <span className="text-fg-muted group-open:rotate-90 transition-transform">▸</span>
+            </summary>
+            <div className="mt-2">
+              <SteamNewsSection steamAppId={steamAppId} />
+            </div>
+          </details>
         )}
 
-        {/* Videos */}
-        {artwork?.videos && artwork.videos.length > 0 && (
-          <Section title="Vidéos">
-            <ScrollGallery>
-              {artwork.videos.map((v, i) => (
-                <VideoPlayer key={i} src={v} />
-              ))}
-            </ScrollGallery>
-          </Section>
+        {/* Comments */}
+        <Section title="Commentaires" count={comments.length}>
+          <Card padding="lg">
+            {user && !user.isGuest ? (
+              <CommentComposer
+                value={commentInput}
+                onChange={setCommentInput}
+                onSubmit={() => void handlePostComment()}
+                error={commentError}
+                posting={posting}
+              />
+            ) : (
+              <div className="rounded-md bg-[var(--surface-soft)] border border-glass-border p-4 text-sm text-fg-muted">
+                {user?.isGuest
+                  ? 'Mode invité — connecte-toi à un vrai compte pour commenter.'
+                  : 'Connecte-toi pour commenter.'}
+              </div>
+            )}
+
+            <div className="mt-5 flex flex-col gap-4">
+              {comments.length === 0 ? (
+                <div className="py-6 text-center">
+                  <MessageSquare className="w-7 h-7 text-fg-muted mx-auto mb-2 opacity-50" />
+                  <p className="text-sm text-fg-muted">Aucun commentaire pour ce jeu — sois le premier.</p>
+                </div>
+              ) : (
+                comments.map((c) => (
+                  <div key={c.id} className="flex gap-3 pb-4 border-b border-glass-border last:border-b-0 last:pb-0">
+                    <div className="w-9 h-9 rounded-full bg-accent-gradient shrink-0 flex items-center justify-center text-xs font-bold text-white">
+                      {c.username.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-fg-primary">{c.username}</span>
+                        <span className="text-[11px] text-fg-muted">
+                          {new Date(c.createdAt).toLocaleString()}
+                        </span>
+                        {user && user.id === c.userId && (
+                          <button
+                            onClick={() => void handleDeleteComment(c.id)}
+                            className="ml-auto text-fg-muted hover:text-error transition-colors"
+                            aria-label="Supprimer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-sm text-fg-secondary mt-1 whitespace-pre-wrap break-words">{c.content}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        </Section>
+
+          </div>
+
+          {/* Hydra-style: sidebar is a normal grid item, not sticky,
+              not independently scrollable. The full Succès list +
+              source picker + downloads grow vertically as needed;
+              the user scrolls the WHOLE page to walk through them.
+              No more "scrollbar in a scrollbar" — main content and
+              sidebar move together. */}
+          <aside className="mt-6 lg:mt-0">
+        {/* Cross-source picker — lists every variant of the game
+            with a "Recommandé" badge on the best-scored one. Only
+            renders when the game exists in 2+ catalogues (single-
+            source games skip this section entirely). User can stay
+            on the recommended pick (default) or click another card
+            to switch. */}
+        <SourcePicker currentGame={game} />
+
+        {/* Steam meta — sidebar slice. Surfaces release date, Modes
+            & Manette icon strip (SteamDB-style), and Langues chips.
+            Pulled out of the main SteamMetaSection above so this
+            short, glanceable info sits where the user expects it. */}
+        {steamAppId && (
+          <div className="mb-6">
+            <SteamMetaSection steamAppId={steamAppId} sidebarOnly />
+          </div>
         )}
 
-        {/* Screenshots */}
-        {artwork?.screenshots && artwork.screenshots.length > 0 && (
-          <Section title="Captures d'écran" count={artwork.screenshots.length}>
-            <ScrollGallery>
-              {artwork.screenshots.map((s, i) => (
-                <a
-                  key={i}
-                  href={s}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    void window.nexus.system.openExternal(s)
-                  }}
-                  className="block w-[420px] h-[236px] rounded-md overflow-hidden shrink-0 border border-glass-border hover:border-accent-primary/50 transition-colors"
-                >
-                  <img src={s} alt="" className="w-full h-full object-cover" loading="lazy" />
-                </a>
-              ))}
-            </ScrollGallery>
-          </Section>
-        )}
+        {/* HowLongToBeat — playtime estimates (Main Story / Main +
+            Extras / Completionist) scraped via the HLTB API in main.
+            Renders null when no confident match was found, so quiet
+            indies don't leave an empty section. */}
+        <HowLongToBeatSection title={parsedTitle.name || game.title} />
 
         {/* Download links */}
         <Section title={`Sources de téléchargement · ${game.uris.length}`}>
@@ -1451,61 +1560,62 @@ export default function JsonGamePage() {
           </Card>
         </Section>
 
-        {/* Comments */}
-        <Section title="Commentaires" count={comments.length}>
-          <Card padding="lg">
-            {user && !user.isGuest ? (
-              <CommentComposer
-                value={commentInput}
-                onChange={setCommentInput}
-                onSubmit={() => void handlePostComment()}
-                error={commentError}
-                posting={posting}
-              />
-            ) : (
-              <div className="rounded-md bg-[var(--surface-soft)] border border-glass-border p-4 text-sm text-fg-muted">
-                {user?.isGuest
-                  ? 'Mode invité — connecte-toi à un vrai compte pour commenter.'
-                  : 'Connecte-toi pour commenter.'}
-              </div>
-            )}
-
-            <div className="mt-5 flex flex-col gap-4">
-              {comments.length === 0 ? (
-                <div className="py-6 text-center">
-                  <MessageSquare className="w-7 h-7 text-fg-muted mx-auto mb-2 opacity-50" />
-                  <p className="text-sm text-fg-muted">Aucun commentaire pour ce jeu — sois le premier.</p>
-                </div>
-              ) : (
-                comments.map((c) => (
-                  <div key={c.id} className="flex gap-3 pb-4 border-b border-glass-border last:border-b-0 last:pb-0">
-                    <div className="w-9 h-9 rounded-full bg-accent-gradient shrink-0 flex items-center justify-center text-xs font-bold text-white">
-                      {c.username.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-fg-primary">{c.username}</span>
-                        <span className="text-[11px] text-fg-muted">
-                          {new Date(c.createdAt).toLocaleString()}
-                        </span>
-                        {user && user.id === c.userId && (
-                          <button
-                            onClick={() => void handleDeleteComment(c.id)}
-                            className="ml-auto text-fg-muted hover:text-error transition-colors"
-                            aria-label="Supprimer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-sm text-fg-secondary mt-1 whitespace-pre-wrap break-words">{c.content}</p>
-                    </div>
+          {steamAppId && (achievements.length > 0 || achievementsLoading) && (
+            <Section title="Succès" count={achievementsTotal || achievements.length || undefined}>
+              <Card padding="lg">
+                {achievementsLoading ? (
+                  <div className="py-6 text-center text-sm text-fg-muted inline-flex items-center gap-2 justify-center w-full">
+                    <LoadingSpinner size="sm" /> Chargement des succès…
                   </div>
-                ))
-              )}
-            </div>
-          </Card>
-        </Section>
+                ) : (
+                  <>
+                    <AchievementProgress
+                      unlocked={achievements.filter((a) => a.unlockedAt != null).length}
+                      total={achievementsTotal || achievements.length}
+                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-4">
+                      {achievements
+                        .slice(0, ACHIEVEMENTS_SIDEBAR_LIMIT)
+                        .map((a) => (
+                          <AchievementCard key={a.apiName} achievement={a} />
+                        ))}
+                    </div>
+                    {achievements.length > ACHIEVEMENTS_SIDEBAR_LIMIT && (
+                      <button
+                        type="button"
+                        onClick={() => setAchievementsModalOpen(true)}
+                        className="mt-3 w-full h-10 rounded-md border border-glass-border bg-[var(--surface-soft)] hover:bg-[var(--surface-soft-hover)] hover:border-accent-primary/40 text-sm font-semibold text-fg-primary inline-flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <Trophy className="w-3.5 h-3.5 text-accent-primary" />
+                        Voir tous les succès · {achievementsTotal || achievements.length}
+                      </button>
+                    )}
+                    {achievementsPartial && (
+                      <div className="mt-4 p-3 rounded-md bg-accent-primary/5 border border-accent-primary/20">
+                        <p className="text-xs text-fg-secondary leading-relaxed">
+                          <Trophy className="inline w-3.5 h-3.5 mr-1 -mt-0.5 text-accent-primary" />
+                          Tu vois les {achievements.length} succès mis en avant par Steam (sur {achievementsTotal}{' '}
+                          au total). Pour la liste complète avec descriptions et icônes grisées, configure une clé
+                          Steam Web API dans{' '}
+                          <Link to="/settings" className="text-accent-primary hover:underline">
+                            Paramètres → Addons
+                          </Link>
+                          .
+                        </p>
+                      </div>
+                    )}
+                    <p className="text-[11px] text-fg-muted mt-3 leading-relaxed">
+                      <Trophy className="inline w-3 h-3 mr-1 -mt-0.5" />
+                      Les succès se débloquent automatiquement quand le jeu est lancé — le watcher
+                      scanne les saves de Goldberg / CODEX / OnlineFix / EMPRESS toutes les 2 secondes.
+                    </p>
+                  </>
+                )}
+              </Card>
+            </Section>
+          )}
+          </aside>
+        </div>
 
         <p className="text-xs text-fg-muted mt-8 leading-relaxed max-w-3xl">
           Nexus est plugin-neutre — il fournit le moteur (BitTorrent via WebTorrent + HTTP repris), pas les sources.
@@ -1514,14 +1624,20 @@ export default function JsonGamePage() {
         </p>
       </div>
 
-      {/* Pre-download confirmation — disk space probe + folder picker. */}
+      {/* Pre-download confirmation — disk space probe + folder picker.
+          Also shows the cross-source picker when the game exists in
+          2+ catalogues, so the user can swap repacker / edition
+          BEFORE the download enqueues (instead of having to navigate
+          back to the page and re-click). */}
       <DownloadConfirmDialog
         open={pendingDownload != null}
         onClose={() => setPendingDownload(null)}
-        onConfirm={(folder) => void handleConfirmDownload(folder)}
+        onConfirm={(folder, variant) => void handleConfirmDownload(folder, variant)}
         downloadSizeBytes={parseSizeString(game?.fileSize ?? null)}
         gameTitle={game?.title ?? ''}
         coverUrl={artwork?.coverUrl ?? null}
+        variants={gameVariants}
+        initialVariantId={game?.id}
       />
 
       {/* Uninstall confirmation — async folder size + clear deleteFiles toggle. */}
@@ -1544,6 +1660,52 @@ export default function JsonGamePage() {
           sessionLabel={currentSessionLabel()}
         />
       )}
+
+      {/* Full achievements modal — opened by "Voir tous les succès" in
+          the sidebar. Renders the same AchievementCard at a denser grid
+          (3 cols on wide modal) with sticky progress header. */}
+      <Modal
+        open={achievementsModalOpen}
+        onClose={() => setAchievementsModalOpen(false)}
+        title="Tous les succès"
+        description={
+          achievementsTotal
+            ? `${achievements.filter((a) => a.unlockedAt != null).length} / ${achievementsTotal} débloqués`
+            : undefined
+        }
+        maxWidth="2xl"
+      >
+        <div className="flex flex-col gap-4">
+          <AchievementProgress
+            unlocked={achievements.filter((a) => a.unlockedAt != null).length}
+            total={achievementsTotal || achievements.length}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {achievements.map((a) => (
+              <AchievementCard key={a.apiName} achievement={a} />
+            ))}
+          </div>
+          {achievementsPartial && (
+            <div className="p-3 rounded-md bg-accent-primary/5 border border-accent-primary/20">
+              <p className="text-xs text-fg-secondary leading-relaxed">
+                <Trophy className="inline w-3.5 h-3.5 mr-1 -mt-0.5 text-accent-primary" />
+                Tu vois les {achievements.length} succès mis en avant par Steam
+                (sur {achievementsTotal} au total). Pour la liste complète avec
+                descriptions et icônes grisées, configure une clé Steam Web API
+                dans{' '}
+                <Link
+                  to="/settings"
+                  onClick={() => setAchievementsModalOpen(false)}
+                  className="text-accent-primary hover:underline"
+                >
+                  Paramètres → Addons
+                </Link>
+                .
+              </p>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Cloud save conflict — Steam-style modal interleaved with the
           launch flow. handlePlay() stashes the report and bails; the
@@ -1609,7 +1771,16 @@ interface AchievementVMShape {
 
 function AchievementCard({ achievement: a }: { achievement: AchievementVMShape }) {
   const unlocked = a.unlockedAt != null
-  const icon = unlocked ? a.iconUrl : a.iconGrayUrl ?? a.iconUrl
+  // Always render the colour Steam icon (the artwork the dev shipped)
+  // and lean on a CSS grayscale+darken filter when locked. The earlier
+  // approach of fetching `_gray.jpg` from Steam's CDN was a dead end:
+  // Steam stopped serving the `_gray` variant for the majority of
+  // post-2020 titles, and the `<img onError>` fallback flipped most
+  // cards back to a Trophy SVG — which is what the user (correctly)
+  // called out as "des SVG" instead of real achievement art.
+  // No more dual-URL juggling: one colour URL, filtered locally.
+  const iconColour = a.iconUrl ?? a.iconGrayUrl
+  const [imgError, setImgError] = useState(false)
   // Hidden achievements have their description blanked by Steam until
   // unlocked. We mirror Steam's behaviour: show a teaser when locked.
   const description = a.hidden && !unlocked ? 'Succès caché — débloque-le pour révéler.' : a.description
@@ -1627,18 +1798,25 @@ function AchievementCard({ achievement: a }: { achievement: AchievementVMShape }
       }`}
     >
       <div className="w-12 h-12 rounded-md bg-bg-tertiary border border-glass-border overflow-hidden shrink-0 flex items-center justify-center relative">
-        {icon ? (
+        {iconColour && !imgError ? (
           <img
-            src={icon}
+            src={iconColour}
             alt=""
-            className={`w-full h-full object-cover ${unlocked ? '' : 'grayscale opacity-70'}`}
+            // Steam community CDN sometimes returns 403 when the
+            // `Referer` header is app:// — `no-referrer` makes the
+            // request appear unattributed and bypasses that check.
+            referrerPolicy="no-referrer"
+            onError={() => setImgError(true)}
+            className={`w-full h-full object-cover transition-all ${
+              unlocked ? '' : 'grayscale brightness-50 contrast-110'
+            }`}
           />
         ) : (
           <Trophy className="w-5 h-5 text-fg-muted" />
         )}
         {!unlocked && (
-          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-            <Lock className="w-3.5 h-3.5 text-white/70" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Lock className="w-4 h-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" />
           </div>
         )}
       </div>

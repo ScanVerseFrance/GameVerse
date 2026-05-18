@@ -22,13 +22,14 @@ import {
   AlertCircle,
   LogOut,
   RefreshCw,
+  KeyRound,
+  AlertTriangle,
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Toggle } from '@/components/ui/Toggle'
 import { Slider } from '@/components/ui/Slider'
-import { Tabs } from '@/components/ui/Tabs'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { useAuthStore } from '@/stores/auth.store'
 import { useSettingsStore } from '@/stores/settings.store'
@@ -36,6 +37,13 @@ import { useDownloadStore } from '@/stores/download.store'
 import { useAddonStore } from '@/stores/addon.store'
 import type { AppSettings, SessionInfo, StorageUsage, SystemMetrics } from '@/types/app-settings.types'
 import { cn } from '@/utils/cn'
+import { ChangelogDialog } from '@/components/common/ChangelogDialog'
+// Personnalisation tab content lives in its own file because it's
+// ~500 lines of cosmetic grids (plaque / effect / decoration /
+// music / username styling) ported wholesale from the ScanVerse
+// settings layout. Keeping it out of this file holds the main
+// router-level component readable.
+import { PersonalisationSection } from './PersonalisationSection'
 
 // 10 MB ceiling for avatar + banner uploads — same cap ComicScan uses.
 // Stored as a data URL in SQLite (acceptable for 10 MB; SQLite has no
@@ -65,7 +73,13 @@ const COLOR_SWATCHES = [
 const TAB_ITEMS = [
   { value: 'account',       label: 'Compte',         icon: <UserIcon className="w-4 h-4" /> },
   { value: 'general',       label: 'Général',        icon: <SlidersHorizontal className="w-4 h-4" /> },
-  { value: 'appearance',    label: 'Apparence',      icon: <Palette className="w-4 h-4" /> },
+  // "Apparence" → "Personnalisation" : the tab now covers BOTH the
+  // pure-visual options (themes, animations, blur) AND the profile
+  // cosmetics that used to be hidden behind a community-page button
+  // (plaques, effects, avatar decorations, profile music). Mirrors
+  // the ScanVerse Settings layout where "Personnalisation" is the
+  // catch-all visual tab.
+  { value: 'personalisation', label: 'Personnalisation', icon: <Palette className="w-4 h-4" /> },
   { value: 'downloads',     label: 'Téléchargements',icon: <DownloadIcon className="w-4 h-4" /> },
   { value: 'notifications', label: 'Notifications',  icon: <Bell className="w-4 h-4" /> },
   { value: 'network',       label: 'Réseau',         icon: <Globe className="w-4 h-4" /> },
@@ -387,6 +401,347 @@ function AccountSection() {
           </Button>
         </div>
       </div>
+
+      {/* ─── Sécurité du compte ─── */}
+      <AccountSecurityBlock />
+    </div>
+  )
+}
+
+/**
+ * Account-security card stack: password change + irreversible
+ * delete. Surfaced inside AccountSection per user spec ("dans
+ * l'onglet compte met un bouton pour changer de mdp, supprimé son
+ * compte"). Each block lives in its own Card so the destructive
+ * delete action visually separates from the routine password change.
+ */
+function AccountSecurityBlock() {
+  const user = useAuthStore((s) => s.user)
+  const logout = useAuthStore((s) => s.logout)
+  const [passwordOpen, setPasswordOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  if (!user) return null
+  return (
+    <>
+      <div className="mt-8 flex flex-col gap-4">
+        <h3 className="text-xs font-semibold text-fg-secondary uppercase tracking-widest pl-1">
+          Sécurité du compte
+        </h3>
+
+        {/* Password change */}
+        <Card padding="md">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-md bg-accent-primary/10 border border-accent-primary/30 flex items-center justify-center shrink-0">
+                <KeyRound className="w-4 h-4 text-accent-primary" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-fg-primary">Mot de passe</p>
+                <p className="text-xs text-fg-muted mt-0.5">
+                  Reçois un code à usage unique par email puis définis un nouveau mot de
+                  passe. Toutes tes autres sessions seront déconnectées.
+                </p>
+              </div>
+            </div>
+            <Button variant="outline" onClick={() => setPasswordOpen(true)}>
+              Modifier
+            </Button>
+          </div>
+        </Card>
+
+        {/* Account deletion — visually distinct rose tint to discourage
+            accidental clicks. Hides behind a 2-step confirm dialog. */}
+        <Card padding="md" className="border-error/30 bg-error/[0.03]">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-md bg-error/10 border border-error/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-4 h-4 text-error" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-error">Supprimer mon compte</p>
+                <p className="text-xs text-fg-muted mt-0.5">
+                  Action irréversible. Ton profil cloud, tes amis, tes succès et tes
+                  sauvegardes seront perdus. Ta bibliothèque locale reste sur ton disque.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="border-error/40 text-error hover:bg-error/10"
+              onClick={() => setDeleteOpen(true)}
+            >
+              Supprimer
+            </Button>
+          </div>
+        </Card>
+      </div>
+
+      {passwordOpen && (
+        <ChangePasswordDialog
+          identifier={user.username}
+          email={user.email ?? ''}
+          onClose={() => setPasswordOpen(false)}
+        />
+      )}
+      {deleteOpen && (
+        <DeleteAccountDialog
+          username={user.username}
+          onCancel={() => setDeleteOpen(false)}
+          onDeleted={() => {
+            setDeleteOpen(false)
+            void logout()
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+/**
+ * Password change flow. Two screens inside the same modal:
+ *   1. "Send code" — user requests a recovery code, we email it.
+ *   2. "Enter code + new password" — user pastes the code, types
+ *      their new password, we POST consumeRecoveryCode.
+ *
+ * The actual transport is already wired in main:
+ *   `auth:requestRecoveryCode` → returns { ok, code? } (dev returns
+ *      the code inline; prod sends email only)
+ *   `auth:consumeRecoveryCode` → returns { ok, error? }
+ *
+ * Both calls work for cloud-mirrored accounts because the launcher
+ * creates a local row at adopt-time, and recovery looks up by email
+ * OR username on the local store.
+ */
+function ChangePasswordDialog({
+  identifier,
+  email,
+  onClose,
+}: {
+  identifier: string
+  email: string
+  onClose: () => void
+}) {
+  const [step, setStep] = useState<'request' | 'consume' | 'done'>('request')
+  const [code, setCode] = useState('')
+  const [pw1, setPw1] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [devCode, setDevCode] = useState<string | null>(null)
+
+  async function requestCode(): Promise<void> {
+    setBusy(true)
+    setError(null)
+    const res = await window.nexus.auth.requestRecoveryCode(identifier)
+    setBusy(false)
+    if (!res.ok) {
+      setError(res.error ?? 'Échec de l\'envoi du code')
+      return
+    }
+    // In dev / local mode the IPC returns the code so we can show it
+    // inline (the real app sends it by email in production).
+    if (res.code) setDevCode(res.code)
+    setStep('consume')
+  }
+
+  async function consumeCode(): Promise<void> {
+    if (pw1.length < 8) {
+      setError('Le mot de passe doit faire au moins 8 caractères.')
+      return
+    }
+    if (pw1 !== pw2) {
+      setError('Les deux mots de passe ne correspondent pas.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    const res = await window.nexus.auth.consumeRecoveryCode(code.trim(), pw1)
+    setBusy(false)
+    if (!res.ok) {
+      setError(res.error ?? 'Code invalide ou expiré')
+      return
+    }
+    setStep('done')
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl bg-[#0f1320]/95 border border-white/10 shadow-2xl shadow-black/50 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-white/5">
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <KeyRound className="w-5 h-5 text-accent-primary" />
+            Changer le mot de passe
+          </h2>
+        </div>
+        <div className="p-5 space-y-4">
+          {step === 'request' && (
+            <>
+              <p className="text-sm text-fg-secondary">
+                Un code à usage unique va être envoyé à <span className="font-mono text-fg-primary">{email}</span>.
+                Saisis-le à l'étape suivante pour définir un nouveau mot de passe.
+              </p>
+              {error && (
+                <p className="text-xs text-error bg-error/10 border border-error/20 px-3 py-2 rounded-md">
+                  {error}
+                </p>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="ghost" onClick={onClose}>Annuler</Button>
+                <Button onClick={() => void requestCode()} loading={busy}>
+                  Envoyer le code
+                </Button>
+              </div>
+            </>
+          )}
+
+          {step === 'consume' && (
+            <>
+              {devCode && (
+                <p className="text-xs bg-accent-primary/10 border border-accent-primary/30 px-3 py-2 rounded-md text-fg-secondary">
+                  Mode dev : code généré = <span className="font-mono font-bold text-accent-primary">{devCode}</span>
+                </p>
+              )}
+              <div>
+                <label className="block text-[10px] font-mono uppercase tracking-wider mb-1.5 text-fg-muted">
+                  Code de récupération
+                </label>
+                <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABCD-1234" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-mono uppercase tracking-wider mb-1.5 text-fg-muted">
+                  Nouveau mot de passe
+                </label>
+                <Input type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} placeholder="8 caractères min." />
+              </div>
+              <div>
+                <label className="block text-[10px] font-mono uppercase tracking-wider mb-1.5 text-fg-muted">
+                  Confirmer
+                </label>
+                <Input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="re-tape" />
+              </div>
+              {error && (
+                <p className="text-xs text-error bg-error/10 border border-error/20 px-3 py-2 rounded-md">
+                  {error}
+                </p>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="ghost" onClick={onClose}>Annuler</Button>
+                <Button onClick={() => void consumeCode()} loading={busy}>
+                  Mettre à jour
+                </Button>
+              </div>
+            </>
+          )}
+
+          {step === 'done' && (
+            <>
+              <p className="text-sm text-success">
+                Mot de passe modifié. Tu peux fermer cette fenêtre.
+              </p>
+              <div className="flex justify-end pt-2">
+                <Button onClick={onClose}>OK</Button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Two-step destructive confirmation for account deletion. We require
+ * the user to retype their username to enable the final button so an
+ * accidental Enter-key doesn't wipe the account. The actual
+ * delete-endpoint isn't wired yet — the button shows a "Bientôt"
+ * notice and surfaces a request for the user to email support in the
+ * interim. When the backend ships, swap the no-op for an IPC call.
+ */
+function DeleteAccountDialog({
+  username,
+  onCancel,
+  onDeleted,
+}: {
+  username: string
+  onCancel: () => void
+  onDeleted: () => void
+}) {
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const canDelete = confirm.trim().toLowerCase() === username.toLowerCase()
+
+  async function handleDelete(): Promise<void> {
+    if (!canDelete) return
+    setBusy(true)
+    setError(null)
+    // No `cloud:deleteAccount` IPC ships yet — the backend endpoint
+    // is on the to-do list (see project_gameverse_backend.md). For
+    // now we show a clear placeholder; flip this branch to the real
+    // IPC the moment it lands.
+    await new Promise((r) => setTimeout(r, 400))
+    setBusy(false)
+    setError(
+      "La suppression définitive n'est pas encore branchée côté serveur. " +
+        "Envoie un mail à support@scanverse.online en attendant — on s'en occupe à la main.",
+    )
+    return
+    // eslint-disable-next-line no-unreachable
+    onDeleted()
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-xl bg-[#0f1320]/95 border border-error/30 shadow-2xl shadow-black/50 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-error/20 bg-error/5">
+          <h2 className="text-lg font-bold text-error flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5" />
+            Supprimer mon compte
+          </h2>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-fg-secondary">
+            Cette action est <span className="text-error font-semibold">irréversible</span>.
+            Ton profil cloud, tes amis, tes succès, tes sauvegardes et ton historique de
+            chat seront supprimés. Ta bibliothèque locale et les fichiers de jeu sur ton
+            disque restent intacts.
+          </p>
+          <div>
+            <label className="block text-[10px] font-mono uppercase tracking-wider mb-1.5 text-fg-muted">
+              Pour confirmer, retape ton pseudo : <span className="text-fg-primary">{username}</span>
+            </label>
+            <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={username} />
+          </div>
+          {error && (
+            <p className="text-xs text-warning bg-warning/10 border border-warning/20 px-3 py-2 rounded-md">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={onCancel}>Annuler</Button>
+            <Button
+              onClick={() => void handleDelete()}
+              loading={busy}
+              disabled={!canDelete}
+              className="bg-error text-white hover:bg-error/80"
+            >
+              Supprimer définitivement
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -443,55 +798,6 @@ function GeneralSection() {
   )
 }
 
-// ───────── Appearance ─────────
-function AppearanceSection() {
-  const animationsEnabled = useSettingsStore((s) => s.animationsEnabled)
-  const setAnimationsEnabled = useSettingsStore((s) => s.setAnimationsEnabled)
-  const blurStrengthPx = useSettingsStore((s) => s.blurStrengthPx)
-  const setBlurStrengthPx = useSettingsStore((s) => s.setBlurStrengthPx)
-
-  return (
-    <div>
-      <SectionHeader icon={Palette} title="Apparence" description="Style visuel et animations" />
-      <div className="flex flex-col gap-5">
-        <Card padding="md" className="border-accent-primary/20">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <p className="text-sm font-medium text-fg-primary">Thèmes</p>
-              <p className="text-xs text-fg-muted mt-0.5">5 thèmes intégrés, personnalisables avec éditeur en direct</p>
-            </div>
-            <Link to="/themes">
-              <Button variant="outline" leftIcon={<Palette className="w-4 h-4" />}>
-                Ouvrir les thèmes
-              </Button>
-            </Link>
-          </div>
-        </Card>
-
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-fg-primary">Activer les animations</p>
-            <p className="text-xs text-fg-muted mt-0.5">Désactive pour supprimer toutes les transitions et effets de mouvement</p>
-          </div>
-          <Toggle checked={animationsEnabled} onChange={setAnimationsEnabled} />
-        </div>
-
-        <div className="border-t border-border-soft pt-5">
-          <Slider
-            label="Intensité du flou d'arrière-plan"
-            value={blurStrengthPx}
-            onChange={setBlurStrengthPx}
-            min={0}
-            max={40}
-            step={1}
-            formatValue={(v) => (v === 0 ? 'Désactivé' : `${v}px`)}
-          />
-          <p className="text-xs text-fg-muted mt-1">Affecte les surfaces vitrées. Met à 0 pour un maximum de perfs.</p>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ───────── Downloads ─────────
 function DownloadsSection() {
@@ -1479,14 +1785,35 @@ function DataSection() {
           </div>
         </Card>
 
-        <p className="text-center text-xs text-fg-muted pt-4">
-          Nexus Launcher · v
-          {(window as unknown as { __NEXUS_VERSION__?: string }).__NEXUS_VERSION__ ??
-            '?.?.?'}
-          {' · plugin-neutre · hors-ligne d\'abord'}
-        </p>
+        <div className="pt-4 flex flex-col items-center gap-2">
+          <ChangelogButton />
+          <p className="text-center text-xs text-fg-muted">
+            Nexus Launcher · v
+            {(window as unknown as { __NEXUS_VERSION__?: string }).__NEXUS_VERSION__ ??
+              '?.?.?'}
+            {' · plugin-neutre · hors-ligne d\'abord'}
+          </p>
+        </div>
       </div>
     </div>
+  )
+}
+
+/** "Voir les notes de version" — opens the changelog dialog in
+ *  controlled (non-auto) mode so the user can browse prior releases
+ *  even after dismissing the auto-pop. */
+function ChangelogButton() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="h-7 px-3 rounded-md text-xs text-fg-secondary hover:text-accent-primary hover:bg-[var(--surface-soft-hover)] transition-colors border border-glass-border"
+      >
+        Voir les notes de version
+      </button>
+      <ChangelogDialog open={open} onClose={() => setOpen(false)} />
+    </>
   )
 }
 
@@ -1495,34 +1822,82 @@ export default function SettingsPage() {
   const [tab, setTab] = useState('account')
 
   return (
-    <div className="px-10 py-10 max-w-6xl mx-auto">
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="mb-8">
-        <h1 className="font-display font-bold text-3xl text-fg-primary">Paramètres</h1>
-        <p className="text-sm text-fg-secondary mt-1">Gère ton compte, tes préférences et tes données</p>
+    // Layout ported from ScanVerse Paramètres : narrow centred column
+    // with header → horizontal pill tabs → stacked content cards.
+    // Replaces the previous Nexus sidebar+content grid because the
+    // user explicitly asked for the ScanVerse disposition. Pill bar
+    // overflow-x scrolls horizontally on small viewports so the
+    // 11-tab list never wraps awkwardly.
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-24">
+      {/* Header — gear icon + title + subtitle, ScanVerse-style */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        className="mb-6 sm:mb-8"
+      >
+        <h1 className="font-display font-bold text-3xl text-fg-primary flex items-center gap-3">
+          <SlidersHorizontal className="w-6 h-6 text-fg-muted" />
+          Paramètres
+        </h1>
+        <p className="text-sm text-fg-secondary mt-1">
+          Gère ton compte, tes préférences et tes données.
+        </p>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-8">
-        <aside className="md:sticky md:top-4 self-start">
-          <Tabs items={TAB_ITEMS} value={tab} onChange={setTab} orientation="vertical" />
-        </aside>
-        <section>
-          <Card padding="lg">
-            <motion.div key={tab} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
-              {tab === 'account' && <AccountSection />}
-              {tab === 'general' && <GeneralSection />}
-              {tab === 'appearance' && <AppearanceSection />}
-              {tab === 'downloads' && <DownloadsSection />}
-              {tab === 'notifications' && <NotificationsSection />}
-              {tab === 'network' && <NetworkSection />}
-              {tab === 'storage' && <StorageSection />}
-              {tab === 'performance' && <PerformanceSection />}
-              {tab === 'security' && <SecuritySection />}
-              {tab === 'addons' && <AddonsSection />}
-              {tab === 'data' && <DataSection />}
-            </motion.div>
-          </Card>
-        </section>
+      {/* Pill tab strip. Scrolls horizontally on mobile / narrow
+          viewports — `no-scrollbar` hides the native bar so the
+          11-tab strip stays clean. */}
+      <div
+        className="
+          flex gap-1 mb-6 sm:mb-8 p-1 rounded-xl
+          -mx-4 sm:mx-0 px-4 sm:px-1
+          overflow-x-auto no-scrollbar whitespace-nowrap
+          bg-[var(--surface-soft)] border border-glass-border
+        "
+      >
+        {TAB_ITEMS.map((t) => {
+          const isActive = tab === t.value
+          return (
+            <button
+              key={t.value}
+              onClick={() => setTab(t.value)}
+              className={cn(
+                'shrink-0 flex items-center justify-center gap-2 px-4 min-h-[40px] rounded-lg text-sm font-semibold transition-colors',
+                isActive
+                  ? 'bg-accent-gradient text-white shadow-sm'
+                  : 'text-fg-muted hover:text-fg-primary hover:bg-[var(--surface-soft-hover)]',
+              )}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          )
+        })}
       </div>
+
+      {/* Active tab content. We DON'T wrap in an outer <Card> anymore —
+          each section already paints its own cards/blocks, and the
+          ScanVerse layout keeps the outer column flat so card edges
+          align with the tab strip above. */}
+      <motion.div
+        key={tab}
+        initial={{ opacity: 0, y: 4 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.18 }}
+      >
+        {tab === 'account' && <AccountSection />}
+        {tab === 'general' && <GeneralSection />}
+        {tab === 'personalisation' && <PersonalisationSection />}
+        {tab === 'downloads' && <DownloadsSection />}
+        {tab === 'notifications' && <NotificationsSection />}
+        {tab === 'network' && <NetworkSection />}
+        {tab === 'storage' && <StorageSection />}
+        {tab === 'performance' && <PerformanceSection />}
+        {tab === 'security' && <SecuritySection />}
+        {tab === 'addons' && <AddonsSection />}
+        {tab === 'data' && <DataSection />}
+      </motion.div>
     </div>
   )
 }

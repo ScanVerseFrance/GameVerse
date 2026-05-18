@@ -89,6 +89,12 @@ export function normalizeTitle(raw: string): string {
     .replace(BUNDLE_REGEX, ' ')
     .replace(/[._]/g, ' ') // dots and underscores → space
     .replace(/\xa0/g, ' ') // nbsp → space
+    // Strip apostrophes BEFORE the catch-all punctuation pass so
+    // "Marvel's" → "marvels" (one word), not "marvel s" (two words).
+    // The two-word form generated dangerous short variants like
+    // "marvel s" via titleVariants which SGDB happily matched to
+    // Spider-Man 2 / Avengers / Midnight Suns indiscriminately.
+    .replace(/['’`]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9 ]/g, ' ') // drop everything else
     .replace(/\s+/g, ' ')
@@ -130,9 +136,13 @@ export function titleVariants(raw: string): string[] {
     const idx = raw.indexOf(sep)
     if (idx > 3) push(raw.slice(0, idx))
   }
-  // First-N words (after normalization)
+  // First-N words (after normalization). We CAP at 5 → 3 (was 5 → 2);
+  // 2-word variants like "marvel s" matched everything Marvel-flavoured
+  // on SGDB and poisoned the cache with Spider-Man 2's appid across
+  // Avengers / Miles Morales / Remastered / Midnight Suns. 3 words is
+  // the smallest variant that's still distinctive enough.
   const words = normalizeTitle(raw).split(' ').filter(Boolean)
-  for (const n of [5, 4, 3, 2]) {
+  for (const n of [5, 4, 3]) {
     if (words.length > n) push(words.slice(0, n).join(' '))
   }
 

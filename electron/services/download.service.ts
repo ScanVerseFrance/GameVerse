@@ -14,6 +14,11 @@ import {
 } from './ankergames-bridge.service'
 import { upsertLibraryFromDownload } from './library.service'
 import { getAppSettings } from './app-settings.service'
+import {
+  acquireForDownload,
+  releaseForDownload,
+  releaseAll as releaseAllPowerBlockers,
+} from './power-save.service'
 import type {
   DownloadRecord,
   DownloadSettings,
@@ -349,6 +354,17 @@ function setRowStatus(id: string, status: DownloadStatus, error?: string): void 
     getDatabase()
       .prepare('UPDATE downloads SET status = ?, error = NULL WHERE id = ?')
       .run(status, id)
+  }
+
+  // Power-save lifecycle. Hydra-style: hold a blocker per *active*
+  // download (downloading or queued), release the moment it's
+  // paused / finished / errored / cancelled. This keeps Windows
+  // awake during long FitGirl repacks without keeping the laptop
+  // burning power when the user pauses for the night.
+  if (status === 'downloading' || status === 'queued') {
+    acquireForDownload(id)
+  } else {
+    releaseForDownload(id)
   }
 }
 
@@ -721,4 +737,8 @@ export function shutdownDownloads(): void {
     if (handle.torrent) handle.torrent.destroy(false)
   }
   active.clear()
+  // Drop every power-save blocker so Windows can actually go to
+  // sleep after we quit. Without this the leaked handles linger
+  // until the OS notices the parent process is gone (~30s).
+  releaseAllPowerBlockers()
 }

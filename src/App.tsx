@@ -11,8 +11,10 @@ import { useSettingsStore } from './stores/settings.store'
 import { useNotificationsStore } from './stores/notifications.store'
 import { useCloudStore } from './stores/cloud.store'
 import { useApplyTheme } from './hooks/useApplyTheme'
+import { useThemePreset } from './hooks/useThemePreset'
 import { UpdatePopup } from './components/common/UpdatePopup'
 import { CommandPalette } from './components/common/CommandPalette'
+import { ChangelogDialog } from './components/common/ChangelogDialog'
 
 export default function App() {
   const restore = useAuthStore((s) => s.restoreSession)
@@ -26,6 +28,11 @@ export default function App() {
   const animationsEnabled = useSettingsStore((s) => s.animationsEnabled)
   const blurStrengthPx = useSettingsStore((s) => s.blurStrengthPx)
 
+  // Theme preset is applied BEFORE useApplyTheme so the per-user
+  // custom theme layers on top of the preset's CSS variables. Without
+  // this order the per-user accent could be overwritten by the preset
+  // re-applying on remount.
+  useThemePreset()
   useApplyTheme()
 
   useEffect(() => {
@@ -285,6 +292,12 @@ export default function App() {
           catalogues and friends. Mounted outside RouterProvider so
           the keyboard listener binds once for the whole session. */}
       <CommandPalette />
+      {/* "Quoi de neuf" — auto-pops the first time the user launches
+          a build that's newer than the version they last saw. Reads
+          __NEXUS_VERSION__ + localStorage to make the call, so this
+          mount has zero cost in steady-state (returns null until a
+          version bump). */}
+      <ChangelogDialog autoOpen />
     </>
   )
 }

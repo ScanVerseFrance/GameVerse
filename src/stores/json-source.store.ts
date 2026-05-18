@@ -18,7 +18,7 @@ interface JsonSourceState {
   importFromPath: (filePath: string) => Promise<ImportJsonSourceResult>
   remove: (sourceId: string) => Promise<boolean>
   copyMagnet: (uri: string) => Promise<boolean>
-  searchGames: (query: string, limit?: number) => Promise<JsonSourceSearchHit[]>
+  searchGames: (query: string, limit?: number, sourceIds?: string[]) => Promise<JsonSourceSearchHit[]>
   getGame: (gameId: string) => Promise<JsonSourceSearchHit | null>
 }
 
@@ -75,8 +75,8 @@ export const useJsonSourceStore = create<JsonSourceState>((set, get) => ({
     return res.ok
   },
 
-  searchGames: async (query, limit) => {
-    const res = await window.nexus.jsonSources.searchGames(query, limit)
+  searchGames: async (query, limit, sourceIds) => {
+    const res = await window.nexus.jsonSources.searchGames(query, limit, sourceIds)
     return res.ok ? res.games : []
   },
 

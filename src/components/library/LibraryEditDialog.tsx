@@ -11,6 +11,11 @@ import {
   CheckCircle2,
   AlertTriangle,
   Wand2,
+  Settings,
+  FolderOpen,
+  BarChart3,
+  AlertOctagon,
+  Tag,
 } from 'lucide-react'
 import type { LibraryGame, LibraryStatus, VerifyReport } from '@/types/library.types'
 import { Modal } from '@/components/ui/Modal'
@@ -36,6 +41,20 @@ const STATUSES: { value: LibraryStatus; label: string }[] = [
   { value: 'abandoned', label: 'Abandonné' },
 ]
 
+// Hydra-style left-nav sections. Pure presentation list — the tab id is
+// the same string used by the active-tab state, no enum needed for five
+// entries. Icons mirror Hydra's set as closely as lucide allows
+// (Settings / FolderOpen / HardDrive / BarChart3 / AlertOctagon).
+type TabId = 'general' | 'locations' | 'files' | 'stats' | 'danger'
+
+const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'general', label: 'Général', icon: Settings },
+  { id: 'locations', label: 'Emplacements', icon: FolderOpen },
+  { id: 'files', label: 'Fichiers', icon: HardDrive },
+  { id: 'stats', label: 'Statistiques', icon: BarChart3 },
+  { id: 'danger', label: 'Zone dangereuse', icon: AlertOctagon },
+]
+
 export function LibraryEditDialog({ open, onClose, game }: Props) {
   const update = useLibraryStore((s) => s.update)
   const remove = useLibraryStore((s) => s.remove)
@@ -45,6 +64,7 @@ export function LibraryEditDialog({ open, onClose, game }: Props) {
   const gameMemberships = useCollectionStore((s) => s.gameMemberships)
   const loadForGame = useCollectionStore((s) => s.loadForGame)
 
+  const [activeTab, setActiveTab] = useState<TabId>('general')
   const [title, setTitle] = useState('')
   const [executablePath, setExecutablePath] = useState<string | null>(null)
   const [status, setStatus] = useState<LibraryStatus>('not_started')
@@ -67,6 +87,7 @@ export function LibraryEditDialog({ open, onClose, game }: Props) {
 
   useEffect(() => {
     if (!game) return
+    setActiveTab('general')
     setTitle(game.title)
     setExecutablePath(game.executablePath)
     setStatus(game.status)
@@ -207,301 +228,392 @@ export function LibraryEditDialog({ open, onClose, game }: Props) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Propriétés" maxWidth="2xl">
-      <div className="flex flex-col gap-6">
-        {/* Top hero row — cover + title input + status pills, full width */}
-        <div className="flex gap-5 flex-wrap md:flex-nowrap">
-          {game.coverUrl && (
-            <div className="w-28 aspect-[3/4] rounded-md overflow-hidden border border-glass-border shrink-0">
-              <img src={game.coverUrl} alt="" className="w-full h-full object-cover" />
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={game.title}
+      description="Propriétés"
+      maxWidth="3xl"
+      noPadding
+    >
+      <div className="flex w-full h-full min-h-0">
+        {/* ── Left navigation rail ─────────────────────────────────── */}
+        <nav
+          className="w-56 shrink-0 border-r border-border-soft bg-[var(--surface-soft)]/40 py-4 px-2 flex flex-col gap-0.5 overflow-y-auto"
+          aria-label="Sections des propriétés"
+        >
+          {TABS.map((tab) => {
+            const Icon = tab.icon
+            const active = activeTab === tab.id
+            const danger = tab.id === 'danger'
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  'flex items-center gap-2.5 h-10 px-3 rounded-md text-sm font-medium text-left transition-colors',
+                  active
+                    ? danger
+                      ? 'bg-error/15 text-error'
+                      : 'bg-[var(--surface-soft-hover)] text-fg-primary'
+                    : danger
+                    ? 'text-error/80 hover:bg-error/10 hover:text-error'
+                    : 'text-fg-secondary hover:bg-[var(--surface-soft-hover)] hover:text-fg-primary'
+                )}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="truncate">{tab.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+
+        {/* ── Right content pane ───────────────────────────────────── */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 overflow-y-auto px-7 py-6">
+            {activeTab === 'general' && (
+              <div className="flex flex-col gap-6">
+                {/* Hero — cover + title input + status pills */}
+                <div className="flex gap-5 flex-wrap md:flex-nowrap">
+                  {game.coverUrl && (
+                    <div className="w-24 aspect-[3/4] rounded-md overflow-hidden border border-glass-border shrink-0">
+                      <img src={game.coverUrl} alt="" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  <div className="flex-1 flex flex-col gap-3 min-w-0">
+                    <Input
+                      label="Titre"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                    />
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
+                        Statut
+                      </label>
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                        {STATUSES.map((s) => (
+                          <button
+                            key={s.value}
+                            type="button"
+                            onClick={() => setStatus(s.value)}
+                            className={cn(
+                              'h-10 rounded-md text-xs font-medium border transition-colors',
+                              status === s.value
+                                ? 'border-accent-primary/60 bg-accent-primary/10 text-fg-primary'
+                                : 'border-glass-border text-fg-secondary hover:bg-[var(--surface-soft)]'
+                            )}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <SectionHeader>Organisation</SectionHeader>
+
+                <div className="flex items-center gap-3">
+                  <Star
+                    className={cn(
+                      'w-4 h-4',
+                      isFavorite ? 'fill-warning text-warning' : 'text-fg-muted'
+                    )}
+                  />
+                  <Toggle checked={isFavorite} onChange={setIsFavorite} label="Favori" />
+                </div>
+
+                <Input
+                  label="Tags (séparés par virgule)"
+                  value={tagsRaw}
+                  onChange={(e) => setTagsRaw(e.target.value)}
+                  placeholder="rpg, indé, soldé"
+                />
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
+                    <Tag className="w-3 h-3 inline mr-1 -mt-0.5" />
+                    Collections
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 min-h-[34px] items-center">
+                    {memberCollections.length === 0 ? (
+                      <span className="text-xs text-fg-muted italic">
+                        Aucune collection — clique sur Gérer pour en assigner.
+                      </span>
+                    ) : (
+                      memberCollections.map((c) => (
+                        <span
+                          key={c.id}
+                          className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[var(--surface-soft)] border border-glass-border text-xs text-fg-primary"
+                          title={c.name}
+                        >
+                          <span
+                            className={cn(
+                              'w-2 h-2 rounded-full',
+                              c.color ? '' : 'bg-accent-gradient'
+                            )}
+                            style={c.color ? { backgroundColor: c.color } : undefined}
+                          />
+                          {c.name}
+                        </span>
+                      ))
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setCollectionsOpen(true)}
+                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full border border-dashed border-glass-border text-xs text-fg-secondary hover:text-fg-primary hover:bg-[var(--surface-soft)] transition-colors"
+                    >
+                      <FolderTree className="w-3 h-3" /> Gérer
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
+                    Note personnelle
+                  </label>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={6}
+                    maxLength={2000}
+                    placeholder="Ce que tu veux retenir sur ce jeu…"
+                    className="bg-[var(--surface-soft)] border border-glass-border hover:bg-[var(--surface-soft-hover)] focus:bg-[var(--surface-soft-hover)] focus:border-accent-primary/60 focus:outline-none rounded-md px-3.5 py-3 text-sm text-fg-primary placeholder:text-fg-muted resize-none transition-all"
+                  />
+                  <span className="text-[10px] text-fg-muted self-end">
+                    {note.length} / 2000
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'locations' && (
+              <div className="flex flex-col gap-6">
+                <SectionHeader>Exécutable & dossiers</SectionHeader>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
+                    Exécutable
+                  </label>
+                  <div className="flex gap-2 flex-wrap">
+                    <div
+                      className="flex-1 min-w-[200px] h-11 px-3.5 rounded-md bg-[var(--surface-soft)] border border-glass-border flex items-center text-sm font-mono text-fg-secondary truncate"
+                      title={executablePath ?? ''}
+                    >
+                      {executablePath ?? (
+                        <span className="text-fg-muted italic">Aucun exécutable défini</span>
+                      )}
+                    </div>
+                    <Button variant="outline" leftIcon={<Folder className="w-4 h-4" />} onClick={pickExe}>
+                      Choisir
+                    </Button>
+                    {game.installPath && (
+                      <Button
+                        variant="ghost"
+                        leftIcon={<Wand2 className="w-4 h-4" />}
+                        onClick={() => void handleAutoDetectExe()}
+                        loading={detectingExe}
+                        title="Scanner le dossier d'installation et choisir le meilleur .exe"
+                      >
+                        Auto-détecter
+                      </Button>
+                    )}
+                    {executablePath && (
+                      <Button
+                        variant="ghost"
+                        leftIcon={<ExternalLink className="w-4 h-4" />}
+                        onClick={openContainingFolder}
+                        title="Ouvrir le dossier contenant"
+                      >
+                        Ouvrir
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {game.installPath && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
+                      Dossier d'installation
+                    </label>
+                    <div className="flex gap-2 flex-wrap">
+                      <div
+                        className="flex-1 min-w-[200px] h-11 px-3.5 rounded-md bg-[var(--surface-soft)] border border-glass-border flex items-center text-sm font-mono text-fg-secondary truncate"
+                        title={game.installPath}
+                      >
+                        {game.installPath}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        leftIcon={<ExternalLink className="w-4 h-4" />}
+                        onClick={openInstallFolder}
+                      >
+                        Ouvrir
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
+                    Options de lancement
+                  </label>
+                  <input
+                    type="text"
+                    value={launchOptions}
+                    onChange={(e) => setLaunchOptions(e.target.value)}
+                    placeholder='-fullscreen -dx11 -mod "Custom Stuff"'
+                    maxLength={1000}
+                    className="h-11 px-3.5 rounded-md bg-[var(--surface-soft)] border border-glass-border hover:bg-[var(--surface-soft-hover)] focus:bg-[var(--surface-soft-hover)] focus:border-accent-primary/60 focus:outline-none text-sm font-mono text-fg-primary placeholder:text-fg-muted transition-all"
+                  />
+                  <p className="text-[11px] text-fg-muted leading-relaxed">
+                    Arguments passés à l'exécutable au lancement. Les segments entre guillemets restent
+                    groupés (ex&nbsp;:{' '}
+                    <code className="font-mono text-fg-secondary">-mod "Custom Stuff"</code>).
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'files' && (
+              <div className="flex flex-col gap-6">
+                <SectionHeader>Fichiers locaux</SectionHeader>
+
+                {!game.installPath ? (
+                  <div className="rounded-md border border-glass-border bg-[var(--surface-soft)]/40 p-6 text-sm text-fg-muted text-center">
+                    Aucun dossier d'installation associé à ce jeu.
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3 rounded-md border border-glass-border bg-[var(--surface-soft)]/40 p-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wider">
+                        <HardDrive className="w-3.5 h-3.5" />
+                        Espace disque
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        leftIcon={<ShieldCheck className="w-3.5 h-3.5" />}
+                        onClick={() => void handleVerify()}
+                        loading={verifying}
+                      >
+                        Vérifier l'intégrité
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-fg-secondary flex-wrap">
+                      <div>
+                        <span className="text-fg-muted">Taille du dossier:</span>{' '}
+                        <span className="font-mono text-fg-primary">
+                          {folderSizeLoading
+                            ? 'calcul…'
+                            : folderSize !== null
+                            ? `${folderSizeTruncated ? '≥ ' : ''}${fmtBytes(folderSize)}`
+                            : '—'}
+                        </span>
+                      </div>
+                    </div>
+                    {verifyReport && (
+                      <div className="flex flex-col gap-1.5 mt-1 pt-3 border-t border-border-soft">
+                        <VerifyRow
+                          ok={verifyReport.installPathExists}
+                          label="Dossier d'installation accessible"
+                        />
+                        {verifyReport.executablePath && (
+                          <VerifyRow
+                            ok={verifyReport.executableExists}
+                            label={
+                              verifyReport.executableExists
+                                ? `Exécutable valide (${fmtBytes(verifyReport.executableSize ?? 0)})`
+                                : 'Exécutable introuvable ou vide'
+                            }
+                          />
+                        )}
+                        <VerifyRow
+                          ok={verifyReport.exeCountInFolder > 0}
+                          label={`${verifyReport.exeCountInFolder} fichier(s) .exe détecté(s) dans le dossier`}
+                        />
+                        {verifyReport.errors.map((e, i) => (
+                          <div
+                            key={`e-${i}`}
+                            className="flex items-start gap-2 text-xs text-error"
+                          >
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            <span>{e}</span>
+                          </div>
+                        ))}
+                        {verifyReport.warnings.map((w, i) => (
+                          <div
+                            key={`w-${i}`}
+                            className="flex items-start gap-2 text-xs text-warning"
+                          >
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            <span>{w}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'stats' && (
+              <div className="flex flex-col gap-6">
+                <SectionHeader>Statistiques de jeu</SectionHeader>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <InfoCell label="Temps de jeu" value={fmtPlaytime(game.totalPlaytimeSeconds)} />
+                  <InfoCell label="Dernière session" value={fmtDate(game.lastPlayedAt)} />
+                  <InfoCell label="Ajouté le" value={fmtDate(game.addedAt)} />
+                  <InfoCell label="ID source" value={game.sourceGameId ?? '—'} mono />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'danger' && (
+              <div className="flex flex-col gap-6">
+                <SectionHeader danger>Zone dangereuse</SectionHeader>
+                <div className="rounded-md border border-error/30 bg-error/5 p-5 flex flex-col gap-3">
+                  <div className="flex items-start gap-3">
+                    <AlertOctagon className="w-5 h-5 text-error shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-fg-primary">
+                        Retirer ce jeu de la bibliothèque
+                      </p>
+                      <p className="text-xs text-fg-secondary mt-1 leading-relaxed">
+                        Cette action retire le jeu de Nexus. Les fichiers du jeu sur le disque
+                        ne sont pas supprimés — seul l'enregistrement dans la bibliothèque
+                        disparaît.
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <Button
+                      variant={confirming ? 'danger' : 'outline'}
+                      leftIcon={<Trash2 className="w-4 h-4" />}
+                      onClick={handleDelete}
+                      onBlur={() => setConfirming(false)}
+                    >
+                      {confirming
+                        ? 'Confirmer la suppression'
+                        : 'Retirer de la bibliothèque'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Footer (always visible, regardless of tab) ──────────── */}
+          {error && (
+            <div className="px-7 pt-3">
+              <div className="flex items-start gap-2 text-sm text-error bg-error/10 border border-error/20 rounded-sm px-3 py-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span className="flex-1">{error}</span>
+              </div>
             </div>
           )}
-          <div className="flex-1 flex flex-col gap-3 min-w-0">
-            <Input label="Titre" value={title} onChange={(e) => setTitle(e.target.value)} />
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">Statut</label>
-              <div className="grid grid-cols-4 gap-2">
-                {STATUSES.map((s) => (
-                  <button
-                    key={s.value}
-                    type="button"
-                    onClick={() => setStatus(s.value)}
-                    className={cn(
-                      'h-10 rounded-md text-xs font-medium border transition-colors',
-                      status === s.value
-                        ? 'border-accent-primary/60 bg-accent-primary/10 text-fg-primary'
-                        : 'border-glass-border text-fg-secondary hover:bg-[var(--surface-soft)]'
-                    )}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Two-column body — Steam-style: left = file paths / executable,
-            right = personal organization (tags, favorite, note). Stacks on
-            narrow viewports. */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="flex flex-col gap-5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-fg-secondary border-b border-border-soft pb-2">
-              Fichiers
-            </h3>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">Exécutable</label>
-              <div className="flex gap-2 flex-wrap">
-                <div
-                  className="flex-1 min-w-[200px] h-11 px-3.5 rounded-md bg-[var(--surface-soft)] border border-glass-border flex items-center text-sm font-mono text-fg-secondary truncate"
-                  title={executablePath ?? ''}
-                >
-                  {executablePath ?? <span className="text-fg-muted italic">Aucun exécutable défini</span>}
-                </div>
-                <Button variant="outline" leftIcon={<Folder className="w-4 h-4" />} onClick={pickExe}>
-                  Choisir
-                </Button>
-                {game.installPath && (
-                  <Button
-                    variant="ghost"
-                    leftIcon={<Wand2 className="w-4 h-4" />}
-                    onClick={() => void handleAutoDetectExe()}
-                    loading={detectingExe}
-                    title="Scanner le dossier d'installation et choisir le meilleur .exe"
-                  >
-                    Auto-détecter
-                  </Button>
-                )}
-                {executablePath && (
-                  <Button
-                    variant="ghost"
-                    leftIcon={<ExternalLink className="w-4 h-4" />}
-                    onClick={openContainingFolder}
-                    title="Ouvrir le dossier contenant"
-                  >
-                    Ouvrir
-                  </Button>
-                )}
-              </div>
-            </div>
-            {game.installPath && (
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
-                  Dossier d'installation
-                </label>
-                <div className="flex gap-2 flex-wrap">
-                  <div
-                    className="flex-1 min-w-[200px] h-11 px-3.5 rounded-md bg-[var(--surface-soft)] border border-glass-border flex items-center text-sm font-mono text-fg-secondary truncate"
-                    title={game.installPath}
-                  >
-                    {game.installPath}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    leftIcon={<ExternalLink className="w-4 h-4" />}
-                    onClick={openInstallFolder}
-                  >
-                    Ouvrir
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Fichiers locaux — Steam's "Local Files" tab in one row.
-                Folder size auto-loads (bounded walker), and Vérifier
-                runs structural integrity checks (install_path exists,
-                executable is reachable, at least one .exe present,
-                leftover setups flagged). Only rendered for installed
-                games. */}
-            {game.installPath && (
-              <div className="flex flex-col gap-2 rounded-md border border-glass-border bg-[var(--surface-soft)]/40 p-3">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wider">
-                    <HardDrive className="w-3.5 h-3.5" />
-                    Fichiers locaux
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    leftIcon={<ShieldCheck className="w-3.5 h-3.5" />}
-                    onClick={() => void handleVerify()}
-                    loading={verifying}
-                  >
-                    Vérifier l'intégrité
-                  </Button>
-                </div>
-                <div className="flex items-center gap-4 text-xs text-fg-secondary flex-wrap">
-                  <div>
-                    <span className="text-fg-muted">Taille:</span>{' '}
-                    <span className="font-mono text-fg-primary">
-                      {folderSizeLoading
-                        ? 'calcul…'
-                        : folderSize !== null
-                        ? `${folderSizeTruncated ? '≥ ' : ''}${fmtBytes(folderSize)}`
-                        : '—'}
-                    </span>
-                  </div>
-                </div>
-                {verifyReport && (
-                  <div className="flex flex-col gap-1.5 mt-1">
-                    <VerifyRow
-                      ok={verifyReport.installPathExists}
-                      label="Dossier d'installation accessible"
-                    />
-                    {verifyReport.executablePath && (
-                      <VerifyRow
-                        ok={verifyReport.executableExists}
-                        label={
-                          verifyReport.executableExists
-                            ? `Exécutable valide (${fmtBytes(verifyReport.executableSize ?? 0)})`
-                            : 'Exécutable introuvable ou vide'
-                        }
-                      />
-                    )}
-                    <VerifyRow
-                      ok={verifyReport.exeCountInFolder > 0}
-                      label={`${verifyReport.exeCountInFolder} fichier(s) .exe détecté(s) dans le dossier`}
-                    />
-                    {verifyReport.errors.map((e, i) => (
-                      <div
-                        key={`e-${i}`}
-                        className="flex items-start gap-2 text-xs text-error"
-                      >
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        <span>{e}</span>
-                      </div>
-                    ))}
-                    {verifyReport.warnings.map((w, i) => (
-                      <div
-                        key={`w-${i}`}
-                        className="flex items-start gap-2 text-xs text-warning"
-                      >
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                        <span>{w}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Steam-style "Launch Options" — single text field, appended as
-                argv to the executable on launch. Quoted segments stay grouped
-                (e.g. `-mod "Custom Stuff"`). Empty = no extra args. */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
-                Options de lancement
-              </label>
-              <input
-                type="text"
-                value={launchOptions}
-                onChange={(e) => setLaunchOptions(e.target.value)}
-                placeholder='-fullscreen -dx11 -mod "Custom Stuff"'
-                maxLength={1000}
-                className="h-11 px-3.5 rounded-md bg-[var(--surface-soft)] border border-glass-border hover:bg-[var(--surface-soft-hover)] focus:bg-[var(--surface-soft-hover)] focus:border-accent-primary/60 focus:outline-none text-sm font-mono text-fg-primary placeholder:text-fg-muted transition-all"
-              />
-              <p className="text-[11px] text-fg-muted leading-relaxed">
-                Arguments passés à l'exécutable au lancement. Les segments entre guillemets restent
-                groupés (ex&nbsp;: <code className="font-mono text-fg-secondary">-mod "Custom Stuff"</code>).
-              </p>
-            </div>
-
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-fg-secondary border-b border-border-soft pb-2 mt-2">
-              Statistiques
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <InfoCell label="Temps de jeu" value={fmtPlaytime(game.totalPlaytimeSeconds)} />
-              <InfoCell label="Dernière session" value={fmtDate(game.lastPlayedAt)} />
-              <InfoCell label="Ajouté le" value={fmtDate(game.addedAt)} />
-              <InfoCell label="ID source" value={game.sourceGameId ?? '—'} mono />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-5">
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-fg-secondary border-b border-border-soft pb-2">
-              Organisation
-            </h3>
-            <div className="flex items-center gap-3">
-              <Star className={cn('w-4 h-4', isFavorite ? 'fill-warning text-warning' : 'text-fg-muted')} />
-              <Toggle checked={isFavorite} onChange={setIsFavorite} label="Favori" />
-            </div>
-
-            <Input
-              label="Tags (séparés par virgule)"
-              value={tagsRaw}
-              onChange={(e) => setTagsRaw(e.target.value)}
-              placeholder="rpg, indé, soldé"
-            />
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
-                Collections
-              </label>
-              <div className="flex flex-wrap gap-1.5 min-h-[34px] items-center">
-                {memberCollections.length === 0 ? (
-                  <span className="text-xs text-fg-muted italic">
-                    Aucune collection — clique sur Gérer pour en assigner.
-                  </span>
-                ) : (
-                  memberCollections.map((c) => (
-                    <span
-                      key={c.id}
-                      className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[var(--surface-soft)] border border-glass-border text-xs text-fg-primary"
-                      title={c.name}
-                    >
-                      <span
-                        className={cn(
-                          'w-2 h-2 rounded-full',
-                          c.color ? '' : 'bg-accent-gradient'
-                        )}
-                        style={c.color ? { backgroundColor: c.color } : undefined}
-                      />
-                      {c.name}
-                    </span>
-                  ))
-                )}
-                <button
-                  type="button"
-                  onClick={() => setCollectionsOpen(true)}
-                  className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full border border-dashed border-glass-border text-xs text-fg-secondary hover:text-fg-primary hover:bg-[var(--surface-soft)] transition-colors"
-                >
-                  <FolderTree className="w-3 h-3" /> Gérer
-                </button>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5 flex-1">
-              <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">Note personnelle</label>
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                rows={6}
-                maxLength={2000}
-                placeholder="Ce que tu veux retenir sur ce jeu…"
-                className="flex-1 bg-[var(--surface-soft)] border border-glass-border hover:bg-[var(--surface-soft-hover)] focus:bg-[var(--surface-soft-hover)] focus:border-accent-primary/60 focus:outline-none rounded-md px-3.5 py-3 text-sm text-fg-primary placeholder:text-fg-muted resize-none transition-all"
-              />
-              <span className="text-[10px] text-fg-muted self-end">{note.length} / 2000</span>
-            </div>
-          </div>
-        </div>
-
-        {error && (
-          <div className="flex items-start gap-2 text-sm text-error bg-error/10 border border-error/20 rounded-sm px-3 py-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span className="flex-1">{error}</span>
-          </div>
-        )}
-
-        <div className="flex justify-between items-center pt-2 flex-wrap gap-2 border-t border-border-soft pt-4">
-          <Button
-            variant={confirming ? 'danger' : 'outline'}
-            leftIcon={<Trash2 className="w-4 h-4" />}
-            onClick={handleDelete}
-            onBlur={() => setConfirming(false)}
-          >
-            {confirming ? 'Confirmer la suppression' : 'Retirer de la bibliothèque'}
-          </Button>
-          <div className="flex gap-2">
+          <div className="px-7 py-4 border-t border-border-soft flex justify-end gap-2 shrink-0 bg-[var(--surface-soft)]/30">
             <Button variant="outline" onClick={onClose} disabled={saving}>
               Annuler
             </Button>
@@ -511,6 +623,7 @@ export function LibraryEditDialog({ open, onClose, game }: Props) {
           </div>
         </div>
       </div>
+
       <CollectionsDialog
         open={collectionsOpen}
         onClose={() => setCollectionsOpen(false)}
@@ -518,6 +631,25 @@ export function LibraryEditDialog({ open, onClose, game }: Props) {
         gameTitle={game.title}
       />
     </Modal>
+  )
+}
+
+function SectionHeader({
+  children,
+  danger,
+}: {
+  children: React.ReactNode
+  danger?: boolean
+}) {
+  return (
+    <h3
+      className={cn(
+        'text-[11px] font-semibold uppercase tracking-widest border-b pb-2',
+        danger ? 'text-error border-error/30' : 'text-fg-secondary border-border-soft'
+      )}
+    >
+      {children}
+    </h3>
   )
 }
 

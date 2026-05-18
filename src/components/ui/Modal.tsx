@@ -9,8 +9,12 @@ interface ModalProps {
   title?: string
   description?: string
   children: ReactNode
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl'
   closeOnBackdrop?: boolean
+  /** Strip the default p-7 padding from the body — needed by tabbed
+   *  layouts (Hydra-style Propriétés) where the inner shell renders
+   *  its own sidebar/content split full-bleed. */
+  noPadding?: boolean
 }
 
 const maxWidthClass = {
@@ -19,6 +23,7 @@ const maxWidthClass = {
   lg: 'max-w-2xl',
   xl: 'max-w-4xl',
   '2xl': 'max-w-5xl',
+  '3xl': 'max-w-6xl',
 }
 
 export function Modal({
@@ -29,6 +34,7 @@ export function Modal({
   children,
   maxWidth = 'md',
   closeOnBackdrop = true,
+  noPadding = false,
 }: ModalProps) {
   useEffect(() => {
     if (!open) return
@@ -82,7 +88,14 @@ export function Modal({
                 </button>
               </div>
             )}
-            <div className="p-7 overflow-y-auto flex-1">{children}</div>
+            <div
+              className={cn(
+                'flex-1 min-h-0',
+                noPadding ? 'overflow-hidden flex' : 'overflow-y-auto p-7'
+              )}
+            >
+              {children}
+            </div>
           </motion.div>
         </motion.div>
       )}

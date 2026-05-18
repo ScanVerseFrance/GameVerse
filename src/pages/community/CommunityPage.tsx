@@ -1,16 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Users, Activity, UserPlus, Globe2, User as UserIcon, type LucideIcon } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth.store'
-import { useSocialStore } from '@/stores/social.store'
+import { useCloudStore } from '@/stores/cloud.store'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { ActivityFeedItem } from '@/components/community/ActivityFeedItem'
 import { UserCard } from '@/components/community/UserCard'
 import { FriendsNowPlaying } from '@/components/community/FriendsNowPlaying'
 import { MessageSquare } from 'lucide-react'
-import type { ActivityItem, ActivityScope } from '@/types/social.types'
+import type {
+  ActivityItem,
+  ActivityKind,
+  ActivityScope,
+  PublicProfile,
+} from '@/types/social.types'
+import type { CloudActivity, CloudPublicUser } from '@/types/cloud.types'
 import { cn } from '@/utils/cn'
 
 const SCOPES: { value: ActivityScope; label: string; icon: LucideIcon }[] = [
@@ -19,27 +25,116 @@ const SCOPES: { value: ActivityScope; label: string; icon: LucideIcon }[] = [
   { value: 'global', label: 'Tous', icon: Globe2 },
 ]
 
+/**
+ * Adapt a cloud public-user payload (from /v1/friends or
+ * /v1/auth/me) into the shape <UserCard> expects. Cloud doesn't
+ * carry the local cosmetic IDs (plaque, profile effect, avatar
+ * decoration, music URL) so those are blanked — the renderer's
+ * CSS preset catalog gracefully no-ops a null id.
+ */
+function cloudUserToPublicProfile(u: CloudPublicUser): PublicProfile {
+  // Cloud doesn't carry local-only cosmetic IDs or per-viewer
+  // privacy flags. UserCard's compact mode only reads
+  // {id, username, displayName, avatarPath}, but the type demands
+  // every field. We fill the rest with permissive defaults so the
+  // cast is structurally complete.
+  return {
+    id: u.id,
+    username: u.username,
+    displayName: u.displayName ?? null,
+    avatarPath: u.avatarPath ?? null,
+    bannerPath: u.bannerPath ?? null,
+    usernameColor: null,
+    usernameAnimation: null,
+    plaqueId: null,
+    profileEffectId: null,
+    avatarDecorationId: null,
+    profileMusicUrl: null,
+    bio: u.bio ?? null,
+    isGuest: false,
+    createdAt: u.createdAt ? Date.parse(u.createdAt) || null : null,
+    canViewLibrary: true,
+    canViewPlaytime: true,
+    canViewFavorites: true,
+    canViewReviews: true,
+    canViewHeatmap: true,
+    canViewAchievements: true,
+    canViewFriends: true,
+    presenceVisibility: 'public',
+    hidePlayActivity: false,
+    presenceStatus: null,
+    lastActiveAt: null,
+  }
+}
+
+/**
+ * Adapt a cloud activity envelope (CloudActivity from WS or REST
+ * /v1/activities) into the flat ActivityItem shape that
+ * <ActivityFeedItem> renders. Cloud has a nested user object;
+ * we flatten the few fields the feed item actually reads. ISO
+ * timestamps are converted to ms epoch via Date.parse — ActivityItem
+ * uses number for createdAt.
+ */
+function cloudActivityToActivityItem(a: CloudActivity): ActivityItem {
+  return {
+    id: a.id,
+    userId: a.userId,
+    username: a.user.username,
+    displayName: a.user.displayName ?? null,
+    avatarPath: a.user.avatarPath ?? null,
+    kind: a.kind as ActivityKind | string,
+    payload: a.payload,
+    createdAt: Date.parse(a.createdAt) || Date.now(),
+  }
+}
+
 export default function CommunityPage() {
   const user = useAuthStore((s) => s.user)
-  const friends = useSocialStore((s) => s.friends)
-  const loadFriends = useSocialStore((s) => s.loadFriends)
+  // Cloud is the canonical friend source — every WS event (message,
+  // friend:added, activity:new) and the REST /v1/friends populate
+  // this store. The legacy useSocialStore was local-only and would
+  // miss friends added via the cloud Friends page.
+  const cloudFriends = useCloudStore((s) => s.friends)
+  const reloadFriends = useCloudStore((s) => s.reloadFriends)
+  const friends = useMemo(
+    () => cloudFriends.map(cloudUserToPublicProfile),
+    [cloudFriends],
+  )
 
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [scope, setScope] = useState<ActivityScope>('friends')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (user) void loadFriends(user.id)
-  }, [user, loadFriends])
+    if (user) void reloadFriends()
+  }, [user, reloadFriends])
 
   useEffect(() => {
     if (!user) return
     setLoading(true)
-    void window.nexus.social.activityFeed(user.id, scope, 50).then((res) => {
-      if (res.ok) setActivity(res.items)
+    // Cloud activity feed — friends + self only (server contract).
+    // The scope toggle filters client-side: `me` keeps only my own
+    // events, `friends` strips them, `global` shows everything we
+    // received. Once we have a cloud "global" feed endpoint we can
+    // make Tous a server-side query.
+    void window.nexus.cloud.activityFeed(50).then((res) => {
+      if (res?.ok && Array.isArray(res.items)) {
+        setActivity(
+          res.items.map((a: CloudActivity) => cloudActivityToActivityItem(a)),
+        )
+      } else {
+        setActivity([])
+      }
       setLoading(false)
     })
-  }, [user, scope])
+  }, [user])
+
+  const visibleActivity = useMemo(() => {
+    if (!user) return activity
+    if (scope === 'me') return activity.filter((a) => a.userId === user.id)
+    if (scope === 'friends') return activity.filter((a) => a.userId !== user.id)
+    return activity
+  }, [activity, scope, user])
 
   if (!user) return null
 
@@ -116,7 +211,7 @@ export default function CommunityPage() {
 
             {loading ? (
               <div className="py-10 text-center text-sm text-fg-muted">Chargement…</div>
-            ) : activity.length === 0 ? (
+            ) : visibleActivity.length === 0 ? (
               <div className="py-10 text-center text-sm text-fg-muted">
                 {scope === 'friends'
                   ? 'Rien de tes amis pour le moment. Ajoutes-en pour remplir ce fil !'
@@ -124,7 +219,7 @@ export default function CommunityPage() {
               </div>
             ) : (
               <div>
-                {activity.map((a) => (
+                {visibleActivity.map((a) => (
                   <ActivityFeedItem key={a.id} item={a} />
                 ))}
               </div>

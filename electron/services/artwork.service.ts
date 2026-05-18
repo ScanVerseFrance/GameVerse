@@ -93,22 +93,78 @@ const QUERY_STOPWORDS = new Set([
 function significantWords(s: string): string[] {
   return s
     .toLowerCase()
+    // Strip apostrophes BEFORE splitting so "Marvel's" → "marvels"
+    // (one token) instead of "marvel"+"s" (and the "s" filtered as
+    // junk). Without this the query "marvels spider man" — which
+    // our normalizeTitle pre-emptively stripped to "marvels" — never
+    // matched SGDB's raw hit "Marvel's Spider-Man" which kept the
+    // apostrophe and tokenised to "marvel"+"s".
+    .replace(/['’`]/g, '')
     .split(/[^a-z0-9]+/)
-    .filter((w) => w.length >= 3 && !QUERY_STOPWORDS.has(w))
+    .filter((w) => {
+      if (!w) return false
+      if (QUERY_STOPWORDS.has(w)) return false
+      // Bare digits ALWAYS count, regardless of length. "Portal" vs
+      // "Portal 2" should NOT match — the trailing "2" is the only
+      // signal that distinguishes the original from the sequel.
+      // Without this branch the old length>=3 filter ate it and SGDB's
+      // "Portal 2" passed the overlap check at 100%, caching Portal 2's
+      // Steam appid (620) under the cache key "portal".
+      if (/^\d+$/.test(w)) return true
+      return w.length >= 3
+    })
 }
 
-function sgdbHitLooksRight(query: string, hitName: string): boolean {
+/**
+ * Decide whether an external search result actually corresponds to
+ * our query. Used for SGDB autocomplete AND Steam search hits — the
+ * same heuristics apply to both. Three rules, in order:
+ *
+ *   1. Every significant query token must appear in the hit's
+ *      significant tokens. Subset rule. Catches "Marvel's Spider-Man
+ *      Remastered" → "Marvel's Spider-Man Miles Morales" — the hit
+ *      is missing "remastered".
+ *
+ *   2. The hit can have AT MOST one extra significant token beyond
+ *      the query. One extra = subtitle / edition disambiguation
+ *      ("Spider-Man" → "Spider-Man Remastered" is fine). More than
+ *      one extra = different game ("Spider-Man" → "Spider-Man Miles
+ *      Morales: Ultimate Edition", four extras, rejected).
+ *
+ *   3. Digit guard. Any digit token that's in the hit but NOT in the
+ *      query is a sequel marker — disqualifying. "Alan Wake" → "Alan
+ *      Wake 2" is rejected because the hit's "2" isn't in the query.
+ *
+ * Same function for SGDB and Steam paths so a Steam hit can't smuggle
+ * a result through that SGDB would have caught.
+ */
+function hitLooksRight(query: string, hitName: string): boolean {
   if (!hitName) return false
   const q = significantWords(query)
-  const h = new Set(significantWords(hitName))
-  // Below 2 significant words we can't really judge — accept and move on.
-  if (q.length < 2) return true
-  // Count how many of our significant query words appear in the hit name.
-  const matched = q.filter((w) => h.has(w)).length
-  // Require ≥75% overlap. A query "marvel spider man 2" hitting "marvel
-  // heroes omega" gives 1/3 = 33% — rejected. Hitting "marvel spider man"
-  // gives 3/3 = 100% — accepted. Hitting "spider man 2" gives 3/3 — accepted.
-  return matched / q.length >= 0.75
+  const hArr = significantWords(hitName)
+  if (q.length === 0 || hArr.length === 0) return false
+
+  // Rule 1: subset.
+  for (const w of q) {
+    if (!hArr.includes(w)) return false
+  }
+
+  // Rule 2: at most 1 extra token.
+  if (hArr.length > q.length + 1) return false
+
+  // Rule 3: digit guard.
+  const queryDigits = new Set(q.filter((w) => /^\d+$/.test(w)))
+  for (const w of hArr) {
+    if (/^\d+$/.test(w) && !queryDigits.has(w)) return false
+  }
+
+  return true
+}
+
+/** Back-compat alias — older call sites still reference the SGDB
+ *  name. Identical behaviour, just routed through hitLooksRight. */
+function sgdbHitLooksRight(query: string, hitName: string): boolean {
+  return hitLooksRight(query, hitName)
 }
 
 function cachePut(art: GameArtwork): void {
@@ -361,9 +417,28 @@ async function resolveArtwork(title: string, uris: string[]): Promise<GameArtwor
   // === Tier 2: Steam search ===
   // SGDB had nothing — try Steam directly. Sanity-check the cover URL since
   // unreleased games sometimes match by appid without having artwork ready.
+  //
+  // We ALSO run hitLooksRight on the Steam hit name now. Steam's
+  // storesearch ranks by popularity which silently substitutes
+  // sequels / different titles entirely: "Marvel's Avengers" used to
+  // resolve to LEGO MARVEL's Avengers (appid 405310), "Marvel's
+  // Spider-Man Remastered" to Spider-Man 2 (2651280). Same heuristic
+  // as the SGDB tier so we don't get a different surprise from each.
   for (const v of allVariants) {
     const hit = await steamSearch(v)
     if (!hit) continue
+    if (!hitLooksRight(v, hit.name)) {
+      console.log(
+        '[artwork]',
+        title,
+        '→ Steam returned "',
+        hit.name,
+        '" for query "',
+        v,
+        '" — name mismatch, skipping',
+      )
+      continue
+    }
     const coverOk = await steamCoverExists(hit.id)
     if (!coverOk) {
       console.log('[artwork]', title, '→ Steam match', hit.id, 'but cover missing, skipping')

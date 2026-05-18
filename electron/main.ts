@@ -42,6 +42,16 @@ import {
   tailDebugLog,
   getDebugLogPath,
 } from './services/debug-log.service'
+import {
+  initCatalogRefresh,
+  shutdownCatalogRefresh,
+} from './services/catalog-refresh.service'
+import {
+  initExternalProcessWatcher,
+  shutdownExternalProcessWatcher,
+} from './services/external-process-watcher.service'
+import { initNotifications } from './services/notifications.service'
+import { registerNewFeaturesIpc } from './ipc/new-features.ipc'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const APP_ROOT = path.join(__dirname, '..')
@@ -245,6 +255,14 @@ void app.whenReady().then(async () => {
   registerCloudIpc()
   registerCloudSaveIpc()
   registerAutoUpdateIpc()
+  registerNewFeaturesIpc()
+  // Hydra-parity services. Order matters: notifications table
+  // creation must run before any service that pushes notifs;
+  // catalog-refresh + external-watcher both depend on settings +
+  // DB being ready.
+  initNotifications(() => mainWindow)
+  initCatalogRefresh(() => mainWindow)
+  initExternalProcessWatcher(() => mainWindow)
   // Diagnostic: surface the Notification API state to the Settings
   // panel so a user reporting "no toasts" can self-check rather than
   // sending us console logs blind.
@@ -255,6 +273,23 @@ void app.whenReady().then(async () => {
   // copy-paste the full transcript when reporting a bug.
   ipcMain.handle('debug:tail', (_e, n: number = 200) => tailDebugLog(n))
   ipcMain.handle('debug:openLogFile', () => shell.openPath(getDebugLogPath()))
+  // HowLongToBeat lookup — title → playtime categories. Lives in
+  // main because the HLTB API rejects browser-origin requests and
+  // the token-discovery flow has to scrape JS chunks (CORS would
+  // break it). Cached in-memory for 7 days per title.
+  ipcMain.handle('hltb:lookup', async (_e, title: unknown) => {
+    if (typeof title !== 'string' || title.trim().length < 2) {
+      return { ok: false, result: null }
+    }
+    try {
+      const mod = await import('./services/howlongtobeat.service')
+      const result = await mod.lookupHowLongToBeat(title)
+      return { ok: true, result }
+    } catch (e) {
+      return { ok: false, result: null, error: (e as Error).message }
+    }
+  })
+
   // On-demand text translation — used by ReviewsSection's "Traduire"
   // button. Proxied through main so the renderer doesn't need any
   // CORS workaround and the cache survives across React mounts.
@@ -298,6 +333,8 @@ app.on('window-all-closed', () => {
   shutdownLibrary()
   shutdownAchievementWatcher()
   shutdownCloud()
+  shutdownCatalogRefresh()
+  shutdownExternalProcessWatcher()
   closeDatabase()
   if (process.platform !== 'darwin') app.quit()
 })

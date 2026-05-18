@@ -12,6 +12,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { GameTile } from '@/components/game/GameTile'
 import { JsonGameTile } from '@/components/game/JsonGameTile'
 import { cn } from '@/utils/cn'
+import { dedupeGamesAcrossSources } from '@/utils/source-dedupe'
 import type { AddonGame } from '@/types/addon.types'
 import type { JsonSourceSearchHit } from '@/types/json-source.types'
 
@@ -157,6 +158,19 @@ export default function DiscoverPage() {
     currentYear,
   ])
 
+  /**
+   * Deduplicate cross-source entries: when a game shows up in both
+   * AnkerGames AND FitGirl, we collapse them into a single tile that
+   * points at the "best" variant (Ultimate / GOTY / most recent
+   * upload — see source-dedupe.ts for the scoring rules). The badge
+   * "+N sources" on the tile teases the source picker, where the
+   * user can pick another variant if they prefer.
+   */
+  const dedupedJsonGames = useMemo(
+    () => dedupeGamesAcrossSources(filteredJsonGames),
+    [filteredJsonGames],
+  )
+
   const allGenres = useMemo(() => {
     const set = new Set<string>()
     for (const a of enabledAddons) {
@@ -244,9 +258,17 @@ export default function DiscoverPage() {
     }
   }, [page, debouncedQuery, genre, sort, selectedKey, enabledAddons, selectedAddonIds])
 
-  // JSON source search — runs whenever query changes OR JSON sources list changes.
-  // Returns up to 500 hits so users with multi-thousand-game catalogs see
-  // proper results instead of "nothing matches".
+  // JSON source search — runs whenever query, sources list, OR the
+  // per-catalogue toggle selection changes. We push the selected
+  // source IDs to the backend so the SQL filter is applied at the
+  // database layer (not just client-side post-fetch). Without this,
+  // the limit-500 result set was biased toward whichever catalogue
+  // was imported last, leaving zero games to render when the user
+  // filtered to the OTHER catalogue.
+  const selectedJsonKey = useMemo(
+    () => [...selectedJsonSourceIds].sort().join('|'),
+    [selectedJsonSourceIds],
+  )
   useEffect(() => {
     if (jsonSources.length === 0) {
       setJsonGames([])
@@ -254,7 +276,15 @@ export default function DiscoverPage() {
     }
     let cancelled = false
     setJsonLoading(true)
-    void searchJsonGames(debouncedQuery, 500).then((hits) => {
+    // Pass selectedJsonSourceIds only when the user has narrowed the
+    // selection (otherwise the unfiltered query is faster and the
+    // dedup pass needs all sources visible to merge variants).
+    const sourceFilter =
+      selectedJsonSourceIds.length > 0 &&
+      selectedJsonSourceIds.length < jsonSources.length
+        ? selectedJsonSourceIds
+        : undefined
+    void searchJsonGames(debouncedQuery, 500, sourceFilter).then((hits) => {
       if (cancelled) return
       setJsonGames(hits)
       setJsonLoading(false)
@@ -262,7 +292,7 @@ export default function DiscoverPage() {
     return () => {
       cancelled = true
     }
-  }, [debouncedQuery, jsonSources.length, searchJsonGames])
+  }, [debouncedQuery, jsonSources.length, searchJsonGames, selectedJsonKey, selectedJsonSourceIds])
 
   const sentinelRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -291,7 +321,7 @@ export default function DiscoverPage() {
   }
 
   const hasAnySources = enabledAddons.length > 0 || jsonSources.length > 0
-  const hasResults = addonGames.length + filteredJsonGames.length > 0
+  const hasResults = addonGames.length + dedupedJsonGames.length > 0
   const totalSourcesLabel = (() => {
     const parts: string[] = []
     if (enabledAddons.length > 0) parts.push(`${enabledAddons.length} addon${enabledAddons.length === 1 ? '' : 's'}`)
@@ -636,12 +666,18 @@ export default function DiscoverPage() {
         </section>
       )}
 
-      {/* JSON catalogs section */}
-      {filteredJsonGames.length > 0 && (
+      {/* JSON catalogs section. Tiles are de-duplicated across
+          sources — when the same game shows up in both AnkerGames
+          AND FitGirl, we render the "best" variant (Ultimate / GOTY
+          / most recent) and stash the alternatives behind a badge.
+          Click → the game page reads the deduped group and shows a
+          source picker so the user can switch variant before
+          installing. */}
+      {dedupedJsonGames.length > 0 && (
         <section className="mb-10">
           <h2 className="text-xs font-semibold text-fg-secondary uppercase tracking-widest mb-3 flex items-center gap-2">
             <FileJson className="w-3.5 h-3.5" />
-            Depuis les catalogues JSON · {filteredJsonGames.length}
+            Depuis les catalogues JSON · {dedupedJsonGames.length}
             {jsonGames.length !== filteredJsonGames.length && (
               <span className="font-normal lowercase text-fg-muted normal-case">
                 ({jsonGames.length - filteredJsonGames.length} masqué{jsonGames.length - filteredJsonGames.length === 1 ? '' : 's'} par les filtres)
@@ -653,14 +689,26 @@ export default function DiscoverPage() {
           </h2>
           {view === 'grid' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-              {filteredJsonGames.map((g) => (
-                <JsonGameTile key={g.id} game={g} variant="grid" />
+              {dedupedJsonGames.map((d) => (
+                <JsonGameTile
+                  key={d.primary.id}
+                  game={d.primary}
+                  variant="grid"
+                  sourceCount={d.sourceCount}
+                  coverSourceId={d.coverSourceId}
+                />
               ))}
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {filteredJsonGames.map((g) => (
-                <JsonGameTile key={g.id} game={g} variant="list" />
+              {dedupedJsonGames.map((d) => (
+                <JsonGameTile
+                  key={d.primary.id}
+                  game={d.primary}
+                  variant="list"
+                  sourceCount={d.sourceCount}
+                  coverSourceId={d.coverSourceId}
+                />
               ))}
             </div>
           )}

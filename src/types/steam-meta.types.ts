@@ -14,9 +14,34 @@ export interface SteamPcRequirements {
   recommended: string | null
 }
 
+/**
+ * Steam category — a feature flag attached to the game. The numeric
+ * id is the stable key (e.g. 1 = Multi-joueur, 2 = Solo, 28 = Full
+ * controller support, 23 = Steam Cloud). The description is the
+ * localised text from Steam's response, used as fallback / tooltip.
+ *
+ * Renderer maps the id → stylised icon (SteamDB-style strip) and
+ * falls back to the description text when the id is unknown.
+ */
+export interface SteamCategory {
+  id: number
+  description: string
+}
+
 export interface SteamMeta {
   steamAppId: number
   metacritic: SteamMetacritic | null
   pcRequirements: SteamPcRequirements | null
+  /** "Anglais", "Français" … (audio flag stripped). Empty when Steam
+   *  has no language data. */
+  languages: string[]
+  /** Free-form release date string ("20 oct. 2023", "à venir"). */
+  releaseDate: string | null
+  /** Multijoueur / Solo / Co-op / Support manette etc. — now with
+   *  stable numeric ids so the icon strip can render reliably. */
+  categories: SteamCategory[]
   fetchedAt: number
+  /** Cache shape version. Renderer ignores this; main-process cache
+   *  uses it to invalidate stale entries from older releases. */
+  schemaVersion: number
 }

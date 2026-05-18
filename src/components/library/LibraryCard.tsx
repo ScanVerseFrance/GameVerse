@@ -145,7 +145,7 @@ export function LibraryCard({ game, onPlay, onEdit, onToggleFavorite }: LibraryC
     ? 'Setup'
     : installState === 'needs-config'
     ? 'Configurer'
-    : 'Installer'
+    : 'Télécharger'
 
   const PrimaryIcon =
     installState === 'ready-to-play'

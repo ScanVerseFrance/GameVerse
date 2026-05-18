@@ -208,8 +208,8 @@ const api = {
     importFromPath: (filePath: string) => ipcRenderer.invoke('jsonSources:importFromPath', filePath),
     importFromText: (text: string) => ipcRenderer.invoke('jsonSources:importFromText', text),
     copyMagnet: (uri: string) => ipcRenderer.invoke('jsonSources:copyMagnet', uri),
-    searchGames: (query: string, limit?: number) =>
-      ipcRenderer.invoke('jsonSources:searchGames', query, limit),
+    searchGames: (query: string, limit?: number, sourceIds?: string[]) =>
+      ipcRenderer.invoke('jsonSources:searchGames', query, limit, sourceIds),
     getGame: (gameId: string) => ipcRenderer.invoke('jsonSources:getGame', gameId),
   },
   artwork: {
@@ -357,6 +357,12 @@ const api = {
     translate: (text: string, target?: string) =>
       ipcRenderer.invoke('translation:translate', text, target),
   },
+  hltb: {
+    // HowLongToBeat search — returns playtime categories (Main
+    // Story / Main + Extras / Completionist) for a game title.
+    // null `result` means no confident match was found.
+    lookup: (title: string) => ipcRenderer.invoke('hltb:lookup', title),
+  },
   uninstall: {
     // The renderer of the custom uninstall window calls these to
     // either trigger the detached cleanup script (execute) or close
@@ -449,6 +455,69 @@ const api = {
           | { phase: 'apply' },
       ) => void,
     ) => subscribe('update:progress', cb),
+  },
+  // ─── Hydra-parity feature surfaces ─────────────────────────────
+  debrid: {
+    /** Convert a magnet / torrent URL into a direct HTTPS URL via
+     *  the chosen debrid provider. Returns the unrestricted URL +
+     *  the provider that served it (so the user can later debug
+     *  "wait, was this RD or AD?"). */
+    resolve: (
+      provider: 'real-debrid' | 'all-debrid' | 'torbox' | 'premiumize',
+      magnetOrUrl: string,
+    ) => ipcRenderer.invoke('debrid:resolve', provider, magnetOrUrl),
+    /** Ping the provider's /user endpoint to validate the saved
+     *  API key + check premium status. Used by the Settings →
+     *  Debrid panel to render a green check / red cross. */
+    ping: (provider: 'real-debrid' | 'all-debrid' | 'torbox' | 'premiumize') =>
+      ipcRenderer.invoke('debrid:ping', provider),
+    /** Returns the first configured provider in user-preferred
+     *  order, or null when none has a key. */
+    pickConfigured: () => ipcRenderer.invoke('debrid:pickConfigured'),
+  },
+  catalog: {
+    refreshNow: () => ipcRenderer.invoke('catalog:refreshNow'),
+    lastRefreshAt: () => ipcRenderer.invoke('catalog:lastRefreshAt'),
+    onRefreshed: (
+      cb: (data: { ranAt: number; newGamesTotal: number; sourcesRefreshed: number }) => void,
+    ) => subscribe('catalog:refreshed', cb),
+  },
+  hardware: {
+    snapshot: (forceRefresh?: boolean) =>
+      ipcRenderer.invoke('hardware:snapshot', forceRefresh),
+    compat: (pcRequirements: { minimum: string | null; recommended: string | null } | null) =>
+      ipcRenderer.invoke('hardware:compat', pcRequirements),
+  },
+  redist: {
+    list: () => ipcRenderer.invoke('redist:list'),
+    detect: () => ipcRenderer.invoke('redist:detect'),
+    install: (id: string) => ipcRenderer.invoke('redist:install', id),
+  },
+  steam250: {
+    lists: () => ipcRenderer.invoke('steam250:lists'),
+    list: (
+      listId: 'top-100-in-2-weeks' | 'hidden-gems' | 'best-of-the-year' | 'most-played' | 'top-250',
+    ) => ipcRenderer.invoke('steam250:list', listId),
+  },
+  notifs: {
+    list: (
+      userId: string,
+      opts?: { limit?: number; unreadOnly?: boolean },
+    ) => ipcRenderer.invoke('notifications:list', userId, opts),
+    unreadCount: (userId: string) =>
+      ipcRenderer.invoke('notifications:unreadCount', userId),
+    markRead: (id: string, userId: string) =>
+      ipcRenderer.invoke('notifications:markRead', id, userId),
+    markAllRead: (userId: string) =>
+      ipcRenderer.invoke('notifications:markAllRead', userId),
+    delete: (id: string, userId: string) =>
+      ipcRenderer.invoke('notifications:delete', id, userId),
+    clearAll: (userId: string) =>
+      ipcRenderer.invoke('notifications:clearAll', userId),
+    onNew: (cb: (n: unknown) => void) => subscribe('notification:new', cb),
+    onRead: (cb: (d: { id: string }) => void) => subscribe('notification:read', cb),
+    onReadAll: (cb: (d: { count: number }) => void) =>
+      subscribe('notification:read-all', cb),
   },
 }
 

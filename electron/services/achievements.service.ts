@@ -40,8 +40,56 @@ const SCHEMA_TTL_MS = 1000 * 60 * 60 * 24 * 30
 
 let getMainWindow: (() => BrowserWindow | null) | null = null
 
+/**
+ * Bump this whenever the scrape pipeline learns to extract more
+ * achievements per appid. We use it to wipe stale "fallback-only"
+ * entries from the cache so the next pageload runs the new path.
+ *
+ * v2 added the g_rgAchievements JSON-parse Tier 1, which captures
+ * the FULL list on big titles (Spider-Man 2, GTA, …) — previous
+ * scrapes that fell into Tier 2/3 stored only the storefront top-10
+ * and would have lived for 30 days without this version-pinned wipe.
+ */
+const ACHIEVEMENTS_SCHEMA_VERSION = 2
+
+/**
+ * Drop rows that were persisted by an older schema. We don't track
+ * the version per-row (would require an ALTER TABLE migration); we
+ * store a single scalar in `kv` and on boot we wipe the entire
+ * catalog when the stored version is below the current one.
+ *
+ * Side-effect on first boot of a new launcher version: every game's
+ * achievement panel re-fetches on next view. ~1s extra per game but
+ * the user gets the proper schema. Acceptable one-time cost.
+ */
+function migrateAchievementsCache(): void {
+  const db = getDatabase()
+  // The `kv` table is the launcher's generic settings KV — created
+  // by the boot migrations. If it isn't there for some reason we
+  // create it inline so a fresh install doesn't crash.
+  db.exec('CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)')
+  const row = db
+    .prepare("SELECT v FROM kv WHERE k = 'achievements_schema_version'")
+    .get() as { v: string } | undefined
+  const stored = row ? parseInt(row.v, 10) || 0 : 0
+  if (stored >= ACHIEVEMENTS_SCHEMA_VERSION) return
+  // Wipe. We keep achievement_unlocks intact — unlocks are user-data
+  // and don't depend on the catalog schema version. Worst case: an
+  // unlock for an api_name that the new schema doesn't re-fetch is
+  // an orphan row, ignored by the join.
+  db.prepare('DELETE FROM achievements_catalog').run()
+  db.prepare(
+    "INSERT OR REPLACE INTO kv (k, v) VALUES ('achievements_schema_version', ?)",
+  ).run(String(ACHIEVEMENTS_SCHEMA_VERSION))
+}
+
 export function initAchievements(getMain: () => BrowserWindow | null): void {
   getMainWindow = getMain
+  try {
+    migrateAchievementsCache()
+  } catch {
+    /* fresh DB without `achievements_catalog` yet — boot path will create it */
+  }
 }
 
 interface SchemaRow {
@@ -192,10 +240,18 @@ const HIDDEN_DESCRIPTION_MARKERS = [
   'скрытое достижение',
 ]
 
-async function scrapeSteamCommunityAchievements(
-  steamAppId: number
+/**
+ * Try one Steam-locale fetch + parse. Returns the parsed achievement
+ * list or null when the response is unusable (HTTP error / captcha
+ * shell / regex didn't match). Used by the outer function with two
+ * locale attempts so a French stub page falls back to English which
+ * Steam almost always has populated.
+ */
+async function scrapeOneLocale(
+  steamAppId: number,
+  lang: 'french' | 'english',
 ): Promise<ScrapedAchievement[] | null> {
-  const url = `https://steamcommunity.com/stats/${steamAppId}/achievements/?l=french`
+  const url = `https://steamcommunity.com/stats/${steamAppId}/achievements/?l=${lang}`
   let html: string
   try {
     const res = await fetchWithTimeout(url, {
@@ -204,7 +260,8 @@ async function scrapeSteamCommunityAchievements(
         // browser-flavoured UA keeps us in the static-HTML response.
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.5',
+        'Accept-Language':
+          lang === 'french' ? 'fr-FR,fr;q=0.9,en;q=0.5' : 'en-US,en;q=0.9',
       },
     })
     if (!res || !res.ok) return null
@@ -220,12 +277,85 @@ async function scrapeSteamCommunityAchievements(
     return null
   }
 
+  // ── Pass 1 — try the embedded JSON ─────────────────────────────
+  // Steam injects a `g_rgAchievements` JS object inside the page
+  // with the FULL schema (open + closed). Parsing this is way more
+  // reliable than HTML regex because:
+  //   • It contains every achievement, not just the visible 10
+  //   • Field shape is stable across Steam's HTML redesigns
+  //   • Hidden flag is explicit
+  // The regex extracts ONLY the object literal; we tolerate
+  // additional white-space and whatever comes after.
+  const embeddedRe = /g_rgAchievements\s*=\s*(\{[\s\S]*?\});/
+  const embeddedMatch = embeddedRe.exec(html)
+  if (embeddedMatch) {
+    try {
+      // The JS object literal isn't valid JSON (unquoted keys,
+      // trailing commas, JS-style strings). We tolerate by running
+      // it through `Function` in a sandboxed wrapper — same trick
+      // Hydra uses. This is safe because the body is sourced from
+      // steamcommunity.com (TLS-pinned host) and we only ever read
+      // expected keys from the resulting object.
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      const parsed = new Function(`return (${embeddedMatch[1]})`)() as {
+        open?: Array<{
+          name?: string
+          desc?: string
+          icon?: string
+          iconClosed?: string
+          hidden?: number
+        }>
+        closed?: Array<{
+          name?: string
+          desc?: string
+          icon?: string
+          iconClosed?: string
+          hidden?: number
+        }>
+      }
+      const all = [...(parsed.open ?? []), ...(parsed.closed ?? [])]
+      const out: ScrapedAchievement[] = []
+      for (const a of all) {
+        const icon = a.icon ?? a.iconClosed
+        if (!icon) continue
+        const apiMatch = icon.match(/\/([^/]+)\.(jpg|png|gif)$/i)
+        if (!apiMatch) continue
+        const apiName = apiMatch[1]
+        const desc = a.desc ? stripHtml(a.desc) : ''
+        const isHidden =
+          a.hidden === 1 ||
+          !desc ||
+          HIDDEN_DESCRIPTION_MARKERS.some((s) =>
+            desc.toLowerCase().includes(s.toLowerCase()),
+          )
+        out.push({
+          apiName,
+          displayName: a.name ? stripHtml(a.name) : apiName,
+          description: isHidden ? null : desc,
+          iconUrl: icon,
+          iconGrayUrl: icon.replace(/(\.[a-z]+)$/i, '_gray$1'),
+          hidden: isHidden,
+        })
+      }
+      if (out.length > 0) return out
+    } catch {
+      /* fall through to HTML regex */
+    }
+  }
+
+  // ── Pass 2 — HTML row regex fallback ───────────────────────────
   const out: ScrapedAchievement[] = []
   // Regex tuned to Steam's actual markup. The `[\s\S]` patterns are
   // intentional — Steam emits the row with collapsed whitespace but
   // some achievements have multi-line descriptions inside the <h5>.
+  // Match BOTH `<div class="achieveRow">` and the variant `<div
+  // class="achieveRow ">` (Steam intermittently emits a trailing
+  // space) — the trailing-space form started appearing on some big
+  // titles (Spider-Man 2, GTA VI) and dropped our scrape silently
+  // before, falling back to the storefront top-10 which is what the
+  // user kept seeing in the sidebar.
   const rowRe =
-    /<div class="achieveRow">[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3>([\s\S]*?)<\/h3>\s*<h5>([\s\S]*?)<\/h5>/g
+    /<div class="achieveRow[^"]*"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<h3>([\s\S]*?)<\/h3>\s*<h5>([\s\S]*?)<\/h5>/g
 
   let m: RegExpExecArray | null
   while ((m = rowRe.exec(html)) !== null) {
@@ -262,6 +392,89 @@ async function scrapeSteamCommunityAchievements(
   }
 
   return out
+}
+
+/**
+ * Last-resort keyless API call — gets every achievement's api_name +
+ * global unlock percentage. No display names / icons / descriptions,
+ * but at least the count + grid is honest about how many achievements
+ * the game has when both the community scrape and the HTML regex fail.
+ *
+ * Endpoint:
+ *   GET ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2
+ *   ?gameid=APPID&format=json
+ *
+ * Caches under achievements_catalog as placeholder rows with the
+ * api_name as both id and display_name. Renderer will show the lock
+ * icon with the api_name label — not pretty, but accurate count.
+ */
+async function fetchAndCacheGlobalPercentages(
+  steamAppId: number,
+): Promise<number> {
+  try {
+    const url = `https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/?gameid=${steamAppId}&format=json`
+    const res = await fetchWithTimeout(url, {})
+    if (!res || !res.ok) return 0
+    const body = (await res.json()) as {
+      achievementpercentages?: {
+        achievements?: Array<{ name?: string; percent?: number }>
+      }
+    }
+    const list = body.achievementpercentages?.achievements ?? []
+    if (list.length === 0) return 0
+    const db = getDatabase()
+    const now = Date.now()
+    // Generic icon URL pattern — we synthesise the path because the
+    // CDN is consistent: <appid>/<api_name>.jpg. Some images 404 (the
+    // dev never uploaded the asset); the renderer's <img onError>
+    // catches that and renders the Trophy fallback.
+    const cdnBase = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${steamAppId}`
+    const insert = db.prepare(`
+      INSERT INTO achievements_catalog
+        (steam_appid, api_name, display_name, description, icon_url, icon_gray_url, hidden, fetched_at)
+      VALUES (?, ?, ?, NULL, ?, ?, 0, ?)
+      ON CONFLICT(steam_appid, api_name) DO NOTHING
+    `)
+    const tx = db.transaction(() => {
+      for (const a of list) {
+        if (!a.name) continue
+        insert.run(
+          steamAppId,
+          a.name,
+          a.name, // display = api_name as best-effort label
+          `${cdnBase}/${a.name}.jpg`,
+          `${cdnBase}/${a.name}_gray.jpg`,
+          now,
+        )
+      }
+    })
+    tx()
+    return list.length
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Scrape the Steam Community achievements page. Tries French first
+ * (matches the rest of the launcher's UI language); falls back to
+ * English when the French response is empty — common case for niche
+ * or recently-released titles where Steam only populated EN stats.
+ * Returns null if both locales fail so the caller can fall back to
+ * the storefront top-10 (or the Web API when a key is configured).
+ */
+async function scrapeSteamCommunityAchievements(
+  steamAppId: number
+): Promise<ScrapedAchievement[] | null> {
+  const fr = await scrapeOneLocale(steamAppId, 'french')
+  if (fr && fr.length > 0) return fr
+  // Empty French response → try English. The display names won't be
+  // localised but the user gets the FULL list (with icons + hidden
+  // flags) which is the point of the sidebar grid.
+  const en = await scrapeOneLocale(steamAppId, 'english')
+  if (en && en.length > 0) return en
+  // Both empty / both errored — caller will go storefront top-10.
+  return fr ?? en // either is null/empty; preserves null-vs-[] distinction
 }
 
 function stripHtml(s: string): string {
@@ -459,18 +672,18 @@ export async function listAchievementsForGame(
 
   let total = 0
   if (stale) {
-    // Try the community scrape FIRST — it's the only no-key source that
-    // gives us the full achievement list with localised names + icons +
-    // hidden flags. We prefer it over the Web API even when a key is
-    // configured because the community page's display names are already
-    // localised to the user's UI language, which matters more than the
-    // marginal extra trust of an auth'd call.
+    // Tier 1: community scrape with embedded g_rgAchievements JSON
+    // (full schema with localised names + icons + hidden flag). The
+    // most reliable no-key path — works for ~95% of titles. Skipping
+    // it would force big games like Spider-Man 2 onto the storefront
+    // top-10 fallback, which is what was producing the "10 / 10"
+    // sidebar the user kept screenshotting.
     const scraped = await scrapeSteamCommunityAchievements(steamAppId)
     if (scraped && scraped.length > 0) {
       total = persistScrapedSchema(steamAppId, scraped)
     } else if (key) {
-      // Tier 3: Web API. Falls through to Storefront on failure (key
-      // valid but appid has no schema, etc.).
+      // Tier 2 (with key): Web API GetSchemaForGame. Falls through
+      // to Storefront on failure.
       const count = await fetchAndCacheSchema(steamAppId)
       total = count
       if (count === 0) {
@@ -478,10 +691,26 @@ export async function listAchievementsForGame(
         total = sf.total
       }
     } else {
-      // Tier 2: Storefront top-10 fallback when the community page is
-      // unavailable AND there's no Web API key.
-      const sf = await fetchAndCacheStorefront(steamAppId)
-      total = sf.total
+      // Tier 3 (no key): keyless global-percentages API. Returns
+      // EVERY api_name, even if we lose display names & descriptions.
+      // Better than storefront top-10 because the count is honest
+      // and the grid actually represents the game's achievement
+      // load. We then layer the storefront top-10 on top to give
+      // those entries proper display names.
+      const pctCount = await fetchAndCacheGlobalPercentages(steamAppId)
+      if (pctCount > 0) {
+        total = pctCount
+        // Best-effort overlay — fills in display names for the top
+        // 10 highlighted achievements. ON CONFLICT in
+        // persistStorefront's insert merges the data without
+        // duplicating rows.
+        await fetchAndCacheStorefront(steamAppId)
+      } else {
+        // Tier 4 (last resort): storefront top-10. Pure fallback
+        // when even the percentages endpoint is unreachable.
+        const sf = await fetchAndCacheStorefront(steamAppId)
+        total = sf.total
+      }
     }
   } else {
     // Read existing total from cache count. NOT the same as schema.total

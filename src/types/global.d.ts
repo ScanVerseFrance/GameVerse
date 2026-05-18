@@ -97,6 +97,19 @@ export interface NexusAPI {
     enterBigPicture: () => Promise<{ ok: boolean }>
     exitBigPicture: () => Promise<{ ok: boolean }>
   }
+  /** HowLongToBeat lookup — playtime categories for a title.
+   *  Returns `result: null` when HLTB has no confident match. */
+  hltb: {
+    lookup: (title: string) => Promise<{
+      ok: boolean
+      result: {
+        id: number
+        title: string
+        categories: Array<{ title: string; duration: string; accuracy: string }>
+      } | null
+      error?: string
+    }>
+  }
   /** On-demand text translation. Proxied through main so the
    *  renderer doesn't deal with CORS; cached per (text, target). */
   translation: {
@@ -464,7 +477,8 @@ export interface NexusAPI {
     copyMagnet: (uri: string) => Promise<{ ok: boolean }>
     searchGames: (
       query: string,
-      limit?: number
+      limit?: number,
+      sourceIds?: string[],
     ) => Promise<{ ok: boolean; error?: string; games: JsonSourceSearchHit[] }>
     getGame: (
       gameId: string
@@ -824,6 +838,126 @@ export interface NexusAPI {
       ) => void,
     ) => () => void
   }
+  // ─── Hydra-parity feature surfaces ─────────────────────────────
+  debrid: {
+    resolve: (
+      provider: 'real-debrid' | 'all-debrid' | 'torbox' | 'premiumize',
+      magnetOrUrl: string,
+    ) => Promise<
+      | {
+          ok: true
+          resolved: {
+            url: string
+            expiresAt: number | null
+            sizeBytes: number
+            via: 'real-debrid' | 'all-debrid' | 'torbox' | 'premiumize'
+          }
+        }
+      | {
+          ok: false
+          code: 'no_key' | 'unsupported_host' | 'quota' | 'auth' | 'unavailable' | 'timeout' | 'unknown'
+          message: string
+        }
+    >
+    ping: (
+      provider: 'real-debrid' | 'all-debrid' | 'torbox' | 'premiumize',
+    ) => Promise<{ ok: boolean; reason?: string; premium?: boolean }>
+    pickConfigured: () => Promise<
+      'real-debrid' | 'all-debrid' | 'torbox' | 'premiumize' | null
+    >
+  }
+  catalog: {
+    refreshNow: () => Promise<{ ranAt: number; newGamesTotal: number; sourcesRefreshed: number }>
+    lastRefreshAt: () => Promise<number>
+    onRefreshed: (
+      cb: (data: { ranAt: number; newGamesTotal: number; sourcesRefreshed: number }) => void,
+    ) => () => void
+  }
+  hardware: {
+    snapshot: (forceRefresh?: boolean) => Promise<{
+      cpuModel: string
+      cpuCores: number
+      cpuFreqMHz: number
+      ramTotalBytes: number
+      gpuModel: string | null
+      gpuVramBytes: number | null
+      osPlatform: string
+      osArch: string
+      capturedAt: number
+    }>
+    compat: (
+      pcRequirements: { minimum: string | null; recommended: string | null } | null,
+    ) => Promise<{
+      minimum: CompatReport | null
+      recommended: CompatReport | null
+    }>
+  }
+  redist: {
+    list: () => Promise<Array<{ id: string; name: string; url: string }>>
+    detect: () => Promise<Array<{ id: string; name: string; installed: boolean }>>
+    install: (id: string) => Promise<{
+      id: string
+      ok: boolean
+      exitCode: number | null
+      error: string | null
+    }>
+  }
+  steam250: {
+    lists: () => Promise<Record<
+      'top-100-in-2-weeks' | 'hidden-gems' | 'best-of-the-year' | 'most-played' | 'top-250',
+      Array<{ rank: number; appId: number; name: string }>
+    >>
+    list: (
+      listId: 'top-100-in-2-weeks' | 'hidden-gems' | 'best-of-the-year' | 'most-played' | 'top-250',
+    ) => Promise<Array<{ rank: number; appId: number; name: string }>>
+  }
+  notifs: {
+    list: (
+      userId: string,
+      opts?: { limit?: number; unreadOnly?: boolean },
+    ) => Promise<NotificationRow[]>
+    unreadCount: (userId: string) => Promise<number>
+    markRead: (id: string, userId: string) => Promise<boolean>
+    markAllRead: (userId: string) => Promise<number>
+    delete: (id: string, userId: string) => Promise<boolean>
+    clearAll: (userId: string) => Promise<number>
+    onNew: (cb: (n: NotificationRow) => void) => () => void
+    onRead: (cb: (d: { id: string }) => void) => () => void
+    onReadAll: (cb: (d: { count: number }) => void) => () => void
+  }
+}
+
+export interface CompatReport {
+  overall: 'pass' | 'warn' | 'fail' | 'unknown'
+  ram: 'pass' | 'warn' | 'fail' | 'unknown'
+  gpu: 'pass' | 'warn' | 'fail' | 'unknown'
+  storage: 'pass' | 'warn' | 'fail' | 'unknown'
+  notes: string[]
+}
+
+export interface NotificationRow {
+  id: string
+  userId: string
+  kind:
+    | 'download_complete'
+    | 'download_failed'
+    | 'achievement_unlocked'
+    | 'friend_request'
+    | 'friend_message'
+    | 'friend_launched'
+    | 'game_updated'
+    | 'redist_needed'
+    | 'catalog_refreshed'
+    | 'update_available'
+    | 'cloud_save_conflict'
+    | 'generic'
+  title: string
+  body: string | null
+  link: string | null
+  iconUrl: string | null
+  createdAt: number
+  readAt: number | null
+  payload: Record<string, unknown> | null
 }
 
 /** Pushed via `update:available` whenever the GitHub poller finds a

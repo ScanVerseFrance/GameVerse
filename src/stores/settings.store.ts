@@ -7,10 +7,15 @@ interface SettingsState {
   density: Density
   animationsEnabled: boolean
   blurStrengthPx: number
+  /** Built-in theme preset id (see src/theme/presets.ts). Persisted
+   *  in localStorage so the chosen theme survives across launches
+   *  without an IPC round-trip on every boot. */
+  themePreset: string
   toggleSidebar: () => void
   setDensity: (d: Density) => void
   setAnimationsEnabled: (v: boolean) => void
   setBlurStrengthPx: (v: number) => void
+  setThemePreset: (id: string) => void
 }
 
 const STORE_KEY = 'nexus.settings'
@@ -20,6 +25,7 @@ interface PersistedShape {
   density?: Density
   animationsEnabled?: boolean
   blurStrengthPx?: number
+  themePreset?: string
 }
 
 function loadPersisted(): PersistedShape {
@@ -48,6 +54,7 @@ function snapshot(s: SettingsState): PersistedShape {
     density: s.density,
     animationsEnabled: s.animationsEnabled,
     blurStrengthPx: s.blurStrengthPx,
+    themePreset: s.themePreset,
   }
 }
 
@@ -56,6 +63,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   density: initial.density ?? 'normal',
   animationsEnabled: initial.animationsEnabled ?? true,
   blurStrengthPx: typeof initial.blurStrengthPx === 'number' ? initial.blurStrengthPx : 20,
+  themePreset: initial.themePreset ?? 'scanverse-dark',
   toggleSidebar: () => {
     set({ sidebarCollapsed: !get().sidebarCollapsed })
     persist(snapshot(get()))
@@ -70,6 +78,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   setBlurStrengthPx: (v) => {
     set({ blurStrengthPx: Math.max(0, Math.min(40, v)) })
+    persist(snapshot(get()))
+  },
+  setThemePreset: (id) => {
+    set({ themePreset: id })
     persist(snapshot(get()))
   },
 }))

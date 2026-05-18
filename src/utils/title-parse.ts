@@ -42,6 +42,20 @@ const VERSION_PATTERNS = [
   /\bUpdate\s+\d+/i,                                            // Update 12
 ]
 
+/**
+ * Global version sweep — strips ALL version-like substrings,
+ * including chained back-to-back ones ("v1.130.1.0v1.131.0.0" which
+ * VERSION_PATTERNS's `\b` anchor mis-handles because the digit↔
+ * letter junction isn't a word boundary). Used after VERSION_PATTERNS
+ * captured the first version, to ensure no leftover digit chunks
+ * pollute the parsed name.
+ *
+ * Requires at least one `.\d+` group so a sequel digit like the "2"
+ * in "Spider-Man 2" survives.
+ */
+const VERSION_SWEEP = /v?\d+(?:\.\d+){1,3}[a-z]?/gi
+const VERSION_WORDED_SWEEP = /\b(?:version\s+\d+(?:\.\d+)*|build\s+\d+|rev\.?\s*\d+|update\s+\d+)\b/gi
+
 const EDITION_PATTERNS = [
   /\b(?:The\s+)?(?:Digital\s+|Ultimate\s+|Premium\s+|Definitive\s+|Complete\s+|Deluxe\s+|Anniversary\s+|Director'?s?\s+Cut\s+|Game\s+of\s+the\s+Year\s+|GOTY\s+|Standard\s+|Special\s+|Collector'?s?\s+|Enhanced\s+|Legendary\s+|Master\s+|Royal\s+|Ascendant\s+|Founders?\s+|Gold\s+|Platinum\s+|Anniversary\s+|Remastered\s+)?Edition\b/i,
   /\bGOTY\b/i,
@@ -277,6 +291,23 @@ export function parseGameTitle(raw: string): ParsedTitle {
     if (!dlcs.some((d) => d.toLowerCase() === key)) dlcs.push(m)
   }
   head = headExtract.rest
+
+  // 8b) Global version sweep. VERSION_PATTERNS captures only the FIRST
+  //     match (and breaks the loop) — but FitGirl titles chain two
+  //     versions back-to-back ("v1.130.1.0v1.131.0.0") and our `\b`
+  //     anchor doesn't cleave the digit↔letter junction, leaving a
+  //     trailing "1.131.0.0" stuck on the name. The sweep below is
+  //     anchorless + requires ≥1 dot-group so "Spider-Man 2" keeps
+  //     the "2".
+  // We strip file-size patterns FIRST (digit+unit as a unit) so the
+  // version sweep doesn't eat the digit and leave a dangling "GBn".
+  head = head
+    .replace(/\b\d+(?:[.,]\d+)?\s*[kmgt]i?b?n?\b/gi, ' ') // 64.5 GB, 5 GBn, 850 MB
+    .replace(VERSION_SWEEP, ' ')
+    .replace(VERSION_WORDED_SWEEP, ' ')
+    // Defence-in-depth: if a file-size strip leaves a dangling
+    // unit-word ("GB" alone), zap it.
+    .replace(/\b[kmgt]i?bn?\b/gi, ' ')
 
   // 9) Final cleanup. Repack-style titles leave a lot of orphaned punctuation
   // after we strip versions/DLCs (double pluses, dangling commas, en-dash

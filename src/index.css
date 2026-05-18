@@ -147,6 +147,16 @@
   .no-drag {
     -webkit-app-region: no-drag;
   }
+  /* Hide the native scrollbar but keep scroll behaviour. Used by
+     pill-tab strips that overflow horizontally on narrow viewports
+     (Settings page, Discover filter chips). Ported from ScanVerse. */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
 }
 
 body.no-animations *,
