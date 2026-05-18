@@ -40,6 +40,10 @@ async function mirrorCloudToLocal(cloudUser: CloudUser | null): Promise<void> {
     avatarPath: cloudUser.avatarPath ?? null,
     bannerPath: cloudUser.bannerPath ?? null,
     bio: cloudUser.bio ?? null,
+    // Forward the cloud's createdAt so "Membre depuis ..." on the
+    // profile page shows when the account was REALLY created, not
+    // when the launcher first ran on this machine.
+    createdAt: cloudUser.createdAt ?? null,
   })
 }
 
@@ -48,6 +52,11 @@ interface CloudState {
   user: CloudUser | null
   reason: string | null
   apiUrl: string
+  /** Unix ms when the cloud last transitioned into 'connected' for
+   *  the active user. Cleared on logout / disconnect. Powers the
+   *  profile page's "En ligne depuis ..." line so the user can see
+   *  how long the current session has been live. */
+  sessionStartedAt: number | null
 
   /** Friend list mirrored from the server. Empty until connected. */
   friends: CloudPublicUser[]
@@ -107,6 +116,7 @@ export const useCloudStore = create<CloudState>((set, get) => ({
   user: null,
   reason: null,
   apiUrl: '',
+  sessionStartedAt: null,
 
   friends: [],
   presences: {},
@@ -115,7 +125,12 @@ export const useCloudStore = create<CloudState>((set, get) => ({
 
   bootConnect: async () => {
     const res = await window.nexus.cloud.bootConnect()
-    set({ status: res.status, user: res.user, reason: res.reason ?? null })
+    set({
+      status: res.status,
+      user: res.user,
+      reason: res.reason ?? null,
+      sessionStartedAt: res.status === 'connected' ? Date.now() : null,
+    })
     if (res.status === 'connected') {
       // Mirror to local auth FIRST so AuthGate sees a user as soon
       // as bootConnect resolves — avoids a brief CloudAuthGate flash
@@ -132,10 +147,23 @@ export const useCloudStore = create<CloudState>((set, get) => ({
   },
 
   applyStatus: (data) => {
+    const prevStatus = get().status
     set({
       status: data.status,
       user: data.user,
       reason: data.reason ?? null,
+      // Only START a session timer on a transition INTO 'connected';
+      // preserve the existing start time when staying 'connected' so
+      // a brief 'offline' blip mid-session doesn't reset "En ligne
+      // depuis 2h" back to zero. Wipe on disconnect.
+      sessionStartedAt:
+        data.status === 'connected'
+          ? prevStatus === 'connected'
+            ? get().sessionStartedAt
+            : Date.now()
+          : data.status === 'disconnected'
+            ? null
+            : get().sessionStartedAt,
     })
     // On a flip TO 'connected' (post-login OR after reconnect), refresh
     // the warm caches — the renderer might have been showing stale
@@ -157,7 +185,12 @@ export const useCloudStore = create<CloudState>((set, get) => ({
   login: async (identifier, password) => {
     const res = await window.nexus.cloud.login(identifier, password)
     if (!res.ok) return { ok: false, error: res.error }
-    set({ status: res.status, user: res.user, reason: null })
+    set({
+      status: res.status,
+      user: res.user,
+      reason: null,
+      sessionStartedAt: Date.now(),
+    })
     // Mirror BEFORE warming caches: the local user id is what most
     // local-store actions key on (library, friends, achievements),
     // and they kick off as soon as useAuthStore.user populates.
@@ -173,7 +206,12 @@ export const useCloudStore = create<CloudState>((set, get) => ({
   register: async (payload) => {
     const res = await window.nexus.cloud.register(payload)
     if (!res.ok) return { ok: false, error: res.error }
-    set({ status: res.status, user: res.user, reason: null })
+    set({
+      status: res.status,
+      user: res.user,
+      reason: null,
+      sessionStartedAt: Date.now(),
+    })
     await mirrorCloudToLocal(res.user)
     return { ok: true }
   },
@@ -187,6 +225,7 @@ export const useCloudStore = create<CloudState>((set, get) => ({
       status: 'disconnected',
       user: null,
       reason: 'Déconnecté du cloud.',
+      sessionStartedAt: null,
       friends: [],
       presences: {},
       threads: [],

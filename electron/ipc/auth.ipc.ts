@@ -369,6 +369,12 @@ export function registerAuthIpc() {
         avatarPath?: string | null
         bannerPath?: string | null
         bio?: string | null
+        /** ISO 8601 string from the cloud's User.createdAt. We use this
+         *  as the LOCAL row's created_at on first adoption so the
+         *  profile page's "Membre depuis ..." date matches the actual
+         *  account creation date rather than whenever the launcher
+         *  first ran on this machine. */
+        createdAt?: string | null
       } | null
     ): Promise<AuthResult> => {
       try {
@@ -384,6 +390,11 @@ export function registerAuthIpc() {
         const bio = cloudUser.bio ? sanitizeString(cloudUser.bio, 300) : null
         const avatarPath = cloudUser.avatarPath ? sanitizeString(cloudUser.avatarPath, 14 * 1024 * 1024) : null
         const bannerPath = cloudUser.bannerPath ? sanitizeString(cloudUser.bannerPath, 14 * 1024 * 1024) : null
+        // Best-effort parse — invalid / missing dates fall back to "now"
+        // so a malformed payload doesn't produce a NULL row.
+        const cloudCreatedAt = cloudUser.createdAt
+          ? new Date(cloudUser.createdAt).getTime() || null
+          : null
 
         const db = getDatabase()
         const now = Date.now()
@@ -391,6 +402,8 @@ export function registerAuthIpc() {
           .prepare('SELECT * FROM users WHERE id = ?')
           .get(id) as UserRow | undefined
         if (existing) {
+          // Existing row: leave created_at alone (history is sacred) but
+          // refresh the other fields in case the cloud profile drifted.
           db.prepare(
             `UPDATE users SET username = ?, email = ?, display_name = ?,
               bio = COALESCE(?, bio),
@@ -401,10 +414,13 @@ export function registerAuthIpc() {
              WHERE id = ?`
           ).run(username, email, displayName, bio, avatarPath, bannerPath, now, id)
         } else {
+          // Fresh adoption: seed created_at from the cloud so the
+          // profile's "Membre depuis ..." line reflects real history,
+          // not "the day this user installed the launcher".
           db.prepare(
             `INSERT INTO users (id, username, email, password_hash, display_name, bio, avatar_path, banner_path, is_guest, created_at, updated_at)
              VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 0, ?, ?)`
-          ).run(id, username, email, displayName, bio, avatarPath, bannerPath, now, now)
+          ).run(id, username, email, displayName, bio, avatarPath, bannerPath, cloudCreatedAt ?? now, now)
         }
         const row = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as UserRow
         const token = issueToken(row.id)

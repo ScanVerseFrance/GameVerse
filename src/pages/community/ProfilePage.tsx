@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useAuthStore } from '@/stores/auth.store'
+import { useCloudStore } from '@/stores/cloud.store'
 import { useSocialStore } from '@/stores/social.store'
 import { Card } from '@/components/ui/Card'
 import { ActivityFeedItem } from '@/components/community/ActivityFeedItem'
@@ -41,6 +42,22 @@ function formatPlaytime(seconds: number): string {
   if (seconds === 0) return '0 h'
   if (seconds < 3600) return `${Math.round(seconds / 60)} min`
   return `${Math.floor(seconds / 3600)} h ${Math.round((seconds % 3600) / 60)} min`
+}
+
+/** "Online for ..." duration string. Lives in this file so the
+ *  profile page can render a relative time without pulling in
+ *  date-fns just for one label. Recomputed once a minute by the
+ *  caller via a 60-second tick. */
+function formatSessionDuration(startedAtMs: number, now: number): string {
+  const secs = Math.max(0, Math.floor((now - startedAtMs) / 1000))
+  if (secs < 60) return "moins d'une minute"
+  if (secs < 3600) {
+    const m = Math.floor(secs / 60)
+    return `${m} min`
+  }
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  return m === 0 ? `${h} h` : `${h} h ${m} min`
 }
 
 /** Profile sub-tab id — used both as the local state union and as
@@ -200,10 +217,19 @@ export default function ProfilePage() {
   const { userId } = useParams<{ userId: string }>()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
+  const cloudSessionStartedAt = useCloudStore((s) => s.sessionStartedAt)
   const addFriend = useSocialStore((s) => s.addFriend)
   const removeFriend = useSocialStore((s) => s.removeFriend)
   const loadFriends = useSocialStore((s) => s.loadFriends)
   const friends = useSocialStore((s) => s.friends)
+  // 60 s tick so the "En ligne depuis 12 min" label refreshes without
+  // a forced reload. State, not ref — we want React to re-render the
+  // meta line when it changes.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   const [profile, setProfile] = useState<PublicProfile | null>(null)
   const [stats, setStats] = useState<ProfileStats | null>(null)
@@ -601,6 +627,19 @@ export default function ProfilePage() {
                     <span>
                       <strong className="text-fg-secondary">{stats.libraryCount}</strong>{' '}
                       jeu{stats.libraryCount === 1 ? '' : 'x'}
+                    </span>
+                  </>
+                )}
+                {/* "En ligne depuis ..." — only on the OWN profile and
+                    only while the cloud is actually connected. We pull
+                    the session-start timestamp from the cloud store
+                    (set when status flips to 'connected') and tick
+                    every 60s. */}
+                {isSelf && cloudSessionStartedAt && (
+                  <>
+                    <span>·</span>
+                    <span title={new Date(cloudSessionStartedAt).toLocaleString()}>
+                      En ligne depuis {formatSessionDuration(cloudSessionStartedAt, now)}
                     </span>
                   </>
                 )}

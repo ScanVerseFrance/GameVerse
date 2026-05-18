@@ -25,6 +25,7 @@ interface AuthState {
     avatarPath?: string | null
     bannerPath?: string | null
     bio?: string | null
+    createdAt?: string | null
   }) => Promise<boolean>
   logout: () => Promise<void>
   updateProfile: (patch: ProfilePatch) => Promise<boolean>

@@ -104,6 +104,9 @@ export interface NexusAPI {
       avatarPath?: string | null
       bannerPath?: string | null
       bio?: string | null
+      /** Forwarded so the local row's `created_at` matches the cloud
+       *  account's actual creation date (not the install date). */
+      createdAt?: string | null
     }) => Promise<AuthResult>
   }
   themes: {
