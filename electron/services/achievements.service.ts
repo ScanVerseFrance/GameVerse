@@ -27,9 +27,10 @@
  *  manual toggling deliberately removed (users were over-clicking and
  *  marking things they hadn't actually earned).
  */
-import { BrowserWindow, Notification } from 'electron'
+import { BrowserWindow } from 'electron'
 import { getDatabase } from './database.service'
 import { getAppSettings } from './app-settings.service'
+import * as toastSvc from './toast-window.service'
 
 const STEAM_WEB_API = 'https://api.steampowered.com'
 const STEAM_STORE_API = 'https://store.steampowered.com'
@@ -764,24 +765,34 @@ export function setUnlocked(
        ON CONFLICT(user_id, steam_appid, api_name) DO NOTHING`
     ).run(userId, steamAppId, apiName, now, source)
 
-    // Hydra-style notification on unlock.
+    // Hydra-style notification on unlock. Routed through the custom
+    // Steam-style toast overlay so unlocks land in the same in-app
+    // strip as friend messages + download completions, instead of
+    // popping a generic Windows Action Center toast. The pushToast
+    // helper enforces the per-kind toggle (`notifications.achievementUnlocked`)
+    // internally and snooze, so we don't pre-check here.
     try {
-      if (getAppSettings().notifications?.achievementUnlocked) {
-        const row = db
-          .prepare(
-            'SELECT display_name FROM achievements_catalog WHERE steam_appid = ? AND api_name = ?'
-          )
-          .get(steamAppId, apiName) as { display_name: string } | undefined
-        if (row) {
-          new Notification({
-            title: 'Succès débloqué',
-            body: row.display_name,
-            silent: false,
-          }).show()
-        }
+      const row = db
+        .prepare(
+          'SELECT display_name, icon_url FROM achievements_catalog WHERE steam_appid = ? AND api_name = ?'
+        )
+        .get(steamAppId, apiName) as
+        | { display_name: string; icon_url: string | null }
+        | undefined
+      if (row) {
+        toastSvc.pushToast({
+          kind: 'achievement_unlocked',
+          title: 'Succès débloqué',
+          body: row.display_name,
+          iconUrl: row.icon_url ?? null,
+        })
       }
-    } catch {
-      // notifications not supported on platform — silent
+    } catch (e) {
+      // Toast window machinery hiccupped — log but never throw out
+      // of the unlock path; the row is already persisted in
+      // achievement_unlocks and the missed notif is recoverable
+      // (a manual refresh of the achievements panel will reveal it).
+      console.warn('[achievements:notify] pushToast threw:', (e as Error).message)
     }
     getMainWindow?.()?.webContents.send('achievements:unlocked', {
       userId,

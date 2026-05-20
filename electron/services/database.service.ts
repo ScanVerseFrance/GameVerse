@@ -42,6 +42,20 @@ function runMigrations(d: Database.Database) {
     }
   }
   ensureColumn('library_games', 'launch_options', 'TEXT')
+  /**
+   * v0.3.2 — user-supplied cover override. When set, this takes
+   * precedence over `cover_url` in tiles + library cards + the game
+   * page hero. Lets the user replace an ugly or missing artwork with
+   * a local file (copied into userData/custom-covers/<rowId>.<ext>
+   * and stored here as a `file://` URL) or a remote URL.
+   *
+   * The automated artwork lookup (Steam / SGDB) writes only to
+   * `cover_url`, never to this column, so a user pick survives every
+   * future re-resolution. Clearing it (setUserCover with kind=reset)
+   * sets this back to NULL and tiles fall through to the resolved
+   * `cover_url`.
+   */
+  ensureColumn('library_games', 'user_cover_url', 'TEXT')
   ensureColumn('users', 'banner_path', 'TEXT')
   ensureColumn('users', 'username_color', 'TEXT')
   /** Optional secondary colour. When set AND the active animation

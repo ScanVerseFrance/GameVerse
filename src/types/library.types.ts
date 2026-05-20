@@ -11,6 +11,14 @@ export interface LibraryGame {
   title: string
   slug: string
   coverUrl: string | null
+  /**
+   * User-supplied cover override. When set, `coverUrl` already
+   * returns this value (the resolver in library.service collapses
+   * `user_cover_url ?? cover_url`) — `userCoverUrl` is the raw
+   * field so the Properties dialog can show a "Réinitialiser" button
+   * only when the user actually has an override in place.
+   */
+  userCoverUrl: string | null
   heroUrl: string | null
   description: string | null
   genres: string[]
@@ -57,6 +65,11 @@ export interface AddLibraryParams {
   installPath?: string
   sourceAddonId?: string
   sourceGameId?: string
+  /** Optional steam_appid hint at insertion time. Used by the PC
+   *  scanner when adopting a Steam install — saves the achievement
+   *  watcher from having to lookup the appid on first launch and
+   *  keeps the steam:// URL launch path reliable. */
+  steamAppId?: number | null
 }
 
 export interface UpdateLibraryParams {

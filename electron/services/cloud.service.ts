@@ -36,6 +36,7 @@ import type {
   CloudWsEnvelope,
 } from '@/types/cloud.types'
 import { debugLog } from './debug-log.service'
+import * as toastSvc from './toast-window.service'
 
 // Hard-coded production URL. v0.2.1 removed the user-overridable
 // editor because it generated more support traffic than it solved
@@ -393,8 +394,18 @@ async function openSocket(): Promise<void> {
     // into the v0.2.8 regression where the friend toasts looked
     // wired up but never appeared. If anything throws here we want
     // to SEE it in the debug log and renderer DevTools.
+    //
+    // NOTE: we use the statically-imported `toastSvc` rather than a
+    // lazy `require('./toast-window.service')`. The require pattern
+    // worked in dev but blew up in the packaged build with "Cannot
+    // find module './toast-window.service'" because Vite bundles
+    // every electron source into a single main-*.js chunk — the
+    // relative path no longer resolves at runtime. Static import is
+    // the only reliable choice here. The original lazy load was a
+    // micro-optimization (avoid spinning up the toast window at boot)
+    // but the module itself is cheap to import; the window is only
+    // created on first push.
     try {
-      const toastSvc = require('./toast-window.service') as typeof import('./toast-window.service')
       const me = currentUser?.id ?? null
       debugLog('cloud-ws', 'event received', {
         type: env.type,

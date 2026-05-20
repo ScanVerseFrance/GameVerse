@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
 import { Play, Settings, Star, Clock, Gamepad2, Download, FolderCog, Package, Pin } from 'lucide-react'
+import { SteamLogo } from '@/components/library/PcScanWizard'
 import type { LibraryGame } from '@/types/library.types'
 import { Card } from '@/components/ui/Card'
 import { usePinnedStore } from '@/stores/pinned.store'
@@ -252,6 +253,18 @@ export function LibraryCard({ game, onPlay, onEdit, onToggleFavorite }: LibraryC
           >
             <PrimaryIcon className="w-3.5 h-3.5" />
             {primaryLabel}
+            {/* Steam-sourced row: tiny Steam glyph next to "Jouer" so
+                the user knows the launch will hand off to the Steam
+                client (steam://rungameid/<appid>) rather than spawn
+                the local exe directly. Only renders for
+                sourceAddonId='steam' rows imported via the PC scan. */}
+            {game.sourceAddonId === 'steam' &&
+              installState === 'ready-to-play' && (
+                <SteamLogo
+                  className="w-3 h-3 opacity-80"
+                  aria-label="Lancé via Steam"
+                />
+              )}
           </button>
         </div>
       </div>

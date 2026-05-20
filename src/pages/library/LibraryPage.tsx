@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Library as LibraryIcon, Search, X, Star, Compass, FolderTree, Settings2, ArrowUpDown, Clock, Trophy, Play, Sparkles } from 'lucide-react'
+import { Library as LibraryIcon, Search, X, Star, Compass, FolderTree, Settings2, ArrowUpDown, Clock, Trophy, Play, Sparkles, ScanLine } from 'lucide-react'
 import { useLibraryStore } from '@/stores/library.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCollectionStore } from '@/stores/collection.store'
@@ -9,6 +9,7 @@ import { usePinnedStore } from '@/stores/pinned.store'
 import { Card } from '@/components/ui/Card'
 import { LibraryCard } from '@/components/library/LibraryCard'
 import { LibraryEditDialog } from '@/components/library/LibraryEditDialog'
+import { PcScanWizard } from '@/components/library/PcScanWizard'
 import { CollectionsDialog } from '@/components/collections/CollectionsDialog'
 import { useDebounce } from '@/hooks/useDebounce'
 import { cn } from '@/utils/cn'
@@ -68,6 +69,12 @@ export default function LibraryPage() {
   const [editing, setEditing] = useState<LibraryGame | null>(null)
   const [launchError, setLaunchError] = useState<string | null>(null)
   const [manageCollectionsOpen, setManageCollectionsOpen] = useState(false)
+  /** PC scan wizard — opens on demand via the "Resynchroniser" button
+   *  or AUTO once on first boot (when the library is empty and the
+   *  user hasn't dismissed the prompt before this session). The flag
+   *  is per-localStorage so a user who explicitly closes the wizard
+   *  on a fresh install doesn't get it re-poked on every relaunch. */
+  const [scanWizardOpen, setScanWizardOpen] = useState(false)
 
   useEffect(() => {
     if (user) {
@@ -75,6 +82,30 @@ export default function LibraryPage() {
       void loadCollections(user.id)
     }
   }, [user, load, loadCollections])
+
+  /**
+   * First-boot auto-open: if the loaded library is empty AND we
+   * never showed the wizard before on this machine, open it once.
+   * The hasSource precheck avoids prompting users with neither Steam
+   * nor crack roots — they'd just see "rien trouvé" and bounce.
+   */
+  useEffect(() => {
+    if (!user) return
+    if (games.length > 0) return
+    const FIRST_BOOT_KEY = 'nexus.pcScan.firstBootShown'
+    if (localStorage.getItem(FIRST_BOOT_KEY) === '1') return
+    let cancelled = false
+    void window.nexus.pcScanner.hasAnySource().then((res) => {
+      if (cancelled) return
+      if (res.ok && res.hasSource) {
+        setScanWizardOpen(true)
+        localStorage.setItem(FIRST_BOOT_KEY, '1')
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user, games.length])
 
   // Cover/hero backfill — for any game whose cover_url is still null,
   // trigger the same artwork lookup the game page would have run. The
@@ -221,6 +252,17 @@ export default function LibraryPage() {
                 : `${games.length} jeu${games.length === 1 ? '' : 'x'} · ${filtered.length} affiché${filtered.length === 1 ? '' : 's'}`}
             </p>
           </div>
+          {/* Resynchroniser — rescan le PC pour détecter les jeux
+              Steam + cracks et les importer (idempotent : les jeux
+              déjà en bibliothèque sont dédupliqués par sourceGameId). */}
+          <button
+            onClick={() => setScanWizardOpen(true)}
+            className="inline-flex items-center gap-2 h-10 px-4 rounded-full bg-[var(--surface-soft)] border border-glass-border hover:border-accent-primary/40 hover:bg-[var(--surface-soft-hover)] text-sm font-semibold text-fg-primary transition-colors"
+            title="Scanner le PC pour détecter Steam + jeux installés ailleurs"
+          >
+            <ScanLine className="w-4 h-4 text-accent-primary" />
+            Resynchroniser
+          </button>
         </div>
       </motion.div>
 
@@ -446,6 +488,7 @@ export default function LibraryPage() {
       )}
 
       <LibraryEditDialog open={editing !== null} onClose={() => setEditing(null)} game={editing} />
+      <PcScanWizard open={scanWizardOpen} onClose={() => setScanWizardOpen(false)} />
       <CollectionsDialog
         open={manageCollectionsOpen}
         onClose={() => setManageCollectionsOpen(false)}

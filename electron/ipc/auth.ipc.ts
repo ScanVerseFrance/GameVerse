@@ -290,6 +290,37 @@ export function registerAuthIpc() {
           values.push(decoded.sub)
           db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values)
         }
+        // Mirror the change to the cloud so OTHER machines + OTHER
+        // users (friends list, profile lookups) see the new avatar /
+        // bio / displayName. Fire-and-forget: if the launcher is
+        // offline OR the cloud is down, the local update still
+        // succeeds and the next successful sync from cloud.service
+        // will reconcile the divergence.
+        //
+        // We only mirror the fields the cloud's PATCH /auth/me
+        // endpoint accepts — username + colour + animation are
+        // launcher-only customisation that the cloud doesn't track.
+        const cloudPatch: Record<string, string | null | undefined> = {}
+        if (patch.displayName !== undefined) cloudPatch.displayName = patch.displayName
+        if (patch.bio !== undefined) cloudPatch.bio = patch.bio
+        if (patch.email !== undefined) cloudPatch.email = patch.email
+        if (patch.avatarPath !== undefined) cloudPatch.avatarPath = patch.avatarPath
+        if (patch.bannerPath !== undefined) cloudPatch.bannerPath = patch.bannerPath
+        if (Object.keys(cloudPatch).length > 0) {
+          // Lazy import to avoid a circular dep on cloud.service.
+          // The .catch is intentional — a cloud-side failure must
+          // never undo the successful local commit above.
+          void import('../services/cloud.service').then((svc) =>
+            svc
+              .cloudFetch('/v1/auth/me', {
+                method: 'PATCH',
+                body: cloudPatch,
+              })
+              .catch(() => {
+                /* offline / 5xx — local survives, cloud catches up later */
+              }),
+          )
+        }
         const row = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.sub) as UserRow
         return { ok: true, user: toPublic(row), token }
       } catch (err) {

@@ -3,7 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import crypto from 'node:crypto'
-import { BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell } from 'electron'
 import { getDatabase } from './database.service'
 import { emitFriendLaunched, postActivity, updatePresence } from './social.service'
 import type { AddLibraryParams, LibraryGame, LibraryStatus, UpdateLibraryParams } from '@/types/library.types'
@@ -14,6 +14,10 @@ interface LibraryRow {
   title: string
   slug: string
   cover_url: string | null
+  /** v0.3.2: user-supplied cover override. Either a `file://` URL
+   *  pointing into `<userData>/custom-covers/<rowId>.<ext>` or a
+   *  remote URL the user pasted. */
+  user_cover_url: string | null
   hero_url: string | null
   description: string | null
   genres: string | null
@@ -317,7 +321,12 @@ function rowToGame(row: LibraryRow): LibraryGame {
     userId: row.user_id,
     title: row.title,
     slug: row.slug,
-    coverUrl: row.cover_url,
+    // Effective cover: user override beats the auto-resolved value.
+    // Renderers reading `coverUrl` get the user's pick without any
+    // additional logic; the raw override is exposed below so the
+    // Properties dialog can show a "Reset" affordance only when set.
+    coverUrl: row.user_cover_url ?? row.cover_url,
+    userCoverUrl: row.user_cover_url,
     heroUrl: row.hero_url,
     description: row.description,
     genres: safeParseStringArray(row.genres),
@@ -514,6 +523,17 @@ export function addLibraryGame(params: AddLibraryParams): LibraryGame {
       now
     )
 
+  // Optional steam_appid backfill — used by the PC scanner when
+  // adopting an existing Steam install. We update post-insert so the
+  // base INSERT above stays simple + matches the historical schema
+  // (steam_appid was added via `ensureColumn` after the table was
+  // created, so it's not part of the original column list).
+  if (params.steamAppId != null && Number.isFinite(params.steamAppId) && params.steamAppId > 0) {
+    getDatabase()
+      .prepare('UPDATE library_games SET steam_appid = ? WHERE id = ?')
+      .run(Math.floor(params.steamAppId), id)
+  }
+
   postActivity(params.userId, 'game_added', {
     gameId: id,
     title: params.title,
@@ -551,6 +571,26 @@ export function updateLibraryGame(id: string, patch: UpdateLibraryParams): Libra
     } else {
       fields.push('executable_path = ?')
       values.push(patch.executablePath)
+      // Auto-backfill install_path when the user points at an exe
+      // for a game that has no install_path yet (typical when they
+      // manually added a row, e.g. "pointed at C:\Games\Foo\foo.exe"
+      // for a copy installed by some other launcher). Without this
+      // the library tile keeps showing "Télécharger" because the
+      // LibraryCard CTA gates on `!installPath` first. The caller
+      // can still override by explicitly passing patch.installPath
+      // alongside — that branch below runs after this one, so an
+      // explicit value wins.
+      if (
+        typeof patch.executablePath === 'string' &&
+        patch.installPath === undefined &&
+        !before.installPath
+      ) {
+        const derivedInstallPath = path.dirname(patch.executablePath)
+        if (derivedInstallPath && derivedInstallPath !== '.') {
+          fields.push('install_path = ?')
+          values.push(derivedInstallPath)
+        }
+      }
     }
   }
   if (patch.installPath !== undefined) {
@@ -617,6 +657,89 @@ export function updateLibraryGame(id: string, patch: UpdateLibraryParams): Libra
   return getLibraryGame(id)
 }
 
+/**
+ * Sets (or clears) the user-supplied cover override for a library
+ * row. The renderer dispatches this from the Properties dialog when
+ * the user picks a local file, pastes a URL, or hits "Reset".
+ *
+ * For local files the source path is copied into
+ * `<userData>/custom-covers/<rowId>.<ext>` so the cover survives the
+ * source file being moved/deleted. Old files for the same row are
+ * unlinked before the new one lands (keeps the folder tidy and
+ * prevents stale leftovers when the user picks PNG after JPG).
+ *
+ * `coverUrl` returned through the LibraryGame resolver is
+ * `user_cover_url ?? cover_url`, so any tile / library card / game
+ * page hero picks up the new image on the next read with zero extra
+ * plumbing.
+ */
+export async function setUserCover(
+  libraryGameId: string,
+  source:
+    | { kind: 'file'; filePath: string }
+    | { kind: 'url'; url: string }
+    | { kind: 'reset' },
+): Promise<{ ok: boolean; userCoverUrl?: string | null; error?: string }> {
+  const game = getLibraryGame(libraryGameId)
+  if (!game) return { ok: false, error: 'Jeu introuvable' }
+  const customCoversDir = path.join(app.getPath('userData'), 'custom-covers')
+  await fsp.mkdir(customCoversDir, { recursive: true })
+  // Always nuke any previous file for this row before writing — the
+  // extension may differ between the old and new pick, so a simple
+  // overwrite leaves orphans behind.
+  try {
+    const existing = await fsp.readdir(customCoversDir)
+    await Promise.all(
+      existing
+        .filter((n) => n.startsWith(`${libraryGameId}.`))
+        .map((n) => fsp.unlink(path.join(customCoversDir, n)).catch(() => {})),
+    )
+  } catch {
+    /* fresh dir or unreadable — fine, the mkdir above ensures it
+     * exists for the upcoming write. */
+  }
+  let newUrl: string | null = null
+  if (source.kind === 'file') {
+    if (!source.filePath || typeof source.filePath !== 'string') {
+      return { ok: false, error: 'Chemin invalide' }
+    }
+    let ext = path.extname(source.filePath).toLowerCase().slice(1) || 'png'
+    // Only allow image extensions we trust the renderer to decode.
+    // Anything else (the user picked a .txt by accident) we refuse so
+    // we never end up with a broken-image tile and no way to undo.
+    const allowed = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif'])
+    if (!allowed.has(ext)) {
+      return { ok: false, error: `Extension non supportée : .${ext}` }
+    }
+    if (ext === 'jpeg') ext = 'jpg'
+    const dest = path.join(customCoversDir, `${libraryGameId}.${ext}`)
+    try {
+      await fsp.copyFile(source.filePath, dest)
+    } catch (e) {
+      return { ok: false, error: `Copie impossible : ${(e as Error).message}` }
+    }
+    // file:// URL form. We path.resolve in case the caller passed a
+    // relative path (shouldn't happen — Electron's openDialog returns
+    // absolute — but cheap insurance).
+    newUrl = `file:///${path.resolve(dest).replace(/\\/g, '/')}`
+  } else if (source.kind === 'url') {
+    const u = source.url?.trim() ?? ''
+    if (!u || !/^https?:\/\//i.test(u)) {
+      return { ok: false, error: 'URL invalide (https requis)' }
+    }
+    if (u.length > 2048) {
+      return { ok: false, error: 'URL trop longue' }
+    }
+    newUrl = u
+  } else {
+    // kind === 'reset' — newUrl stays null, which clears the column.
+  }
+  getDatabase()
+    .prepare('UPDATE library_games SET user_cover_url = ?, updated_at = ? WHERE id = ?')
+    .run(newUrl, Date.now(), libraryGameId)
+  return { ok: true, userCoverUrl: newUrl }
+}
+
 export function removeLibraryGame(id: string): boolean {
   const r = running.get(id)
   if (r) {
@@ -652,12 +775,47 @@ function parseLaunchOptions(raw: string | null): string[] {
 export function launchGame(id: string): { ok: boolean; error?: string } {
   const game = getLibraryGame(id)
   if (!game) return { ok: false, error: 'Jeu introuvable' }
+  if (running.has(id)) return { ok: false, error: 'Le jeu est déjà en cours' }
+
+  // Steam-sourced games go through the Steam client via the
+  // steam://rungameid/<appid> protocol — that way Steam tracks the
+  // playtime + applies its own DRM checks + records achievements,
+  // which is exactly the integration the user wants when scanning
+  // a Steam library. We DON'T try to spawn the local exe directly
+  // for Steam games because most won't launch outside Steam (DRM,
+  // Steamworks init). Bail with a graceful error if Steam isn't on
+  // the machine — the user will at least know why nothing happened.
+  if (game.sourceAddonId === 'steam' && game.steamAppId) {
+    try {
+      // shell.openExternal handles steam:// URLs natively on every
+      // platform; no need to spawn explorer.exe / xdg-open ourselves.
+      void shell.openExternal(`steam://rungameid/${game.steamAppId}`)
+      // We don't track a child process for Steam launches — Steam
+      // owns the lifecycle. Mark the row as running for the duration
+      // of an optimistic 30s window so the UI flips to "Jouer en
+      // cours" briefly; the external-process-watcher will keep it
+      // green for as long as the game's real .exe is alive.
+      emit('library:running', { id, running: true })
+      setTimeout(() => {
+        // Optimistic clear — the external-process-watcher (if
+        // enabled in settings) takes over and emits its own
+        // running/stopped events tied to the actual exe.
+        emit('library:running', { id, running: false, sessionSeconds: 0 })
+      }, 30_000)
+      return { ok: true }
+    } catch (e) {
+      return {
+        ok: false,
+        error: `Impossible d'ouvrir Steam — vérifie qu'il est installé. (${(e as Error).message})`,
+      }
+    }
+  }
+
   if (!game.executablePath)
     return {
       ok: false,
       error: "Aucun exécutable défini — ouvre la page du jeu pour le configurer.",
     }
-  if (running.has(id)) return { ok: false, error: 'Le jeu est déjà en cours' }
 
   // Pre-flight existence check. spawn() with `detached:true` +
   // `stdio:'ignore'` doesn't throw synchronously when the target is

@@ -121,6 +121,23 @@ const api = {
       ipcRenderer.invoke('library:extractZip', id, mode),
     resetForRedownload: (id: string) =>
       ipcRenderer.invoke('library:resetForRedownload', id),
+    /** Opens the OS file picker for an image to use as a custom
+     *  game cover. Returns { ok, path } on a selection or
+     *  { ok: false, canceled: true } on dismissal. */
+    pickCoverFile: () => ipcRenderer.invoke('library:pickCoverFile'),
+    /** Commits a custom cover choice for one library row.
+     *  - `{ kind: 'file', filePath }` copies the file into
+     *    userData/custom-covers/ and stores a file:// URL.
+     *  - `{ kind: 'url', url }` validates + stores a remote URL.
+     *  - `{ kind: 'reset' }` clears the override so the
+     *    auto-resolved Steam/SGDB cover takes over again. */
+    setUserCover: (
+      id: string,
+      payload:
+        | { kind: 'file'; filePath: string }
+        | { kind: 'url'; url: string }
+        | { kind: 'reset' },
+    ) => ipcRenderer.invoke('library:setUserCover', id, payload),
     onRunning: (cb: (data: unknown) => void) => subscribe('library:running', cb),
     onAddedFromDownload: (cb: (data: unknown) => void) =>
       subscribe('library:added-from-download', cb),
@@ -295,6 +312,42 @@ const api = {
     setTopGameSlot: (userId: string, slot: number, libraryGameId: string | null) =>
       ipcRenderer.invoke('profile:setTopGameSlot', userId, slot, libraryGameId),
     heatmap: (userId: string, days?: number) => ipcRenderer.invoke('profile:heatmap', userId, days),
+    /** Aggregated game-stats payload — backs the entire Stats tab
+     *  in one round-trip. See electron/services/profile.service.ts
+     *  getGameStats for the full shape. */
+    gameStats: (userId: string) => ipcRenderer.invoke('profile:gameStats', userId),
+  },
+  pcScanner: {
+    /** Cheap precheck — returns false if neither Steam nor any
+     *  common crack root exists, so the UI can skip showing the
+     *  wizard at all when there's nothing to find. */
+    hasAnySource: () => ipcRenderer.invoke('pcScanner:hasAnySource'),
+    /** Full scan: Steam library + crack roots. `extraRoots` lets
+     *  the wizard add user-picked folders to the scan. */
+    scan: (extraRoots?: string[]) =>
+      ipcRenderer.invoke('pcScanner:scan', extraRoots ?? []),
+    /** Commit the wizard selection: imports Steam games (no move),
+     *  optionally moves crack folders to the Nexus games dir, then
+     *  upserts library_games rows. */
+    importSelected: (payload: {
+      userId: string
+      steamGames: Array<{
+        appid: number
+        name: string
+        installPath: string
+        executablePath: string | null
+        sizeBytes: number | null
+        lastPlayedAt: number | null
+      }>
+      crackedGames: Array<{
+        title: string
+        folderName: string
+        installPath: string
+        executablePath: string | null
+        sizeBytes: number | null
+        moveToNexusFolder: boolean
+      }>
+    }) => ipcRenderer.invoke('pcScanner:importSelected', payload),
   },
   achievements: {
     listForGame: (userId: string, steamAppId: number) =>

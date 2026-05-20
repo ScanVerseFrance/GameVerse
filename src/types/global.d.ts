@@ -347,6 +347,23 @@ export interface NexusAPI {
         }
       | { ok: false; error: string }
     >
+    /** Opens the OS file picker for a cover image. Returns the
+     *  absolute path the user selected, or `canceled: true`. */
+    pickCoverFile: () => Promise<
+      | { ok: true; path: string }
+      | { ok: false; canceled?: boolean; error?: string }
+    >
+    /** Sets (or clears) the custom cover override for one game.
+     *  See library.service.setUserCover for the full contract —
+     *  files are copied into userData/custom-covers, URLs are
+     *  validated + stored as-is, `reset` clears the override. */
+    setUserCover: (
+      id: string,
+      payload:
+        | { kind: 'file'; filePath: string }
+        | { kind: 'url'; url: string }
+        | { kind: 'reset' },
+    ) => Promise<{ ok: boolean; userCoverUrl?: string | null; error?: string }>
     onRunning: (cb: (data: LibraryRunningEvent) => void) => () => void
     onAddedFromDownload: (cb: (data: LibraryGame) => void) => () => void
     onExtractProgress: (cb: (data: ExtractProgressEvent) => void) => () => void
@@ -683,6 +700,124 @@ export interface NexusAPI {
       error?: string
       days: Array<{ date: string; minutes: number }>
     }>
+    /** Aggregated game stats — one round-trip backs the entire
+     *  Stats tab (12 cards/charts). Mirrors ScanVerse's reader-stats
+     *  panel: KPIs, rhythm, hour/weekday/30-day distributions, best
+     *  month, year-over-year, most-binged game, longest session. */
+    gameStats: (userId: string) => Promise<
+      | {
+          ok: true
+          stats: {
+            totals: {
+              totalHours: number
+              totalSessions: number
+              gamesPlayed: number
+              activeDays: number
+              streakRecord: number
+            }
+            rhythm: {
+              last7DaysHours: number
+              avg4WeeksHours: number
+              deltaPct: number | null
+            }
+            hourHistogram: Array<{ hour: number; minutes: number }>
+            weekdayHistogram: Array<{ dow: number; minutes: number }>
+            last30Days: Array<{ date: string; minutes: number }>
+            bestMonth: {
+              year: number
+              month: number
+              hours: number
+              sessionsCount: number
+            } | null
+            yearCompare: {
+              current: { year: number; hours: number }
+              previous: { year: number; hours: number }
+            } | null
+            mostBingedGame: {
+              gameId: string
+              title: string
+              coverUrl: string | null
+              totalHours: number
+              sessions: number
+            } | null
+            longestSession: {
+              gameId: string
+              title: string
+              coverUrl: string | null
+              durationMinutes: number
+              startedAt: number
+            } | null
+          }
+        }
+      | { ok: false; error: string }
+    >
+  }
+  pcScanner: {
+    hasAnySource: () => Promise<
+      { ok: true; hasSource: boolean } | { ok: false; error: string }
+    >
+    scan: (extraRoots?: string[]) => Promise<
+      | {
+          ok: true
+          result: {
+            steam: {
+              steamRoot: string | null
+              games: Array<{
+                appid: number
+                name: string
+                installPath: string
+                sizeBytes: number | null
+                lastPlayedAt: number | null
+                executablePath: string | null
+              }>
+            }
+            cracked: {
+              rootsScanned: string[]
+              games: Array<{
+                folderName: string
+                title: string
+                installPath: string
+                sizeBytes: number | null
+                executablePath: string | null
+                scanRoot: string
+              }>
+            }
+          }
+        }
+      | { ok: false; error: string }
+    >
+    importSelected: (payload: {
+      userId: string
+      steamGames: Array<{
+        appid: number
+        name: string
+        installPath: string
+        executablePath: string | null
+        sizeBytes: number | null
+        lastPlayedAt: number | null
+      }>
+      crackedGames: Array<{
+        title: string
+        folderName: string
+        installPath: string
+        executablePath: string | null
+        sizeBytes: number | null
+        moveToNexusFolder: boolean
+      }>
+    }) => Promise<
+      | {
+          ok: true
+          steam: Array<{ appid: number; ok: boolean; libraryGameId?: string; error?: string }>
+          cracked: Array<{
+            installPath: string
+            ok: boolean
+            libraryGameId?: string
+            newInstallPath?: string
+            error?: string
+          }>
+        }
+      | { ok: false; error: string }
+    >
   }
   achievements: {
     listForGame: (

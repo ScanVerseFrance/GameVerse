@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Notification } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -14,6 +14,7 @@ import {
 } from './ankergames-bridge.service'
 import { upsertLibraryFromDownload } from './library.service'
 import { getAppSettings } from './app-settings.service'
+import * as toastSvc from './toast-window.service'
 import {
   acquireForDownload,
   releaseForDownload,
@@ -496,7 +497,7 @@ function startHttp(record: DownloadRecord): void {
         setRowStatus(record.id, 'completed')
         emitState(record.id, 'completed')
         active.delete(record.id)
-        notify(record.gameTitle)
+        notify(record)
         registerCompletedGame(record, installPath)
         pump()
       },
@@ -523,7 +524,7 @@ function startHttp(record: DownloadRecord): void {
       setRowStatus(record.id, 'completed')
       emitState(record.id, 'completed')
       active.delete(record.id)
-      notify(record.gameTitle)
+      notify(record)
       registerCompletedGame(record, installPath)
       pump()
     },
@@ -548,7 +549,7 @@ function startTorrent(record: DownloadRecord): void {
     onComplete: (installPath) => {
       setRowStatus(record.id, 'completed')
       emitState(record.id, 'completed')
-      notify(record.gameTitle)
+      notify(record)
       registerCompletedGame(record, installPath)
       pump()
     },
@@ -601,12 +602,28 @@ function emitRemoved(id: string): void {
   getMainWindow?.()?.webContents.send('downloads:removed', { id })
 }
 
-function notify(title: string): void {
+function notify(record: DownloadRecord): void {
   if (!settings.notificationsEnabled) return
   try {
-    new Notification({ title: 'Download complete', body: title }).show()
-  } catch {
-    // not supported on platform
+    // Route through the Steam-style in-app toast overlay so the
+    // notification looks like the rest of Nexus (avatar / cover /
+    // accent gradient) instead of a generic Windows Action Center
+    // popup. The per-kind toggle + snooze guard is enforced inside
+    // pushToast — if download_complete is off in app-settings it
+    // silently no-ops.
+    //
+    toastSvc.pushToast({
+      kind: 'download_complete',
+      title: 'Téléchargement terminé',
+      body: record.gameTitle,
+      coverUrl: record.coverUrl,
+      link: record.gameId ? `/library` : null,
+    })
+  } catch (e) {
+    // toast pipeline blew up (very rare — usually means the helper
+    // window failed to load). Swallow so a notification glitch
+    // can never abort the download completion handler.
+    console.warn('[download:notify] pushToast threw:', (e as Error).message)
   }
 }
 

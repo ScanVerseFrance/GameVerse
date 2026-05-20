@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { dialog, ipcMain } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import * as svc from '../services/library.service'
@@ -106,6 +106,47 @@ export function registerLibraryIpc() {
 
   ipcMain.handle('library:remove', async (_e, id: string) => {
     return { ok: svc.removeLibraryGame(sanitizeString(id, 64)) }
+  })
+
+  // ── Custom cover picker / setter (v0.3.2) ──────────────────────────
+  // Two handlers because they're conceptually distinct:
+  //   - pickCoverFile() opens the OS file dialog and returns the path
+  //   - setUserCover() commits the chosen source (file/URL/reset) to DB
+  // Keeping them split means a renderer can ALSO drive setUserCover
+  // from a drag-and-drop drop event (`webUtils.getPathForFile`)
+  // without having to dance through the dialog API.
+  ipcMain.handle('library:pickCoverFile', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choisir une image de cover',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'avif'] },
+      ],
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, canceled: true }
+    }
+    return { ok: true, path: result.filePaths[0] }
+  })
+
+  ipcMain.handle('library:setUserCover', async (_e, libraryGameId: unknown, payload: unknown) => {
+    if (typeof libraryGameId !== 'string')
+      return { ok: false, error: 'libraryGameId required' }
+    const id = sanitizeString(libraryGameId, 64)
+    if (!payload || typeof payload !== 'object') {
+      return { ok: false, error: 'payload required' }
+    }
+    const p = payload as Record<string, unknown>
+    if (p.kind === 'file' && typeof p.filePath === 'string') {
+      return await svc.setUserCover(id, { kind: 'file', filePath: p.filePath })
+    }
+    if (p.kind === 'url' && typeof p.url === 'string') {
+      return await svc.setUserCover(id, { kind: 'url', url: sanitizeString(p.url, 2048) })
+    }
+    if (p.kind === 'reset') {
+      return await svc.setUserCover(id, { kind: 'reset' })
+    }
+    return { ok: false, error: 'Unknown payload kind' }
   })
 
   ipcMain.handle('library:uninstall', async (_e, id: string, deleteFiles: unknown) => {

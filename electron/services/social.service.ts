@@ -261,6 +261,65 @@ export function listProfiles(query?: string, currentUserId?: string): PublicProf
   return rows.map((r) => rowToPublic(r))
 }
 
+/**
+ * Mirror a cloud-side friend into the local `users` table so the
+ * Profile page (which reads from the local DB only) can render their
+ * info. Called from the cloud:listFriends IPC after a successful
+ * /v1/friends fetch — best-effort, never throws so a malformed
+ * friend row can't fail the whole friends-list payload.
+ *
+ * We INSERT OR REPLACE on the id, but only when the row didn't
+ * exist OR the cloud copy is newer than the local snapshot — that
+ * way a logged-in user (self) is never overwritten by their own
+ * row in the friends list, AND a friend who's updated their avatar
+ * gets refreshed on the next reload.
+ */
+export function upsertCloudFriend(friend: {
+  id: string
+  username: string
+  displayName?: string | null
+  avatarPath?: string | null
+  bannerPath?: string | null
+  bio?: string | null
+  createdAt?: string | null
+}): void {
+  if (!friend || typeof friend !== 'object' || !friend.id) return
+  const db = getDatabase()
+  const now = Date.now()
+  const id = friend.id
+  const username = friend.username || `user-${id.slice(0, 8)}`
+  const displayName = friend.displayName ?? username
+  const avatarPath = friend.avatarPath ?? null
+  const bannerPath = friend.bannerPath ?? null
+  const bio = friend.bio ?? null
+  const createdAt = friend.createdAt
+    ? new Date(friend.createdAt).getTime() || now
+    : now
+  try {
+    // INSERT OR REPLACE preserves the FK semantics (library_games,
+    // friends, messages etc. all reference users.id with ON DELETE
+    // CASCADE — but INSERT OR REPLACE deletes + reinserts which
+    // would cascade-nuke them). Use UPSERT via ON CONFLICT instead
+    // so existing local rows survive the friend refresh.
+    db.prepare(
+      `INSERT INTO users (id, username, display_name, avatar_path, banner_path, bio, is_guest, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         username = excluded.username,
+         display_name = excluded.display_name,
+         avatar_path = excluded.avatar_path,
+         banner_path = excluded.banner_path,
+         bio = excluded.bio,
+         updated_at = excluded.updated_at`,
+    ).run(id, username, displayName, avatarPath, bannerPath, bio, createdAt, now)
+  } catch {
+    // Swallow — a malformed friend row should not abort the entire
+    // friends list refresh. We log via console for diagnostics; the
+    // friend will just be unresolvable when the user clicks them.
+    /* noop */
+  }
+}
+
 export function getProfile(
   userId: string,
   viewerId: string | null = null

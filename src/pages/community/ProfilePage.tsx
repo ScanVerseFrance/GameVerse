@@ -29,6 +29,7 @@ import { useSocialStore } from '@/stores/social.store'
 import { Card } from '@/components/ui/Card'
 import { ActivityFeedItem } from '@/components/community/ActivityFeedItem'
 import { PlaytimeHeatmap } from '@/components/community/PlaytimeHeatmap'
+import { GameStatsTab } from '@/components/community/GameStatsTab'
 import { AchievementsTab } from '@/components/community/AchievementsTab'
 import { Top5Games } from '@/components/community/Top5Games'
 import { ProfileCustomiseDialog } from '@/components/community/ProfileCustomiseDialog'
@@ -813,11 +814,26 @@ export default function ProfilePage() {
               </Card>
             )}
 
-            {/* STATS — heatmap + breakdown. Privacy-checked. */}
+            {/* STATS — full ScanVerse-parity dashboard: 4 KPI cards,
+                rhythm card, hour-of-day + weekday distributions, 30-
+                day daily bars, best-month, year-over-year, most-
+                binged game, longest session, + the heatmap at the
+                bottom. All privacy-gated by `canViewHeatmap` since
+                the same play_sessions data backs everything. */}
             {tab === 'stats' && (
               <Card padding="lg">
                 {profile.canViewHeatmap ? (
-                  <PlaytimeHeatmap days={heatmap} />
+                  <div className="flex flex-col gap-5">
+                    <GameStatsTab userId={profile.id} />
+                    {/* Activity heatmap below — kept as the at-a-glance
+                        timeline that complements the per-card stats. */}
+                    <div className="pt-2 border-t border-glass-border">
+                      <h3 className="text-sm font-semibold text-fg-primary mb-1">
+                        Activité (365 derniers jours)
+                      </h3>
+                      <PlaytimeHeatmap days={heatmap} />
+                    </div>
+                  </div>
                 ) : (
                   <TabLocked label="Stats" />
                 )}

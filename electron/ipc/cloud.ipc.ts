@@ -126,7 +126,32 @@ export function registerCloudIpc(): void {
   // ── Friends ─────────────────────────────────────────────────────
   ipcMain.handle('cloud:listFriends', async () => {
     try {
-      return { ok: true, ...(await svc.passthroughJson('/v1/friends')) }
+      const data = (await svc.passthroughJson('/v1/friends')) as {
+        friends?: Array<{
+          id: string
+          username: string
+          displayName?: string | null
+          avatarPath?: string | null
+          bannerPath?: string | null
+          bio?: string | null
+          createdAt?: string | null
+        }>
+      }
+      // Mirror each cloud friend into the LOCAL users table so the
+      // Profile page (`/community/profile/:id`, which only reads
+      // from the local DB) can resolve them. Without this step the
+      // friends list renders fine but clicking a row returns
+      // "Profil introuvable" because the local users table only
+      // ever held the logged-in user's row.
+      if (data.friends && Array.isArray(data.friends)) {
+        const { upsertCloudFriend } = await import('../services/social.service')
+        for (const f of data.friends) {
+          if (f && typeof f === 'object' && typeof f.id === 'string') {
+            upsertCloudFriend(f)
+          }
+        }
+      }
+      return { ok: true, ...data }
     } catch (e) {
       return { ok: false, error: (e as Error).message, friends: [] }
     }

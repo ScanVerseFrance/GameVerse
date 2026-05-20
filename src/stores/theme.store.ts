@@ -1,8 +1,14 @@
 import { create } from 'zustand'
 import { themeSchema, type Theme } from '@/types/theme.types'
-import { BUILTIN_THEMES, NEXUS_DARK } from '@/themes/builtins'
+import { BUILTIN_THEMES, MIDNIGHT_BLUE } from '@/themes/builtins'
 
 const ACTIVE_KEY = 'nexus.theme.active'
+
+// First entry of BUILTIN_THEMES is the OOTB default. We export the
+// `MIDNIGHT_BLUE` symbol explicitly so a future preset reshuffle in
+// builtins.ts can't silently change what users see on first boot;
+// any change here is a deliberate code change reviewed in git.
+const DEFAULT_THEME_ID = MIDNIGHT_BLUE.id
 
 interface ThemeState {
   activeThemeId: string
@@ -20,7 +26,7 @@ interface ThemeState {
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
-  activeThemeId: typeof localStorage !== 'undefined' ? localStorage.getItem(ACTIVE_KEY) ?? NEXUS_DARK.id : NEXUS_DARK.id,
+  activeThemeId: typeof localStorage !== 'undefined' ? localStorage.getItem(ACTIVE_KEY) ?? DEFAULT_THEME_ID : DEFAULT_THEME_ID,
   builtins: BUILTIN_THEMES,
   customThemes: [],
   previewTheme: null,
@@ -62,8 +68,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     const res = await window.nexus.themes.delete(id)
     if (!res.ok) return false
     if (get().activeThemeId === id) {
-      localStorage.setItem(ACTIVE_KEY, NEXUS_DARK.id)
-      set({ activeThemeId: NEXUS_DARK.id })
+      localStorage.setItem(ACTIVE_KEY, DEFAULT_THEME_ID)
+      set({ activeThemeId: DEFAULT_THEME_ID })
     }
     await get().loadCustom()
     return true

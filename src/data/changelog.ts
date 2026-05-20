@@ -59,6 +59,58 @@ export function compareVersions(a: string, b: string): number {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.3.3',
+    date: '2026-05-20',
+    title: 'PC Scanner + Stats parité ScanVerse + 13 thèmes + custom covers',
+    highlights: [
+      'Scanner PC: import auto Steam + cracks détectés dans HydraLauncher/Games',
+      'Bouton Resynchroniser en haut-droite de la Bibliothèque + auto au 1er boot',
+      'Steam games lancés via steam://rungameid/<appid> + logo Steam sur la tile',
+      'Stats tab refondu : parité totale avec ScanVerse (12 cartes/graphes)',
+      '13 thèmes builtins + Midnight Blue par défaut OOTB',
+      'Covers personnalisables : fichier local ou URL, dans Propriétés',
+      'Profil d\'un ami enfin accessible (was "Not found") + push avatar au cloud',
+    ],
+    changes: [
+      // === PC Scanner ===
+      { kind: 'feat', text: 'Scanner PC complet : parser VDF/ACF maison qui lit libraryfolders.vdf + appmanifest_*.acf de Steam, skip les redistribuables (228980, etc.), best-effort exe detection pour le achievement watcher. Fallback registry HKCU\\Software\\Valve\\Steam si Steam pas aux paths habituels.' },
+      { kind: 'feat', text: 'Détection des cracks/repacks : scan heuristique de C:\\HydraLauncher, C:/Games, D:/Games, C:\\FitGirl Repacks, etc. Strip les suffixes "-SteamRIP.com", "[FitGirl Repack]", "(DODI)" pour un titre propre.' },
+      { kind: 'feat', text: 'Wizard PcScanWizard : 4 phases (scanning → ready → importing → done), checkboxes par jeu, toggle global "Déplacer les cracks dans le dossier Nexus" (cut-paste atomique même disque, copy+rm cross-disk avec collision-safe suffix).' },
+      { kind: 'feat', text: 'Auto first-boot : si library vide + sources détectées + jamais vu le wizard, ouvre auto une seule fois (localStorage flag).' },
+      { kind: 'feat', text: 'Bouton Resynchroniser dans le header de la Bibliothèque pour relancer le scan à tout moment. Imports dédupés par sourceGameId — re-scan = idempotent.' },
+      { kind: 'feat', text: 'Lancement Steam : sourceAddonId="steam" → shell.openExternal("steam://rungameid/<appid>") au lieu de spawn local. Steam gère DRM, playtime, achievements. Logo Steam à côté de Jouer sur la LibraryCard.' },
+      // === Stats tab parité ScanVerse ===
+      { kind: 'feat', text: 'Stats tab refondu en parité totale avec ScanVerse : 4 KPI cards (heures jouées, jeux joués, jours actifs, streak record), Rythme 7j vs moyenne 4 semaines, Heures de jeu préférées (24 bars), Jours de la semaine (7 bars), 30 derniers jours, Meilleur mois, Year-over-year compare, Le plus marathonné, Session la plus longue.' },
+      { kind: 'feat', text: 'Single IPC profile:gameStats qui aggrège tout en un round-trip SQL contre play_sessions. Streak walker DST-safe.' },
+      { kind: 'fix', text: 'Bars histogrammes invisibles quand 0 minute : zero-bars passent maintenant en baseline grise (--surface-medium) à 6px, bars > 0 en accent plein avec minimum 8%.' },
+      // === Thèmes ===
+      { kind: 'feat', text: '15 thèmes builtins (étaient 5) : Midnight Blue (nouveau défaut OOTB), Tokyo Night, Dracula, Cyberpunk, Ocean, Forest, Sunset, Crimson, Rose Gold, Mocha, Solarized Dark, Nord, Monochrome, Steam Dark, Nexus Light. Tous tunés sur le même système de surfaces pour rester lisibles.' },
+      { kind: 'feat', text: 'Fallback theme robuste dans useApplyTheme : si le thème custom est supprimé alors qu\'il était actif, l\'app retombe sur Midnight Blue au lieu de rendre sans styles.' },
+      // === Custom covers ===
+      { kind: 'feat', text: 'Cover éditable depuis Propriétés → Général : bouton Fichier (OS picker, copie dans userData/custom-covers/<id>.<ext>) ou URL (validation https). Bouton Réinitialiser quand un override est actif. Badge "Perso" sur la jaquette.' },
+      { kind: 'feat', text: 'Nouvelle colonne user_cover_url dans library_games + résolution prioritaire user_cover_url ?? cover_url dans rowToGame. L\'auto-resolver Steam/SGDB n\'écrit jamais sur l\'override.' },
+      // === Cloud saves (suite v0.3.2) ===
+      { kind: 'feat', text: 'SavesModal: status row en haut affiche Local: 6 Ko · 4 fichiers · modifié 20/05 (vert) ou Local: vide (rouge). Badge "= LOCAL" sur la version cloud qui matche le mtime local (fenêtre 60s), épinglée en position 0 dans la liste.' },
+      { kind: 'feat', text: 'Cross-PC restore via Ludusavi redirects : détecte le username d\'origine dans mapping.yaml et écrit un redirect kind=restore dans config.yaml de Ludusavi. Idempotent.' },
+      { kind: 'feat', text: 'Wipe local avant restore (Steam-style mirror) : Ludusavi preview pour découvrir les dossiers, rm -rf + mkdir, puis restore. Mods/backups perso disparaissent comme Steam Cloud.' },
+      // === Notifications custom ===
+      { kind: 'fix', text: 'Toasts custom Steam-style fonctionnent enfin : require(\'./toast-window.service\') lazy load échouait en build packagé ("Cannot find module"). Passage à import statique → toutes les notifs custom (download terminé, succès, message ami, ami lance un jeu, demande d\'ami) s\'affichent en bas-droite au lieu de la notification Windows native.' },
+      { kind: 'feat', text: 'Download complete et achievement unlocked passent par pushToast avec cover/icon, plus de new Notification() native.' },
+      // === Cloud connection ===
+      { kind: 'fix', text: 'WebSocket cloud flicker à 1Hz résolu : openSocket bail si OPEN/CONNECTING (anti React StrictMode), open clear les reconnect timers en attente, stability window 5s avant reset du backoff. Heartbeat ping toutes les 30s pour outlast Traefik idle 60s.' },
+      // === Library / friends ===
+      { kind: 'fix', text: 'Exe manuel via Propriétés flippe maintenant le bouton "Télécharger" → "Jouer" : auto-backfill de install_path = path.dirname(exe) quand le row n\'avait pas d\'install_path.' },
+      { kind: 'fix', text: 'Profil d\'un ami enfin accessible — getProfile query la table users locale qui ne contenait que self. Nouveau upsertCloudFriend qui mirror les friends récupérés du cloud (ON CONFLICT UPDATE pour préserver les FK).' },
+      { kind: 'feat', text: 'Avatar/bio/displayName poussés au cloud après chaque update profil local → les autres users (liste d\'amis, profils) voient la mise à jour au prochain sync.' },
+      // === Conflict dialog ===
+      { kind: 'fix', text: 'Croix (X) top-right du SaveConflictDialog ferme juste le modal sans lancer le jeu. Le bouton Annuler en bas garde l\'ancien comportement (close + launch).' },
+      { kind: 'fix', text: '"Garder local" envoie avec force=true → la garde anti-shrink ne skip plus silencieusement un choix explicite.' },
+      // === Misc ===
+      { kind: 'fix', text: 'Badge "Ctrl K" retiré de l\'input de recherche (le raccourci continue de marcher).' },
+      { kind: 'polish', text: 'Logo Steam reprend la forme officielle Simple Icons (lens + orbites) — l\'ancien glyphe maison rendait flou aux petites tailles.' },
+    ],
+  },
+  {
     version: '0.3.2',
     date: '2026-05-20',
     title: 'Sauvegardes cloud — gestionnaire complet + cross-PC + fixes flicker',

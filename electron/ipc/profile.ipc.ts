@@ -73,4 +73,21 @@ export function registerProfileIpc() {
       return { ok: false, error: (e as Error).message, days: [] }
     }
   })
+
+  // Aggregated game stats — one IPC round-trip backs the entire Stats
+  // tab (totals, rhythm, hour/weekday/30-day charts, best month, year-
+  // over-year, most-binged game, longest session). Same pattern as
+  // ScanVerse's reader-stats panel, just sourced from play_sessions.
+  ipcMain.handle('profile:gameStats', async (_e, userId: unknown) => {
+    if (typeof userId !== 'string')
+      return { ok: false, error: 'userId required' }
+    try {
+      return {
+        ok: true as const,
+        stats: svc.getGameStats(sanitizeString(userId, 64)),
+      }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
 }

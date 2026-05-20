@@ -187,7 +187,7 @@ export function TopNav() {
             onKeyDown={onSearchKey}
             className="flex-1 bg-transparent outline-none text-sm text-fg-primary placeholder:text-fg-faint"
           />
-          {query ? (
+          {query && (
             <button
               onClick={() => setQuery('')}
               className="p-1 -m-1 rounded-full text-fg-muted hover:bg-surface-soft hover:text-fg-primary transition-colors"
@@ -195,10 +195,6 @@ export function TopNav() {
             >
               <X className="w-3.5 h-3.5" />
             </button>
-          ) : (
-            <kbd className="text-[10px] text-fg-muted font-mono px-2 py-1 rounded-md bg-surface-soft border border-glass-border">
-              Ctrl K
-            </kbd>
           )}
         </div>
       </div>

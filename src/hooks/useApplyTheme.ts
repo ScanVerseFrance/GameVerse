@@ -48,7 +48,14 @@ export function useApplyTheme() {
 
   useEffect(() => {
     const all = [...builtins, ...customThemes]
-    const target = preview ?? all.find((t) => t.id === activeId)
+    // Resolve in priority order: live preview from the ThemeEditor →
+    // the active theme id → the first built-in (OOTB default). The
+    // fallback covers the edge case where a user previously selected
+    // a custom theme that's since been deleted; without it the app
+    // would render unstyled (CSS vars empty) until the user opens
+    // /themes and picks something.
+    const target =
+      preview ?? all.find((t) => t.id === activeId) ?? builtins[0]
     if (target) applyThemeToRoot(target)
   }, [activeId, builtins, customThemes, preview])
 }
