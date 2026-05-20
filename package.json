@@ -1,6 +1,6 @@
 {
   "name": "nexus-launcher",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "private": true,
   "description": "Nexus Launcher — plugin-neutral game launcher (GameVerse / SVU)",
   "author": "SVU",

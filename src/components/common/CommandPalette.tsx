@@ -26,29 +26,76 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { router } from '@/router'
-import { Search, Gamepad2, BookOpen, Users, ArrowRight, Loader2, X } from 'lucide-react'
+import {
+  Search,
+  Gamepad2,
+  BookOpen,
+  Users,
+  ArrowRight,
+  Loader2,
+  X,
+  Compass,
+  Library as LibIcon,
+  Download as DlIcon,
+  Settings,
+  Palette,
+  Puzzle,
+  Shield,
+  Monitor,
+  Sparkles,
+  Navigation,
+  Zap,
+  Keyboard,
+} from 'lucide-react'
 import { useLibraryStore } from '@/stores/library.store'
 import { useCloudStore } from '@/stores/cloud.store'
 import { useDebounce } from '@/hooks/useDebounce'
 import { cn } from '@/utils/cn'
 
+type PaletteSection = 'navigation' | 'actions' | 'library' | 'catalog' | 'friends'
+
 interface PaletteItem {
   id: string
-  section: 'library' | 'catalog' | 'friends'
+  section: PaletteSection
   title: string
   subtitle?: string
   thumbnail?: string | null
   link: string
+  /** Optional inline action — when set, invoked instead of router.navigate. */
+  onSelect?: () => void
+  /** Optional icon override (used by navigation/action items without thumbnails). */
+  icon?: typeof Gamepad2
 }
 
 const SECTION_META: Record<
-  PaletteItem['section'],
+  PaletteSection,
   { label: string; icon: typeof Gamepad2 }
 > = {
+  navigation: { label: 'Navigation', icon: Navigation },
+  actions: { label: 'Actions rapides', icon: Zap },
   library: { label: 'Bibliothèque', icon: Gamepad2 },
   catalog: { label: 'Catalogues importés', icon: BookOpen },
   friends: { label: 'Amis', icon: Users },
 }
+
+const NAVIGATION_ITEMS: Array<{
+  keywords: string[]
+  title: string
+  subtitle: string
+  link: string
+  icon: typeof Gamepad2
+}> = [
+  { keywords: ['decouvrir', 'discover', 'home', 'accueil'], title: 'Découvrir', subtitle: 'Tendances & top sorties', link: '/discover', icon: Compass },
+  { keywords: ['catalogue', 'catalog', 'steam'], title: 'Catalogue Steam', subtitle: '~81k jeux', link: '/catalogue', icon: Sparkles },
+  { keywords: ['bibliotheque', 'library', 'jeux'], title: 'Bibliothèque', subtitle: 'Tes jeux installés', link: '/library', icon: LibIcon },
+  { keywords: ['telechargements', 'downloads'], title: 'Téléchargements', subtitle: 'Gestionnaire de transferts', link: '/downloads', icon: DlIcon },
+  { keywords: ['communaute', 'community', 'amis', 'friends'], title: 'Communauté', subtitle: 'Amis, présence, chat', link: '/community', icon: Users },
+  { keywords: ['parametres', 'settings', 'options'], title: 'Paramètres', subtitle: 'Compte, préférences, données', link: '/settings', icon: Settings },
+  { keywords: ['confidentialite', 'privacy'], title: 'Confidentialité', subtitle: 'Visibilité du profil & data', link: '/settings/privacy', icon: Shield },
+  { keywords: ['themes', 'theme', 'couleurs'], title: 'Thèmes', subtitle: 'Palette & personnalisation', link: '/themes', icon: Palette },
+  { keywords: ['addons', 'extensions', 'plugins'], title: 'Addons', subtitle: 'Catalogues de jeux externes', link: '/addons', icon: Puzzle },
+  { keywords: ['big picture', 'bigpicture', 'manette', 'gamepad'], title: 'Big Picture', subtitle: 'Mode plein écran TV', link: '/big-picture', icon: Monitor },
+]
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false)
@@ -136,6 +183,63 @@ export function CommandPalette() {
     const q = query.trim().toLowerCase()
     const out: PaletteItem[] = []
 
+    // Navigation — toujours présent (même sans query) mais filtré quand
+    // l'utilisateur tape. Sans query : on montre les 5 premiers pour
+    // guider le débutant. Avec query : match flou sur title + keywords.
+    const navHits = NAVIGATION_ITEMS.filter((n) => {
+      if (!q) return true
+      return (
+        n.title.toLowerCase().includes(q) ||
+        n.keywords.some((k) => k.includes(q))
+      )
+    })
+      .slice(0, q ? 6 : 5)
+      .map<PaletteItem>((n) => ({
+        id: `nav-${n.link}`,
+        section: 'navigation',
+        title: n.title,
+        subtitle: n.subtitle,
+        thumbnail: null,
+        link: n.link,
+        icon: n.icon,
+      }))
+    out.push(...navHits)
+
+    // Actions rapides — visibles sans query, filtrées avec.
+    const ACTIONS: PaletteItem[] = [
+      {
+        id: 'action-shortcuts',
+        section: 'actions',
+        title: 'Voir les raccourcis clavier',
+        subtitle: 'Cheat sheet · Ctrl+/',
+        thumbnail: null,
+        link: '',
+        icon: Keyboard,
+        onSelect: () => {
+          window.dispatchEvent(
+            new KeyboardEvent('keydown', { key: '/', ctrlKey: true }),
+          )
+        },
+      },
+      {
+        id: 'action-random',
+        section: 'actions',
+        title: 'Jeu aléatoire',
+        subtitle: 'Surprend-moi · dans les catalogues importés',
+        thumbnail: null,
+        link: '',
+        icon: Sparkles,
+        onSelect: async () => {
+          const res = await window.nexus.jsonSources.pickRandom()
+          if (res.ok) router.navigate(`/json-game/${encodeURIComponent(res.game.id)}`)
+        },
+      },
+    ]
+    const actionHits = ACTIONS.filter((a) =>
+      !q ? true : a.title.toLowerCase().includes(q),
+    )
+    out.push(...actionHits)
+
     // Library — local fuzzy match on title and tags. Cap at 8 so
     // the palette stays compact.
     if (q) {
@@ -195,10 +299,14 @@ export function CommandPalette() {
 
   function navigateTo(item: PaletteItem): void {
     setOpen(false)
-    // The palette is mounted at App.tsx alongside (not inside) the
-    // RouterProvider so useNavigate isn't available. Use the
-    // imperative router.navigate — same instance the provider
-    // renders, no context required.
+    if (item.onSelect) {
+      // Action item — invoque directement le callback (peut être
+      // async, on attend pas la promise). Utilisé par "Jeu aléatoire"
+      // et "Voir les raccourcis".
+      void item.onSelect()
+      return
+    }
+    if (!item.link) return
     void router.navigate(item.link)
   }
 
@@ -219,7 +327,9 @@ export function CommandPalette() {
   // Group items by section for rendering. Preserves insertion order
   // so the first match in a category is visible first.
   const groups = useMemo(() => {
-    const map: Record<PaletteItem['section'], PaletteItem[]> = {
+    const map: Record<PaletteSection, PaletteItem[]> = {
+      navigation: [],
+      actions: [],
       library: [],
       catalog: [],
       friends: [],
@@ -236,32 +346,32 @@ export function CommandPalette() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
-          className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-[14vh] px-4"
+          className="fixed inset-0 z-[999] bg-black/70 backdrop-blur-md flex items-start justify-center pt-[12vh] px-4"
           onClick={() => setOpen(false)}
         >
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: -10 }}
+            initial={{ opacity: 0, scale: 0.94, y: -16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: -10 }}
-            transition={{ duration: 0.18 }}
-            className="w-full max-w-xl rounded-xl bg-[#0f1320]/95 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/50 overflow-hidden"
+            exit={{ opacity: 0, scale: 0.94, y: -16 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full max-w-2xl rounded-2xl glass-elevated overflow-hidden shadow-[0_32px_80px_-16px_rgba(0,0,0,0.8),0_0_0_1px_rgba(124,92,255,0.2)]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Search input */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5">
-              <Search className="w-4 h-4 text-fg-muted shrink-0" />
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-glass-border bg-accent-gradient-soft">
+              <Search className="w-5 h-5 text-accent-primary shrink-0" />
               <input
                 ref={inputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Rechercher dans la bibliothèque, les catalogues, les amis…"
-                className="flex-1 bg-transparent outline-none text-sm text-fg-primary placeholder:text-fg-muted/60"
+                placeholder="Bibliothèque, catalogues, amis, paramètres…"
+                className="flex-1 bg-transparent outline-none text-[15px] font-medium text-fg-primary placeholder:text-fg-muted/70"
               />
               {catalogLoading && (
-                <Loader2 className="w-3.5 h-3.5 text-fg-muted animate-spin" />
+                <Loader2 className="w-4 h-4 text-accent-primary animate-spin" />
               )}
-              <kbd className="hidden sm:inline-block text-[10px] font-mono text-fg-muted/70 px-1.5 py-0.5 rounded border border-white/10">
+              <kbd className="hidden sm:inline-block text-[10px] font-mono text-fg-muted px-2 py-1 rounded-md bg-surface-soft border border-glass-border">
                 ESC
               </kbd>
               <button
@@ -275,18 +385,10 @@ export function CommandPalette() {
 
             {/* Results */}
             <div className="max-h-[60vh] overflow-y-auto p-2">
-              {query.trim() === '' && (
+              {query.trim() === '' && items.length === 0 && (
                 <p className="px-3 py-6 text-xs text-fg-muted text-center">
                   Tape pour chercher dans la bibliothèque, les catalogues
                   importés et tes amis.
-                  <br />
-                  <span className="text-fg-muted/70">
-                    <kbd className="text-[10px] font-mono px-1 rounded border border-white/10">↑</kbd>{' '}
-                    <kbd className="text-[10px] font-mono px-1 rounded border border-white/10">↓</kbd>{' '}
-                    pour naviguer ·{' '}
-                    <kbd className="text-[10px] font-mono px-1 rounded border border-white/10">Entrée</kbd>{' '}
-                    pour ouvrir
-                  </span>
                 </p>
               )}
 
@@ -296,34 +398,43 @@ export function CommandPalette() {
                 </p>
               )}
 
-              {(['library', 'catalog', 'friends'] as const).map((section) => {
+              {(['navigation', 'actions', 'library', 'catalog', 'friends'] as const).map((section) => {
                 const list = groups[section]
                 if (list.length === 0) return null
                 const Meta = SECTION_META[section]
-                const Icon = Meta.icon
+                const SectionIcon = Meta.icon
                 return (
-                  <div key={section} className="mb-2 last:mb-0">
-                    <div className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-fg-muted">
-                      <Icon className="w-3 h-3" />
+                  <div key={section} className="mb-3 last:mb-0">
+                    <div className="flex items-center gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-fg-muted">
+                      <SectionIcon className="w-3 h-3" />
                       {Meta.label}
                     </div>
                     {list.map((item) => {
                       const idx = items.indexOf(item)
                       const active = idx === activeIndex
+                      const ItemIcon = item.icon ?? SectionIcon
                       return (
                         <button
                           key={item.id}
                           onMouseEnter={() => setActiveIndex(idx)}
                           onClick={() => navigateTo(item)}
                           className={cn(
-                            'w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-colors',
+                            'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-150',
                             active
-                              ? 'bg-accent-primary/15 text-fg-primary'
-                              : 'text-fg-secondary hover:bg-white/[0.04]',
+                              ? 'bg-accent-gradient-soft text-fg-primary border border-accent-primary/30'
+                              : 'text-fg-secondary hover:bg-surface-soft border border-transparent',
                           )}
                         >
-                          {/* Thumb */}
-                          <div className="shrink-0 w-9 h-9 rounded-md overflow-hidden bg-white/5 flex items-center justify-center">
+                          <div
+                            className={cn(
+                              'shrink-0 w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center transition-colors',
+                              item.thumbnail
+                                ? 'bg-surface-soft'
+                                : active
+                                ? 'bg-accent-gradient text-white shadow-[0_2px_8px_-2px_rgba(124,92,255,0.5)]'
+                                : 'bg-surface-soft text-fg-muted',
+                            )}
+                          >
                             {item.thumbnail ? (
                               <img
                                 src={item.thumbnail}
@@ -331,13 +442,13 @@ export function CommandPalette() {
                                 className="w-full h-full object-cover"
                               />
                             ) : (
-                              <Icon className="w-4 h-4 text-fg-muted" />
+                              <ItemIcon className="w-4 h-4" />
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{item.title}</p>
+                            <p className="text-sm font-semibold truncate">{item.title}</p>
                             {item.subtitle && (
-                              <p className="text-[11px] text-fg-muted truncate">{item.subtitle}</p>
+                              <p className="text-[11px] text-fg-muted truncate mt-0.5">{item.subtitle}</p>
                             )}
                           </div>
                           {active && (
@@ -349,6 +460,27 @@ export function CommandPalette() {
                   </div>
                 )
               })}
+            </div>
+            {/* Footer — hints clavier */}
+            <div className="px-5 py-3 border-t border-glass-border bg-surface-soft/50 flex items-center justify-between text-[10px] uppercase tracking-widest text-fg-muted">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded bg-surface-soft border border-glass-border font-mono text-[9px] text-fg-secondary">↑</kbd>
+                  <kbd className="px-1.5 py-0.5 rounded bg-surface-soft border border-glass-border font-mono text-[9px] text-fg-secondary">↓</kbd>
+                  Navig.
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded bg-surface-soft border border-glass-border font-mono text-[9px] text-fg-secondary">↵</kbd>
+                  Ouvrir
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded bg-surface-soft border border-glass-border font-mono text-[9px] text-fg-secondary">esc</kbd>
+                  Fermer
+                </span>
+              </div>
+              <span className="text-fg-muted">
+                {items.length} résultat{items.length !== 1 ? 's' : ''}
+              </span>
             </div>
           </motion.div>
         </motion.div>

@@ -12,7 +12,12 @@ import { LoadingSpinner } from './components/ui/LoadingSpinner'
 // local DB automatically (see cloud.store::mirrorCloudToLocal), so
 // the rest of the launcher still sees a populated useAuthStore.user
 // without the user ever filling a second form.
-const HomePage = lazy(() => import('./pages/home/HomePage'))
+//
+// v0.3.1: the standalone Home page was removed — it was a content
+// duplicate of Library (same hero, same "Continue playing", same
+// recents). Discover is now the canonical landing surface. The
+// HomePage module is gone; `/` redirects straight to /discover
+// via the index route below.
 const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'))
 const PrivacyPage = lazy(() => import('./pages/settings/PrivacyPage'))
 const ThemesPage = lazy(() => import('./pages/themes/ThemesPage'))
@@ -20,6 +25,8 @@ const AddonsPage = lazy(() => import('./pages/addons/AddonsPage'))
 const DiscoverPage = lazy(() => import('./pages/discover/DiscoverPage'))
 const GamePage = lazy(() => import('./pages/game/GamePage'))
 const JsonGamePage = lazy(() => import('./pages/game/JsonGamePage'))
+const SteamGamePage = lazy(() => import('./pages/game/SteamGamePage'))
+const CataloguePage = lazy(() => import('./pages/catalogue/CataloguePage'))
 const DownloadsPage = lazy(() => import('./pages/downloads/DownloadsPage'))
 const LibraryPage = lazy(() => import('./pages/library/LibraryPage'))
 const CommunityPage = lazy(() => import('./pages/community/CommunityPage'))
@@ -95,7 +102,10 @@ export const router = createHashRouter([
     path: '/',
     element: <AuthGate />,
     children: [
-      { index: true, element: lazyElement(HomePage) },
+      // v0.3.1: index → /discover (Home page removed). Using Navigate
+      // instead of mounting DiscoverPage twice avoids two parallel
+      // store subscriptions on the same data.
+      { index: true, element: <Navigate to="/discover" replace /> },
       { path: 'discover', element: lazyElement(DiscoverPage) },
       { path: 'library', element: lazyElement(LibraryPage) },
       { path: 'downloads', element: lazyElement(DownloadsPage) },
@@ -112,6 +122,8 @@ export const router = createHashRouter([
       { path: 'settings/privacy', element: lazyElement(PrivacyPage) },
       { path: 'game/:addonId/:gameId', element: lazyElement(GamePage) },
       { path: 'json-game/:gameId', element: lazyElement(JsonGamePage) },
+      { path: 'steam-game/:appid', element: lazyElement(SteamGamePage) },
+      { path: 'catalogue', element: lazyElement(CataloguePage) },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

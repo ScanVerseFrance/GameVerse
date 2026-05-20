@@ -11,7 +11,7 @@ interface ModalProps {
   children: ReactNode
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl'
   closeOnBackdrop?: boolean
-  /** Strip the default p-7 padding from the body — needed by tabbed
+  /** Strip the default padding from the body — needed by tabbed
    *  layouts (Hydra-style Propriétés) where the inner shell renders
    *  its own sidebar/content split full-bleed. */
   noPadding?: boolean
@@ -56,32 +56,34 @@ export function Modal({
           transition={{ duration: 0.18 }}
         >
           <div
-            className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/65 backdrop-blur-md"
             onClick={closeOnBackdrop ? onClose : undefined}
           />
           <motion.div
-            // max-h + flex-col so the body can scroll independently while
-            // the header stays pinned — required for the new wide Properties
-            // dialog whose 2-col content can outgrow the viewport on
-            // smaller windows.
             className={cn(
-              'relative w-full glass-strong rounded-xl shadow-lift overflow-hidden flex flex-col max-h-[90vh]',
+              'relative w-full glass-elevated rounded-2xl overflow-hidden flex flex-col max-h-[90vh]',
               maxWidthClass[maxWidth]
             )}
-            initial={{ opacity: 0, scale: 0.96, y: 12 }}
+            initial={{ opacity: 0, scale: 0.94, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 12 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            exit={{ opacity: 0, scale: 0.94, y: 16 }}
+            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
           >
             {(title || description) && (
-              <div className="px-7 pt-6 pb-4 flex items-start justify-between gap-4 border-b border-border-soft shrink-0">
+              <div className="px-7 pt-6 pb-4 flex items-start justify-between gap-4 border-b border-glass-border shrink-0">
                 <div className="flex-1 min-w-0">
-                  {title && <h2 className="font-display font-bold text-xl text-fg-primary">{title}</h2>}
-                  {description && <p className="text-sm text-fg-secondary mt-1">{description}</p>}
+                  {title && (
+                    <h2 className="font-display font-bold text-xl text-fg-primary tracking-tight">
+                      {title}
+                    </h2>
+                  )}
+                  {description && (
+                    <p className="text-sm text-fg-secondary mt-1.5">{description}</p>
+                  )}
                 </div>
                 <button
                   onClick={onClose}
-                  className="p-2 -m-2 rounded-sm text-fg-muted hover:bg-[var(--surface-soft)] hover:text-fg-primary transition-colors"
+                  className="p-2 -m-2 rounded-md text-fg-muted hover:bg-surface-soft hover:text-fg-primary transition-colors"
                   aria-label="Fermer"
                 >
                   <X className="w-4 h-4" />

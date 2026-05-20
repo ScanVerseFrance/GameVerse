@@ -59,6 +59,81 @@ export function compareVersions(a: string, b: string): number {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.3.2',
+    date: '2026-05-20',
+    title: 'Sauvegardes cloud — gestionnaire complet + cross-PC + fixes flicker',
+    highlights: [
+      'Nouveau modal "Sauvegardes" : courante + 3 versions précédentes, restaurer / supprimer / forcer l\'envoi',
+      'Restore cross-PC : ta save de djemo arrive bien dans PCTEST2/AppData/… via les redirects Ludusavi',
+      'Anti-écrasement : si la save locale est nettement plus petite que le cloud, on bloque l\'upload',
+      'Indicateur Local : badge "= LOCAL" sur la version cloud qui correspond à ton disque, sortie en haut de liste',
+      'Cloud déco/reco toutes les secondes — réglé, plus de flicker du badge en haut',
+      'Conflit au launch déclenché aussi sur le même PC (le bug qui t\'a fait perdre 20Ko)',
+      'Backend : rétention auto à 4 versions par jeu (la plus récente + 3 backups)',
+    ],
+    changes: [
+      // === SavesModal ===
+      { kind: 'feat', text: 'Modal "Sauvegardes" sur la page jeu : liste les 4 versions cloud (rétention auto), boutons Restaurer / Supprimer par ligne, "Sauvegarder maintenant" en haut, "Ouvrir le dossier local" en footer.' },
+      { kind: 'feat', text: 'Badge "DERNIÈRE CLOUD" (bleu) sur la version la plus récente uploadée et badge "= LOCAL" (vert) sur celle qui correspond exactement à ce qui est sur disque maintenant. La ligne matchée est épinglée en position 0.' },
+      { kind: 'feat', text: 'Status row en haut du modal : "Local : 6 Ko · 4 fichiers · modifié 20/05 00:26" (vert) ou "Local : vide — aucun fichier de sauvegarde" (rouge). Plus de confusion sur ce qui est sur ton PC vs dans le cloud.' },
+      { kind: 'feat', text: 'Bouton "Forcer l\'envoi" quand la garde anti-écrasement bloque — confirm dialog explicite avant d\'overwrite le cloud avec une save plus petite.' },
+      // === Anti-écrasement ===
+      { kind: 'feat', text: 'Garde anti-shrink avant chaque upload : si le tar local fait moins de 50% de la taille du dernier cloud, on bloque l\'upload, on remonte le snapshot cloud au renderer, et on laisse l\'utilisateur choisir Restaurer / Forcer.' },
+      { kind: 'fix', text: 'Le toast après quit indique désormais "Save locale beaucoup plus petite que le cloud — Cloud 20Ko → local 6Ko. Cloud intact." au lieu d\'écraser silencieusement la version précédente.' },
+      // === Conflict dialog ===
+      { kind: 'fix', text: 'Le dialog de conflit au launch s\'ouvre maintenant dès que le cloud est plus récent que le local, même sur le même PC (la garde "fromDifferentHost" empêchait l\'avertissement quand tu effaçais des saves localement par erreur).' },
+      { kind: 'fix', text: 'X en haut-droite du dialog de conflit ferme JUSTE le modal sans lancer le jeu. Le bouton "Annuler" en bas garde l\'ancien comportement (close + launch avec la save locale).' },
+      { kind: 'fix', text: '"Garder local" envoie maintenant avec force=true — la garde anti-shrink ne peut plus skipper silencieusement un choix explicite de l\'utilisateur.' },
+      // === Cross-PC restore ===
+      { kind: 'feat', text: 'Restore cross-PC : avant chaque restore, le launcher détecte le username d\'origine dans mapping.yaml (C:/Users/djemo/…) et ajoute un redirect kind=restore dans le config.yaml de Ludusavi si ton user actuel diffère. Idempotent — un re-restore depuis la même machine source n\'ajoute pas de doublon.' },
+      { kind: 'feat', text: 'Sémantique Steam-style : avant chaque restore, le dossier de save local est wipé (rm -rf + mkdir) puis Ludusavi écrit le snapshot. Les fichiers extras (mods, backups perso) disparaissent — le local devient un miroir exact du cloud.' },
+      // === Backend ===
+      { kind: 'feat', text: 'Backend : après chaque upload, le serveur purge les artifacts au-delà des 4 plus récents pour (shop, objectId). Best-effort post-commit — un échec de prune ne rollback pas l\'upload.' },
+      { kind: 'feat', text: 'Permissions du volume cloud : le conteneur démarre en root, chown /var/nexus-cloud/saves vers node:node via docker-entrypoint.sh, puis drop privs via su-exec. Plus de 500 EACCES sur le POST /v1/saves/artifacts.' },
+      // === WebSocket flicker ===
+      { kind: 'fix', text: 'Cloud connect/disconnect en boucle à chaque seconde — réglé. openSocket() refuse de fermer une WS saine quand un appel parallèle arrive (React StrictMode double-mount). L\'event "open" annule tout timer de reconnect en attente. Stabilité 5s avant de reset le backoff.' },
+      { kind: 'feat', text: 'Heartbeat ping toutes les 30s pour empêcher Traefik (et les autres reverse-proxies idle-timeout) de couper la WS au bout de 60s d\'inactivité.' },
+      { kind: 'polish', text: 'Logs [cloud-ws] structurés (open / close / error / skip) pour diagnostiquer rapidement les futurs problèmes de connexion.' },
+      // === Misc ===
+      { kind: 'fix', text: 'Bug pré-existant : Ludusavi restore recevait notre objectId interne (jsg-…) au lieu du nom PCGamingWiki ("Geometry Dash"). Ludusavi répondait "No info for these games" et le restore échouait sur tous les jeux. Maintenant on passe ludusaviGameName(game.title) comme dans uploadGameSave.' },
+      { kind: 'polish', text: 'previewBackup expose maintenant latestMtime (newest mtime des fichiers Ludusavi) pour permettre au modal de matcher local ↔ cloud sans relire le disque dans le renderer.' },
+    ],
+  },
+  {
+    version: '0.3.1',
+    date: '2026-05-19',
+    title: 'Audit Nexus suite — avis étoilés + tendances + onglet Accueil retiré',
+    highlights: [
+      'Onglet Accueil supprimé — l\'app ouvre direct sur Découvrir',
+      'Avis avec note 0-5 étoiles dorées + spoilers ||texte|| (style Discord)',
+      'Carousels "Tendances", "Meilleurs jeux", "Pépites cachées" via Steam-250',
+      'Bouton Aléatoire dans la nav top — surprise depuis tes catalogues',
+      'Audio vs sous-titres distingués pour chaque langue',
+      'Tooltips catégorie traduits FR (plus de "Steam Cloud", "Steam Achievements"…)',
+      'Icône Trading Cards + 7 autres IDs manquants — SVG inline fallback',
+    ],
+    changes: [
+      // === Reviews / Stars / Spoiler ===
+      { kind: 'feat', text: 'Système d\'avis : composer avec note étoiles dorées 0-5 (StarRating), spoilers Discord ||texte|| cliquables pour révéler, parser tolérant aux ||markers|| non fermés.' },
+      { kind: 'feat', text: 'Note moyenne agrégée par jeu (ratingSummary IPC) + histogramme distribution + bulk ratingSummariesBulk pour hydrater une grille en un round-trip.' },
+      { kind: 'feat', text: 'Compteur de téléchargements total par jeu (LOCAL pour le moment — count des statuts completed dans la table downloads).' },
+      { kind: 'breaking', text: 'Migration DB : ALTER TABLE game_comments ADD COLUMN rating — backfill à 0. Les anciens commentaires apparaissent maintenant comme avis sans note.' },
+      // === Navigation ===
+      { kind: 'feat', text: 'L\'app ouvre directement sur Découvrir au lancement. L\'onglet Accueil (doublon de Bibliothèque) est supprimé du top nav. Le router redirige / → /discover automatiquement.' },
+      { kind: 'feat', text: 'Bouton "Aléatoire" dans le top nav (icône 🎲) → pick un jeu random parmi tes sources importées + navigate vers sa page. Désactivé silencieusement si aucune source.' },
+      // === Steam-250 Discover ===
+      { kind: 'feat', text: 'Carousels en haut de Découvrir : "Tendances" (top-100 derniers 15j), "Meilleurs jeux de la semaine" (best-of-year), "Pépites cachées". Couvers via Steam CDN library_600x900 avec fallback header.jpg.' },
+      // === Icônes catégorie ===
+      { kind: 'fix', text: 'Tooltips catégorie passent de "Steam Cloud / Steam Achievements / Steam Trading Cards" aux libellés Nexus FR ("Cloud", "Succès", "Cartes à échanger", "Sous-titres adaptés"…).' },
+      { kind: 'feat', text: 'SVG inline fallback pour les 8 IDs Steam que steamdb.info/static/img/categories/ ne sert pas : Trading Cards (29), Stats (11/15), SDK (16), Mods (19), Leaderboards (25), Commentary (26), VR Collectibles (34).' },
+      // === Languages audio/subs ===
+      { kind: 'feat', text: 'Langues : distinction audio doublé vs sous-titres uniquement. Pastille verte ● pour les langues avec audio complet, pastille grise ○ pour sous-titres only. Légende inline.' },
+      { kind: 'fix', text: 'Cache Steam meta bump (schema v3) → re-fetch automatique pour récupérer le champ languagesDetailed.' },
+      // === HLTB et succès (rappel v0.3.0) ===
+      { kind: 'polish', text: 'HLTB toujours live via /api/bleed reverse-engineering (Hollow Knight 27h, Spider-Man 2 17h, Elden Ring 60h, 14/15 jeux testés).' },
+    ],
+  },
+  {
     version: '0.3.0',
     date: '2026-05-19',
     title: 'Audit Hydra complet — HLTB v2 + 11 nouvelles features',

@@ -38,6 +38,11 @@ export interface DedupedGame {
   groupKey: string
   /** Combined entry count for the badge "X sources". */
   sourceCount: number
+  /** Distinct repacker names in the group (deduped, order-preserved
+   *  by first occurrence). Surface as chips on the tile so the user
+   *  sees "FitGirl · AnkerGames · DODI" at a glance — same pattern
+   *  Hydra renders on the Subnautica 2 card. */
+  sourceNames: string[]
   /** The variant ID the tile should use for the artwork lookup. Per
    *  user spec: when ANY variant in the group is from AnkerGames,
    *  we prefer its cover over the primary's (AnkerGames ships
@@ -234,19 +239,27 @@ export function dedupeGamesAcrossSources(games: JsonSourceSearchHit[]): DedupedG
     parsed.set(g.id, parseGameTitle(g.title))
   }
 
-  // Group by normalised base name. Map insertion order preserves
-  // first-occurrence order, which we use as the output order so
-  // upstream sorts stay stable.
+  // Group by canonical Steam appid when available (Hydra-style),
+  // fall back to normalised title key otherwise.
   //
-  // We feed the RAW title (not parseGameTitle.name) into the
-  // normaliser because parseGameTitle has historically over-eaten
-  // file-size numbers as versions ("3.4 GB" → version: 3.4,
-  // name: "GB-suffix-left") which broke grouping. Our normaliser
-  // is strict enough to handle the raw form directly.
+  // The appid is resolved at import time by steam-apps.service —
+  // every game that matched the GetAppList mirror carries the
+  // canonical key. Two FitGirl + AnkerGames entries of "Marvel's
+  // Spider-Man 2" both resolve to appid 2651280 and collapse into
+  // a single tile, regardless of how messy the repacker titles
+  // are.
+  //
+  // Rows without a resolved appid (genuinely non-Steam games, or
+  // titles too garbled for the matcher) fall back to the legacy
+  // title-based grouping. Same Map for both paths preserves
+  // insertion order so upstream sorts stay stable.
   const groups = new Map<string, JsonSourceSearchHit[]>()
   for (const g of games) {
-    const key = normaliseGroupKey(g.title)
-    if (!key) continue
+    const key =
+      g.steamAppid && g.steamAppid > 0
+        ? `appid:${g.steamAppid}`
+        : `title:${normaliseGroupKey(g.title)}`
+    if (key === 'title:') continue // empty normalised title
     const bucket = groups.get(key)
     if (bucket) bucket.push(g)
     else groups.set(key, [g])
@@ -261,6 +274,7 @@ export function dedupeGamesAcrossSources(games: JsonSourceSearchHit[]): DedupedG
         alternatives: [],
         groupKey: key,
         sourceCount: 1,
+        sourceNames: [only.sourceName],
         coverSourceId: only.id,
       })
       continue
@@ -279,11 +293,24 @@ export function dedupeGamesAcrossSources(games: JsonSourceSearchHit[]): DedupedG
     // else (download links, etc.) — only the artwork lookup is
     // re-routed.
     const ankerVariant = entries.find((e) => isAnkerGamesSource(e.sourceName))
+    // Distinct source names, ordered by their appearance in `scored`
+    // so the highest-quality variant (and its source name) leads
+    // the list. Deduped via a Set so "FitGirl" doesn't appear
+    // twice when the same repacker ships 2 editions of the game.
+    const seenNames = new Set<string>()
+    const sourceNames: string[] = []
+    for (const { g } of scored) {
+      if (!seenNames.has(g.sourceName)) {
+        seenNames.add(g.sourceName)
+        sourceNames.push(g.sourceName)
+      }
+    }
     out.push({
       primary,
       alternatives: scored.slice(1).map((s) => s.g),
       groupKey: key,
       sourceCount: entries.length,
+      sourceNames,
       coverSourceId: ankerVariant ? ankerVariant.id : primary.id,
     })
   }

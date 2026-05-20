@@ -1829,20 +1829,31 @@ export default function SettingsPage() {
     // overflow-x scrolls horizontally on small viewports so the
     // 11-tab list never wraps awkwardly.
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-10 pb-24">
-      {/* Header — gear icon + title + subtitle, ScanVerse-style */}
+      {/* Header — glassmorphism hero card with accent glow */}
       <motion.div
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35 }}
-        className="mb-6 sm:mb-8"
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="relative mb-7 rounded-2xl glass-card p-6 overflow-hidden"
       >
-        <h1 className="font-display font-bold text-3xl text-fg-primary flex items-center gap-3">
-          <SlidersHorizontal className="w-6 h-6 text-fg-muted" />
-          Paramètres
-        </h1>
-        <p className="text-sm text-fg-secondary mt-1">
-          Gère ton compte, tes préférences et tes données.
-        </p>
+        <div
+          aria-hidden
+          className="absolute -top-10 -right-10 w-44 h-44 rounded-full opacity-50"
+          style={{ background: 'radial-gradient(circle, rgba(124,92,255,0.45), transparent 70%)', filter: 'blur(40px)' }}
+        />
+        <div className="relative flex items-center gap-4">
+          <div className="relative w-14 h-14 rounded-2xl bg-accent-gradient flex items-center justify-center shadow-[0_8px_24px_-8px_rgba(124,92,255,0.6)]">
+            <SlidersHorizontal className="w-7 h-7 text-white" />
+          </div>
+          <div>
+            <h1 className="font-display font-bold text-3xl text-fg-primary tracking-tight">
+              <span className="text-gradient">Paramètres</span>
+            </h1>
+            <p className="text-sm text-fg-secondary mt-1">
+              Gère ton compte, tes préférences et tes données.
+            </p>
+          </div>
+        </div>
       </motion.div>
 
       {/* Pill tab strip. Scrolls horizontally on mobile / narrow
@@ -1850,10 +1861,10 @@ export default function SettingsPage() {
           11-tab strip stays clean. */}
       <div
         className="
-          flex gap-1 mb-6 sm:mb-8 p-1 rounded-xl
-          -mx-4 sm:mx-0 px-4 sm:px-1
+          flex gap-1 mb-7 sm:mb-8 p-1.5 rounded-full
+          -mx-4 sm:mx-0 px-4 sm:px-1.5
           overflow-x-auto no-scrollbar whitespace-nowrap
-          bg-[var(--surface-soft)] border border-glass-border
+          glass-card
         "
       >
         {TAB_ITEMS.map((t) => {
@@ -1863,10 +1874,10 @@ export default function SettingsPage() {
               key={t.value}
               onClick={() => setTab(t.value)}
               className={cn(
-                'shrink-0 flex items-center justify-center gap-2 px-4 min-h-[40px] rounded-lg text-sm font-semibold transition-colors',
+                'shrink-0 flex items-center justify-center gap-2 px-4 min-h-[40px] rounded-full text-sm font-semibold transition-all duration-200',
                 isActive
-                  ? 'bg-accent-gradient text-white shadow-sm'
-                  : 'text-fg-muted hover:text-fg-primary hover:bg-[var(--surface-soft-hover)]',
+                  ? 'bg-accent-gradient text-white shadow-[0_4px_16px_-4px_rgba(124,92,255,0.5)]'
+                  : 'text-fg-muted hover:text-fg-primary hover:bg-surface-soft',
               )}
             >
               {t.icon}

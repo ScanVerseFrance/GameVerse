@@ -3,46 +3,68 @@
 @tailwind utilities;
 
 :root {
-  /* Steam-inspired palette: deep navy chrome + Steam install-green accent.
-     Surfaces are mostly opaque blue-greys (Steam doesn't lean on glass); the
-     glass tokens are kept for the few overlays that still use them. */
-  --bg-primary: #1b2838;
-  --bg-secondary: #171a21;
-  --bg-tertiary: #2a475e;
-  --bg-card: rgba(42, 71, 94, 0.55);
-  --bg-hover: rgba(102, 192, 244, 0.10);
-  --text-primary: #ebebeb;
-  --text-secondary: #c7d5e0;
-  --text-muted: #8f98a0;
-  --accent-primary: #88c057;
-  --accent-secondary: #5ba32b;
-  --accent-gradient: linear-gradient(135deg, #88c057, #5ba32b);
-  --success: #5ba32b;
-  --warning: #d9b41a;
-  --error: #e64a3a;
-  --border: rgba(199, 213, 224, 0.08);
-  --glass: rgba(102, 192, 244, 0.04);
-  --glass-border: rgba(102, 192, 244, 0.14);
-  --surface-soft: rgba(102, 192, 244, 0.05);
-  --surface-soft-hover: rgba(102, 192, 244, 0.10);
-  --surface-medium: rgba(102, 192, 244, 0.14);
-  --surface-strong: rgba(102, 192, 244, 0.20);
-  --surface-soft-border: rgba(199, 213, 224, 0.14);
-  --scrollbar-thumb: rgba(102, 192, 244, 0.16);
-  --scrollbar-thumb-hover: rgba(102, 192, 244, 0.32);
-  --selection-bg: rgba(91, 163, 43, 0.40);
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
-  --radius-xl: 16px;
-  --titlebar-height: 36px;
-  --sidebar-width: 240px;
-  --sidebar-width-collapsed: 64px;
-  --statusbar-height: 28px;
-  --font-display: 'Syne';
-  --font-body: 'Syne';
+  /* ─── Nexus Launcher v0.4 — Glassmorphism Violet ────────────────
+     Refonte complète vers une palette sombre profonde avec accent
+     violet doux (#7c5cff). Les surfaces sont semi-transparentes avec
+     blur pour le glassmorphism, les bordures sont fines, les rayons
+     sont généreux pour un rendu doux et moderne. */
+  --bg-primary: #0a0a12;
+  --bg-secondary: #0f0f1a;
+  --bg-tertiary: #16162a;
+  --bg-card: rgba(20, 20, 35, 0.55);
+  --bg-hover: rgba(124, 92, 255, 0.08);
+  --bg-elevated: rgba(28, 28, 48, 0.85);
+  --text-primary: #f5f5fb;
+  --text-secondary: #c8c8d8;
+  --text-muted: #8585a0;
+  --text-faint: #5a5a73;
+  --accent-primary: #7c5cff;
+  --accent-secondary: #a78bff;
+  --accent-tertiary: #5b3cff;
+  --accent-gradient: linear-gradient(135deg, #7c5cff 0%, #a78bff 50%, #ff7ac8 100%);
+  --accent-gradient-soft: linear-gradient(135deg, rgba(124, 92, 255, 0.18), rgba(167, 139, 255, 0.12));
+  --accent-glow: rgba(124, 92, 255, 0.45);
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.15);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.15);
+  --error: #f87171;
+  --error-soft: rgba(248, 113, 113, 0.15);
+  --info: #60a5fa;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.10);
+  --glass: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.5);
+  --surface-soft: rgba(255, 255, 255, 0.03);
+  --surface-soft-hover: rgba(255, 255, 255, 0.06);
+  --surface-medium: rgba(255, 255, 255, 0.08);
+  --surface-strong: rgba(255, 255, 255, 0.12);
+  --surface-soft-border: rgba(255, 255, 255, 0.10);
+  --scrollbar-thumb: rgba(124, 92, 255, 0.20);
+  --scrollbar-thumb-hover: rgba(124, 92, 255, 0.45);
+  --selection-bg: rgba(124, 92, 255, 0.35);
+  /* Rayons généreux pour le look moderne/doux */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --radius-full: 9999px;
+  --titlebar-height: 38px;
+  --sidebar-width: 248px;
+  --sidebar-width-collapsed: 72px;
+  --statusbar-height: 30px;
+  --font-display: 'Inter';
+  --font-body: 'Inter';
   --font-mono: 'JetBrains Mono';
-  --blur-strength: 20px;
+  --blur-strength: 24px;
+  /* Aurora background layers — used by the app shell to give a subtle
+     animated colour wash under everything, a-la Linear / Vercel landing. */
+  --aurora-1: radial-gradient(ellipse 1200px 800px at 8% -10%, rgba(124, 92, 255, 0.22), transparent 60%);
+  --aurora-2: radial-gradient(ellipse 900px 600px at 95% 5%, rgba(255, 122, 200, 0.16), transparent 55%);
+  --aurora-3: radial-gradient(ellipse 1000px 700px at 50% 110%, rgba(91, 60, 255, 0.20), transparent 60%);
 }
 
 @layer base {
@@ -55,22 +77,25 @@
     padding: 0;
   }
   body {
-    font-family: var(--font-body), 'Syne', 'Inter', system-ui, sans-serif;
+    font-family: var(--font-body), 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     background: var(--bg-primary);
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow: hidden;
     user-select: none;
+    /* Static aurora wash beneath every page. Subtle so it doesn't
+       distract from content — just enough to soften the pure-dark
+       background. Layered with multiple radial gradients for organic
+       colour transitions. */
+    background-image: var(--aurora-1), var(--aurora-2), var(--aurora-3);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
   }
-  /* Toast overlay mode — the floating Electron window relies on a
-     fully transparent DOM tree so only the toast cards are painted
-     above the desktop. Without this override the body's --bg-primary
-     fills the whole 400×700 window in opaque dark navy and the user
-     sees a giant rectangle instead of a discrete floating toast. */
   body.toast-overlay,
   body.toast-overlay #root {
     background: transparent !important;
+    background-image: none !important;
   }
   *,
   *::before,
@@ -82,9 +107,7 @@
     font-family: inherit;
     user-select: text;
   }
-  /* Custom scrollbar — Steam-like: nearly invisible at rest, tints in on hover.
-   * Applied globally so every overflow:auto element inherits the same look
-   * (horizontal galleries, modals, sidebars, the Properties dialog, etc.) */
+  /* Scrollbar moderne — invisible au repos, prend la teinte accent en hover */
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -97,21 +120,17 @@
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: padding-box;
-    transition: background-color 180ms ease;
+    transition: background-color 220ms ease;
   }
   ::-webkit-scrollbar-thumb:hover {
     background-color: var(--scrollbar-thumb-hover);
   }
   ::-webkit-scrollbar-thumb:active {
-    background-color: rgba(91, 163, 43, 0.55);
+    background-color: var(--accent-primary);
   }
-  /* Kill the corner where vertical + horizontal bars meet — looks like a
-   * grey square otherwise on multi-scroll containers. */
   ::-webkit-scrollbar-corner {
     background: transparent;
   }
-  /* Firefox fallback (rarely used in Electron but keeps the styling
-   * consistent if someone opens the renderer in a non-Chromium webview). */
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
@@ -120,9 +139,14 @@
     background: var(--selection-bg);
     color: var(--text-primary);
   }
+  /* Focus rings cohérents — anneau accent doux, jamais le default ugly outline */
+  *:focus-visible {
+    outline: none;
+  }
 }
 
 @layer utilities {
+  /* ─── Glassmorphism core utilities ────────────────────────────── */
   .glass {
     background: var(--glass);
     backdrop-filter: blur(var(--blur-strength)) saturate(160%);
@@ -130,10 +154,24 @@
     border: 1px solid var(--glass-border);
   }
   .glass-strong {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(calc(var(--blur-strength) + 8px)) saturate(180%);
-    -webkit-backdrop-filter: blur(calc(var(--blur-strength) + 8px)) saturate(180%);
+    background: rgba(20, 20, 35, 0.70);
+    backdrop-filter: blur(calc(var(--blur-strength) + 12px)) saturate(180%);
+    -webkit-backdrop-filter: blur(calc(var(--blur-strength) + 12px)) saturate(180%);
     border: 1px solid var(--glass-border);
+  }
+  .glass-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+    backdrop-filter: blur(var(--blur-strength)) saturate(160%);
+    -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(160%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  .glass-elevated {
+    background: var(--bg-elevated);
+    backdrop-filter: blur(calc(var(--blur-strength) + 16px)) saturate(180%);
+    -webkit-backdrop-filter: blur(calc(var(--blur-strength) + 16px)) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 24px 64px -16px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
   .text-gradient {
     background: var(--accent-gradient);
@@ -141,21 +179,104 @@
     background-clip: text;
     color: transparent;
   }
+  .accent-glow {
+    box-shadow: 0 0 24px -4px var(--accent-glow);
+  }
+  .accent-glow-strong {
+    box-shadow: 0 0 48px -8px var(--accent-glow), 0 0 16px -2px var(--accent-glow);
+  }
+  /* Hover lift utility for interactive cards */
+  .lift-on-hover {
+    transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 280ms cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 280ms ease;
+  }
+  .lift-on-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 40px -16px rgba(124, 92, 255, 0.35), 0 8px 20px -8px rgba(0, 0, 0, 0.6);
+    border-color: rgba(124, 92, 255, 0.30);
+  }
   .drag-region {
     -webkit-app-region: drag;
   }
   .no-drag {
     -webkit-app-region: no-drag;
   }
-  /* Hide the native scrollbar but keep scroll behaviour. Used by
-     pill-tab strips that overflow horizontally on narrow viewports
-     (Settings page, Discover filter chips). Ported from ScanVerse. */
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
   .no-scrollbar {
     scrollbar-width: none;
     -ms-overflow-style: none;
+  }
+  /* Animated gradient border — wraps the child in a violet→pink frame
+     that breathes. Used for highlighted cards / featured items. */
+  .gradient-border {
+    position: relative;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+  }
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    background: var(--accent-gradient);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+  }
+  /* Range slider — thumb stylé violet, halo focus, hover lift. Utilisé
+     par le composant Slider (range input + barre de progression jumelle).
+     Vit ici plutôt qu'inline dans le .tsx pour éviter un <style> dans
+     l'arbre React et permettre le re-skin via les CSS variables. */
+  .slider-thumb::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ffffff, #e5e5f5);
+    border: 2px solid var(--accent-primary);
+    box-shadow: 0 2px 8px -2px rgba(124, 92, 255, 0.6),
+                0 0 0 4px rgba(124, 92, 255, 0.12);
+    cursor: pointer;
+    transition: transform 180ms ease, box-shadow 180ms ease;
+  }
+  .slider-thumb::-webkit-slider-thumb:hover {
+    transform: scale(1.12);
+    box-shadow: 0 4px 12px -2px rgba(124, 92, 255, 0.75),
+                0 0 0 6px rgba(124, 92, 255, 0.18);
+  }
+  .slider-thumb::-webkit-slider-thumb:active {
+    transform: scale(0.95);
+  }
+  .slider-thumb::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ffffff, #e5e5f5);
+    border: 2px solid var(--accent-primary);
+    cursor: pointer;
+  }
+
+  /* Skeleton shimmer for loading states */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--surface-soft) 0%,
+      var(--surface-medium) 50%,
+      var(--surface-soft) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.6s linear infinite;
+  }
+  @keyframes skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 }
 
@@ -168,9 +289,8 @@ body.no-animations *::after {
 }
 
 /* ──────────── Username customisation animations ────────────
-   Applied per-user via the `username-*` classes when the user picks one in
-   Settings → Compte → Personnalisation du pseudo. Kept here (rather than as
-   a Tailwind plugin) so they're easy to extend with new effects. */
+   Préservées depuis v0.3 — la palette change mais l'API utilisateur
+   reste identique. */
 @keyframes username-shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
@@ -215,11 +335,6 @@ body.no-animations *::after {
   animation: username-pulse 2.4s ease-in-out infinite;
 }
 
-/* Glitch — RGB-split via two pseudo-elements offset in opposite
-   directions. The pseudo-elements use ::before content from a CSS
-   custom prop set inline; we read the username text via the
-   `data-anim="glitch"` selector + a JS fallback (Username.tsx
-   wraps the text in a span so children inherit). */
 @keyframes username-glitch-r {
   0%, 100% { transform: translate(0,0); }
   20% { transform: translate(-1px, 1px); }
@@ -242,10 +357,6 @@ body.no-animations *::after {
   animation: username-glitch-r 1.2s steps(8, end) infinite;
 }
 
-/* Neon — soft glow with subtle pulse, picks up `currentColor` so the
-   chosen username colour drives the halo. Works well on a dark
-   background; falls back to a sensible cyan default when no colour
-   is set (color: inherit + currentColor === fg-primary). */
 @keyframes username-neon {
   0%, 100% {
     text-shadow:
@@ -264,11 +375,6 @@ body.no-animations *::after {
   animation: username-neon 2.6s ease-in-out infinite;
 }
 
-/* Bi-color sweep — when two colours are configured AND the active
-   animation isn't `rainbow`, this layers a 200% linear-gradient
-   text fill that scrolls horizontally. Combines additively with the
-   underlying animation (pulse/shimmer/etc.) because both write to
-   different style channels (`color` vs `text-shadow`). */
 @keyframes username-bi-pan {
   0%   { background-position: 0% 50%; }
   100% { background-position: 200% 50%; }
@@ -287,11 +393,7 @@ body.no-animations *::after {
   animation: username-bi-pan 4.5s linear infinite;
 }
 
-/* ──────────── Nameplates / Plaques ────────────
-   Background card for the username area on the profile page. Each preset
-   is a single linear-gradient (sometimes animated). Apply to a wrapper
-   div: `<div class="plaque-aurora">…</div>`. Wrapper provides padding +
-   border-radius; the CSS variants below just set the background. */
+/* ──────────── Nameplates / Plaques ──────────── */
 .plaque-aurora,
 .plaque-sunset,
 .plaque-emerald,
@@ -321,9 +423,7 @@ body.no-animations *::after {
   box-shadow: 0 0 24px rgba(253, 224, 71, 0.15);
 }
 
-/* ──────────── Profile effects (overlay) ────────────
-   Applied to an absolutely-positioned div covering the profile hero. All
-   effects use pointer-events:none so they don't intercept clicks. */
+/* ──────────── Profile effects (overlay) ──────────── */
 .profile-fx-sparkles,
 .profile-fx-petals,
 .profile-fx-snow,
@@ -335,8 +435,6 @@ body.no-animations *::after {
   overflow: hidden;
   border-radius: inherit;
 }
-
-/* Sparkles: 3 layered radial-gradients of tiny dots, slowly drifting. */
 .profile-fx-sparkles {
   background-image:
     radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.7) 0.5px, transparent 1.5px),
@@ -348,8 +446,6 @@ body.no-animations *::after {
 @keyframes fx-sparkle-drift {
   to { background-position: 0 -300px, 0 -500px, 0 -200px; }
 }
-
-/* Petals: pink dots that fall + sway. Single layer, masked via background. */
 .profile-fx-petals {
   background-image:
     radial-gradient(circle at 25% 20%, rgba(236, 72, 153, 0.7) 1.5px, transparent 2px),
@@ -361,8 +457,6 @@ body.no-animations *::after {
 @keyframes fx-petal-fall {
   to { background-position: 30px 600px, -40px 500px, 20px 700px; }
 }
-
-/* Snow: white dots, mostly vertical fall, faster than petals. */
 .profile-fx-snow {
   background-image:
     radial-gradient(circle, rgba(255, 255, 255, 0.85) 1px, transparent 1.5px),
@@ -373,8 +467,6 @@ body.no-animations *::after {
 @keyframes fx-snow-fall {
   to { background-position: 5px 500px, -10px 700px; }
 }
-
-/* Rays: rotating conic gradient halo, low opacity. */
 .profile-fx-rays::before {
   content: '';
   position: absolute;
@@ -394,12 +486,10 @@ body.no-animations *::after {
 @keyframes fx-rays-spin {
   to { transform: rotate(360deg); }
 }
-
-/* Grid: cyber linear-gradient grid, slow pan. */
 .profile-fx-grid {
   background-image:
-    linear-gradient(rgba(99, 102, 241, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(99, 102, 241, 0.12) 1px, transparent 1px);
+    linear-gradient(rgba(124, 92, 255, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 92, 255, 0.12) 1px, transparent 1px);
   background-size: 40px 40px, 40px 40px;
   animation: fx-grid-pan 18s linear infinite;
 }
@@ -407,11 +497,7 @@ body.no-animations *::after {
   to { background-position: 40px 40px; }
 }
 
-/* ──────────── Avatar decorations ────────────
-   Applied to a wrapper div that already contains the avatar img. The
-   decoration uses ::before / ::after so we don't need extra DOM nodes.
-   Wrapper must have `position: relative` (the renderer's avatar wrap
-   already does). */
+/* ──────────── Avatar decorations ──────────── */
 .avatar-deco-glow,
 .avatar-deco-orbit,
 .avatar-deco-flame,
@@ -421,11 +507,11 @@ body.no-animations *::after {
   position: relative;
 }
 .avatar-deco-glow {
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.35), 0 0 18px rgba(139, 92, 246, 0.5);
+  box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.35), 0 0 18px rgba(124, 92, 255, 0.5);
   animation: deco-glow-breathe 3s ease-in-out infinite;
 }
 @keyframes deco-glow-breathe {
-  50% { box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.55), 0 0 28px rgba(139, 92, 246, 0.75); }
+  50% { box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.55), 0 0 28px rgba(124, 92, 255, 0.75); }
 }
 .avatar-deco-orbit::after {
   content: '';

@@ -114,22 +114,18 @@ export function UpdatePopup() {
         // Bottom-right toast slot. z-index above the cloud gate (1000)
         // but below modal dialogs (which use higher values) so a
         // critical modal can still cover it.
-        className="fixed bottom-6 right-6 z-[1100] w-[380px] rounded-xl overflow-hidden border border-glass-border shadow-2xl"
-        style={{
-          background:
-            'linear-gradient(135deg, #1b2838 0%, #0b1622 100%)',
-        }}
+        className="fixed bottom-6 right-6 z-[1100] w-[400px] rounded-2xl overflow-hidden glass-elevated shadow-[0_24px_64px_-16px_rgba(0,0,0,0.7),0_0_0_1px_rgba(124,92,255,0.25)]"
         role="alertdialog"
         aria-labelledby="update-popup-title"
       >
-        {/* Soft accent halo top-left, matches the CloudAuthGate hero */}
+        {/* Halo accent violet glow top-left */}
         <div
           aria-hidden
-          className="absolute -top-12 -left-12 w-44 h-44 rounded-full pointer-events-none"
+          className="absolute -top-16 -left-16 w-52 h-52 rounded-full pointer-events-none"
           style={{
             background:
-              'radial-gradient(circle, rgba(102,192,244,0.35) 0%, transparent 70%)',
-            filter: 'blur(8px)',
+              'radial-gradient(circle, rgba(124,92,255,0.4) 0%, transparent 70%)',
+            filter: 'blur(36px)',
           }}
         />
 

@@ -113,6 +113,20 @@ let currentUser: CloudUser | null = null
 let ws: WebSocket | null = null
 let reconnectTimer: NodeJS.Timeout | null = null
 let reconnectAttempt = 0
+/** Wall-clock time of the most recent successful `ws.open`. Used to
+ *  decide whether to credit the connection as stable when it later
+ *  closes — if it lived less than STABILITY_WINDOW_MS, we DON'T reset
+ *  the exponential backoff. Without this, a server that immediately
+ *  drops every connection (auth fail, kick on duplicate, port blip)
+ *  produced a 1 Hz connect/disconnect cycle visible in the UI. */
+let lastOpenAt = 0
+const STABILITY_WINDOW_MS = 5_000
+/** Periodic application-level ping. Traefik (and most reverse proxies)
+ *  drop idle WS connections after 60s of silence — without a heartbeat
+ *  the user sees a deco/reco cycle every minute. We send a tiny `ping`
+ *  frame at HEARTBEAT_INTERVAL_MS so the connection looks alive. */
+let heartbeatTimer: NodeJS.Timeout | null = null
+const HEARTBEAT_INTERVAL_MS = 30_000
 /** userId → display name cache. Populated when WS envelopes carry
  *  user objects (friend:added.user, friend:request.fromUser). Used by
  *  the native-notif title resolver — without this every toast would
@@ -259,11 +273,35 @@ async function cloudJson<T = unknown>(
 //  WebSocket
 // ===========================================================================
 
+function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer)
+    heartbeatTimer = null
+  }
+}
+
+function startHeartbeat(): void {
+  stopHeartbeat()
+  heartbeatTimer = setInterval(() => {
+    if (!ws || ws.readyState !== ws.OPEN) return
+    try {
+      // `ws.ping()` sends a protocol-level PING frame. The browser /
+      // server WS stack auto-replies with PONG, so we don't even need
+      // an event handler — just sending traffic is enough to reset
+      // Traefik's idle countdown.
+      ws.ping()
+    } catch {
+      /* ignore — close handler will pick up the failure */
+    }
+  }, HEARTBEAT_INTERVAL_MS)
+}
+
 function closeSocket(): void {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
+  stopHeartbeat()
   if (ws) {
     try {
       ws.close()
@@ -287,6 +325,19 @@ function scheduleReconnect(): void {
 async function openSocket(): Promise<void> {
   const token = readToken()
   if (!token) return
+  // Bail if we already have a healthy WS — re-entrant callers (React
+  // StrictMode in dev double-invokes the boot effect, a hot reload
+  // races with a scheduled reconnect, a manual reconnect button race-
+  // clicks twice) used to close the perfectly-fine connection and
+  // start a new one, which kicked off the exponential-backoff flicker.
+  // OPEN === 1 in the `ws` library. We accept CONNECTING too — bailing
+  // there avoids stacking concurrent handshakes.
+  if (ws && (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING)) {
+    debugLog('cloud-ws', 'openSocket: skip — already have ws', {
+      readyState: ws.readyState,
+    })
+    return
+  }
   closeSocket()
   // ws:// vs wss:// derived from the API URL — http→ws, https→wss.
   const apiUrl = API_URL
@@ -304,7 +355,27 @@ async function openSocket(): Promise<void> {
     return
   }
   ws.on('open', () => {
-    reconnectAttempt = 0
+    lastOpenAt = Date.now()
+    // Cancel any pending reconnect timer that was scheduled earlier.
+    // This matters when multiple `openSocket()` calls land in parallel
+    // (React StrictMode in dev double-invokes the boot effect; or a
+    // hot-reload races with an in-flight reconnect). Without this,
+    // the surviving WS would be killed by a stale `scheduleReconnect`
+    // firing later, producing a perfect 2^n-second flicker that
+    // exactly matches the exponential backoff. Clearing here means
+    // a healthy `open` is the definitive "we're good, stand down"
+    // signal.
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    // NB: don't reset reconnectAttempt here. We reset it only after
+    // the connection has lived past STABILITY_WINDOW_MS — see the
+    // close handler below. Resetting too eagerly is what produced
+    // a separate 1 Hz flicker when the server immediately drops every
+    // connection (auth fail, duplicate kick, etc).
+    startHeartbeat()
+    debugLog('cloud-ws', 'open', { url: wsUrl.replace(/token=[^&]+/, 'token=***') })
     setStatus('connected')
   })
   ws.on('message', (raw) => {
@@ -485,7 +556,23 @@ async function openSocket(): Promise<void> {
       })
     }
   })
-  ws.on('close', () => {
+  ws.on('close', (code, reason) => {
+    const wasStable = lastOpenAt > 0 && Date.now() - lastOpenAt >= STABILITY_WINDOW_MS
+    debugLog('cloud-ws', 'close', {
+      code,
+      reason: reason?.toString('utf-8') || '<empty>',
+      prevStatus: currentStatus,
+      reconnectAttempt,
+      uptimeMs: lastOpenAt > 0 ? Date.now() - lastOpenAt : null,
+      wasStable,
+    })
+    if (wasStable) {
+      // The connection lived long enough to count as healthy — reset
+      // the backoff counter so a subsequent reconnect attempt happens
+      // quickly (typical "ISP blip" recovery).
+      reconnectAttempt = 0
+    }
+    lastOpenAt = 0
     // Only flip to 'offline' if we WERE connected — a failure during
     // initial handshake is handled by openSocket's catch / on('error').
     if (currentStatus === 'connected') {
@@ -493,7 +580,11 @@ async function openSocket(): Promise<void> {
       scheduleReconnect()
     }
   })
-  ws.on('error', () => {
+  ws.on('error', (err) => {
+    debugLog('cloud-ws', 'error', {
+      message: err?.message ?? '<no message>',
+      prevStatus: currentStatus,
+    })
     // Detailed message lands in the close event; we just queue a
     // reconnect (the WebSocket library always emits close after error).
     if (currentStatus === 'connecting') {

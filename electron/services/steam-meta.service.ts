@@ -26,7 +26,7 @@ const CACHE_TTL_MS = 1000 * 60 * 60 * 24 // 24h
  * cache — even after we fixed the parser. Bumped to 2 with the
  * languages-and-categories-with-ids shape.
  */
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 export interface SteamMetacritic {
   score: number
@@ -58,11 +58,16 @@ export interface SteamMeta {
   steamAppId: number
   metacritic: SteamMetacritic | null
   pcRequirements: SteamPcRequirements | null
-  /** Comma-separated list of language names ("Anglais, Français, …") —
-   *  Steam returns an HTML string with optional `<strong>*</strong>`
-   *  flags marking full-audio support. We strip the markup and keep the
-   *  flat list so the renderer can split it back into chips. */
+  /** Flat list of language names — kept for backwards compatibility
+   *  with v0.3.0 renderers. New code should use `languagesDetailed`
+   *  which distinguishes full-audio vs subtitles-only support. */
   languages: string[]
+  /** v0.3.1: each language tagged with the full-audio flag. Steam's
+   *  HTML response marks audio-supported languages with a
+   *  `<strong>*</strong>` suffix; we surface that bit explicitly so
+   *  the renderer can label "Anglais (audio + sous-titres)" vs
+   *  "Français (sous-titres)". */
+  languagesDetailed: Array<{ name: string; fullAudio: boolean }>
   /** Release date as Steam stores it (e.g. "20 oct. 2023", "à venir"). */
   releaseDate: string | null
   /** Steam category objects ({ id, description }). Replaces the old
@@ -105,15 +110,32 @@ async function fetchWithTimeout(url: string): Promise<Response | null> {
  * `<strong>Minimum:</strong><br>...<ul><li>...</li></ul>`. We keep the
  * structure but trim leading/trailing whitespace and clamp the length
  * so a runaway page can't dump 200 KB into the renderer.
+ *
+ * v0.4: hardened — previously the sanitizer only stripped disallowed
+ * tags; allowed tags could still carry inline handlers (onclick,
+ * onerror) or javascript:/data: URIs in attributes, opening an XSS
+ * path through dangerouslySetInnerHTML in the renderer. Now we strip
+ * EVERY attribute from every allowed tag (Steam never relies on
+ * attributes for the requirements blob — they're pure structural).
  */
 function sanitiseRequirements(html: unknown): string | null {
   if (typeof html !== 'string') return null
   const trimmed = html.trim()
   if (!trimmed) return null
-  // Allow only a small subset of tags by stripping anything else. We
-  // explicitly allow <strong>, <br>, <ul>, <li>, <p>, <em>, <span>.
-  const ALLOWED = /<(?!\/?(?:strong|br|ul|ol|li|p|em|span)\b)[^>]+>/gi
-  return trimmed.replace(ALLOWED, '').slice(0, 4000)
+  const ALLOWED_TAGS = new Set(['strong', 'br', 'ul', 'ol', 'li', 'p', 'em', 'span'])
+  // Replace every tag : keep only its name (lowercased) and slash if
+  // it is a closing tag. Anything not in the allowlist is dropped
+  // entirely. <br> stays self-closing.
+  const out = trimmed.replace(/<\/?\s*([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g, (_, raw: string) => {
+    const tag = raw.toLowerCase()
+    if (!ALLOWED_TAGS.has(tag)) return ''
+    // Préserve la nature self-closing de <br> et ouvre/ferme pour les
+    // autres tags structurels — sans aucun attribut.
+    const isClosing = /^<\s*\//.test(_)
+    if (tag === 'br') return '<br/>'
+    return isClosing ? `</${tag}>` : `<${tag}>`
+  })
+  return out.slice(0, 4000)
 }
 
 export async function getSteamMeta(steamAppId: number): Promise<SteamMeta | null> {
@@ -159,6 +181,7 @@ export async function getSteamMeta(steamAppId: number): Promise<SteamMeta | null
       metacritic: null,
       pcRequirements: null,
       languages: [],
+      languagesDetailed: [],
       releaseDate: null,
       categories: [],
       fetchedAt: Date.now(),
@@ -193,34 +216,42 @@ export async function getSteamMeta(steamAppId: number): Promise<SteamMeta | null
   //   "Anglais<strong>*</strong>, Français, Allemand<br><strong>*</strong>
   //    langues avec support audio complet"
   //
-  // Parsing pitfalls we hit before:
-  //   • Stripping <br> *before* the audio-note removal merged the last
-  //     language with the footer text ("Chinois traditionnel" +
-  //     "langues avec support audio complet" → "traditionnellangues",
-  //     no word boundary, regex misses).
-  //   • The footer wording varies by Steam locale ("langues avec support
-  //     audio complet" / "languages with full audio support" / German
-  //     equivalent). Hardcoding the FR string fails when Steam falls
-  //     back to English (rare but happens for stub Steam pages).
-  //
-  // New shape: turn <br> into an explicit comma separator BEFORE
-  // stripping HTML, then drop any fragment that mentions "audio" —
-  // covers every locale because the audio-note universally contains
-  // the word "audio" (audio / Audio / áudio / Audiounterstützung).
+  // The `<strong>*</strong>` marker AFTER a language name flags
+  // full-audio support for that language. Languages without the
+  // marker have interface + subtitle support only. We preserve
+  // BOTH pieces of info in the parsed result so the renderer can
+  // surface "Anglais (audio + sous-titres)" vs "Français (sous-
+  // titres uniquement)" — the kind of detail Hydra renders inline
+  // in the sidebar and that was lost in the v0.3.0 flat-list
+  // parser.
   const rawLangs = entry.data.supported_languages
   const languages: string[] = []
+  const languagesDetailed: Array<{ name: string; fullAudio: boolean }> = []
   if (typeof rawLangs === 'string') {
+    // Strategy: replace <br> with comma BEFORE removing markup, and
+    // replace `<strong>*</strong>` with a literal `*` so we can use
+    // its presence as an audio-marker AFTER tag-strip. The footer
+    // line "<strong>*</strong>languages with full audio support"
+    // becomes "*languages with full audio support" which we then
+    // drop because it contains "audio" — locale-independent.
     const plain = rawLangs
       .replace(/<br\s*\/?>/gi, ',') // structural break → separator
-      .replace(/<[^>]+>/g, '')       // remaining HTML
-      .replace(/\*/g, '')            // audio-flag asterisks
+      .replace(/<strong>\s*\*\s*<\/strong>/gi, '*') // preserve the audio flag
+      .replace(/<[^>]+>/g, '')      // remaining HTML
       .trim()
     for (const raw of plain.split(/[,;]/)) {
       const t = raw.trim()
       if (!t || t.length > 60) continue
-      // Drop the trailing audio-support footer in any locale.
+      // Drop the trailing "full audio support" footer fragment in
+      // any locale — it always contains the word "audio".
       if (/\baudio\b/i.test(t)) continue
-      languages.push(t)
+      // The `*` suffix indicates full audio support for this lang.
+      // Trim it out of the display name.
+      const fullAudio = /\*/.test(t)
+      const name = t.replace(/\*/g, '').trim()
+      if (!name) continue
+      languages.push(name)
+      languagesDetailed.push({ name, fullAudio })
     }
   }
 
@@ -258,6 +289,7 @@ export async function getSteamMeta(steamAppId: number): Promise<SteamMeta | null
         ? pcRequirements
         : null,
     languages,
+    languagesDetailed,
     releaseDate,
     categories,
     fetchedAt: Date.now(),

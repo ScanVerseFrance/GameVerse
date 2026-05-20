@@ -52,6 +52,17 @@ import {
 } from './services/external-process-watcher.service'
 import { initNotifications } from './services/notifications.service'
 import { registerNewFeaturesIpc } from './ipc/new-features.ipc'
+import { backfillJsonSourceAppids } from './services/steam-apps.service'
+import {
+  ensureSteamCatalogue,
+  augmentCatalogueFromSteamApps,
+} from './services/steam-catalogue.service'
+import { registerSteamCatalogueIpc } from './ipc/steam-catalogue.ipc'
+import {
+  getMostPlayed,
+  getTopReleasesPages,
+} from './services/steam-charts.service'
+import { resolveCoverUrlsBulk } from './services/steam-cover.service'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const APP_ROOT = path.join(__dirname, '..')
@@ -106,11 +117,40 @@ function createWindow() {
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized-change', false))
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      void shell.openExternal(url)
+    // Whitelist strict des protocoles ouvrables en externe. Tout le
+    // reste (file://, javascript:, vbscript:, data:, etc.) est rejeté
+    // sans appeler shell.openExternal — ce qui empêcherait
+    // l'ouverture d'une URL malicieuse passée par un addon mal codé.
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        void shell.openExternal(url)
+      }
+    } catch {
+      /* URL malformée — refus silencieux */
     }
     return { action: 'deny' }
   })
+
+  // Bloque toute navigation vers une URL externe — la fenêtre doit
+  // rester sur le hash router. Sans ce handler, un addon malveillant
+  // pourrait injecter un <a href> ou un window.location et faire
+  // pivoter le renderer vers un site distant, contournant la CSP.
+  mainWindow.webContents.on('will-navigate', (event, navUrl) => {
+    if (VITE_DEV_SERVER_URL && navUrl.startsWith(VITE_DEV_SERVER_URL)) return
+    try {
+      const parsed = new URL(navUrl)
+      if (parsed.protocol === 'file:' && parsed.pathname.includes('index.html')) return
+    } catch {
+      /* swallow */
+    }
+    event.preventDefault()
+  })
+
+  // Refuse les demandes de permission web (geolocation, notifications,
+  // media…) — l'app n'en a aucune utilité légitime et accepter par
+  // défaut ouvrirait un canal d'exfiltration via un addon hostile.
+  mainWindow.webContents.session.setPermissionRequestHandler((_wc, _perm, cb) => cb(false))
 
   if (VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(VITE_DEV_SERVER_URL)
@@ -256,6 +296,7 @@ void app.whenReady().then(async () => {
   registerCloudSaveIpc()
   registerAutoUpdateIpc()
   registerNewFeaturesIpc()
+  registerSteamCatalogueIpc()
   // Hydra-parity services. Order matters: notifications table
   // creation must run before any service that pushes notifs;
   // catalog-refresh + external-watcher both depend on settings +
@@ -263,6 +304,70 @@ void app.whenReady().then(async () => {
   initNotifications(() => mainWindow)
   initCatalogRefresh(() => mainWindow)
   initExternalProcessWatcher(() => mainWindow)
+  // Hydra-exact bootstrap: two background jobs run in sequence.
+  //
+  //   1. Seed the Steam catalogue from SteamSpy (~85k popular games,
+  //      ~90s on first launch, ~0s on subsequent boots since the
+  //      table persists with a 30-day TTL). Discover pages this
+  //      table to render every Steam game as a tile — sources are
+  //      optional badges, not the primary list.
+  //
+  //   2. Backfill appids on legacy `json_source_games` rows so each
+  //      imported repacker entry knows which catalogue tile it
+  //      belongs to. New imports do this synchronously; this job
+  //      catches up rows from before the resolver was wired in.
+  //
+  // Both deferred 5s so the renderer is interactive immediately.
+  setTimeout(() => {
+    void (async () => {
+      try {
+        await ensureSteamCatalogue()
+      } catch {
+        /* best-effort; renderer falls back to "no catalogue yet" */
+      }
+      try {
+        await backfillJsonSourceAppids()
+      } catch {
+        /* swallow */
+      }
+      try {
+        // Augment the catalogue with any appids the resolver found
+        // that SteamSpy didn't index (newer / niche titles). Without
+        // this, a JSON source row resolving to e.g. appid 9876543
+        // would carry the appid but never show up as a Discover
+        // tile because no SteamSpy row claims that appid.
+        augmentCatalogueFromSteamApps()
+      } catch {
+        /* swallow */
+      }
+
+      // Pre-warm the Trending filter cache. The strict single-player
+      // filter drops any appid that hasn't been probed against
+      // Steam's appdetails (so we can read its category list). By
+      // resolving the top ~60 most-played + top ~60 monthly releases
+      // up-front, the first Discover render shows correctly filtered
+      // results without an empty-list flash.
+      try {
+        const [mostPlayed, releasesPages] = await Promise.all([
+          getMostPlayed(),
+          getTopReleasesPages(),
+        ])
+        const preloadAppids = new Set<number>()
+        for (const e of mostPlayed.slice(0, 60)) preloadAppids.add(e.appId)
+        for (const page of releasesPages.slice(0, 1)) {
+          for (const id of page.appIds.slice(0, 60)) preloadAppids.add(id)
+        }
+        // resolveCoverUrlsBulk persists cover_url + the new
+        // is_game / is_single_player / is_multi_player fields in
+        // one network round-trip per appid (appdetails returns
+        // both). Throttled internally at 4 concurrent + 250ms
+        // delay so we don't trip Steam's per-IP rate limit.
+        await resolveCoverUrlsBulk([...preloadAppids])
+      } catch {
+        /* swallow — Discover will lazy-load on user navigation */
+      }
+    })()
+  }, 5_000)
   // Diagnostic: surface the Notification API state to the Settings
   // panel so a user reporting "no toasts" can self-check rather than
   // sending us console logs blind.

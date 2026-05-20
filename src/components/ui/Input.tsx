@@ -17,24 +17,32 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   return (
     <div className="flex flex-col gap-1.5 w-full">
       {label && (
-        <label htmlFor={inputId} className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
+        <label
+          htmlFor={inputId}
+          className="text-[11px] font-semibold text-fg-secondary uppercase tracking-wider"
+        >
           {label}
         </label>
       )}
       <div
         className={cn(
-          'flex items-center gap-2 h-11 px-3.5 rounded-md transition-all',
-          'bg-[var(--surface-soft)] border border-glass-border',
-          'hover:bg-[var(--surface-soft-hover)] hover:border-[var(--surface-soft-border)]',
-          'focus-within:bg-[var(--surface-soft-hover)] focus-within:border-accent-primary/60 focus-within:shadow-[0_0_0_3px_rgba(136,192,87,0.20)]',
-          errorText && 'border-error/60 focus-within:border-error focus-within:shadow-[0_0_0_3px_rgba(239,68,68,0.18)]'
+          'flex items-center gap-2.5 h-11 px-4 rounded-md transition-all duration-200 ease-out-expo',
+          'bg-surface-soft border border-glass-border',
+          'hover:bg-surface-soft-hover hover:border-surface-soft-border',
+          'focus-within:bg-surface-soft-hover focus-within:border-accent-primary/60',
+          'focus-within:shadow-[0_0_0_4px_rgba(124,92,255,0.16)]',
+          errorText &&
+            'border-error/60 focus-within:border-error focus-within:shadow-[0_0_0_4px_rgba(248,113,113,0.18)]'
         )}
       >
         {leftIcon && <span className="text-fg-muted shrink-0">{leftIcon}</span>}
         <input
           id={inputId}
           ref={ref}
-          className={cn('flex-1 bg-transparent outline-none text-sm text-fg-primary placeholder:text-fg-muted', className)}
+          className={cn(
+            'flex-1 bg-transparent outline-none text-sm text-fg-primary placeholder:text-fg-faint',
+            className
+          )}
           {...rest}
         />
         {rightSlot}

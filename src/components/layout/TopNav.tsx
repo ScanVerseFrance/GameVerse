@@ -11,6 +11,12 @@ import {
   ChevronDown,
   X,
   Shield,
+  Dices,
+  Compass,
+  Library as LibraryIcon,
+  Download,
+  Users,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth.store'
@@ -24,23 +30,37 @@ import { cn } from '@/utils/cn'
 interface NavTab {
   to: string
   label: string
+  icon: LucideIcon
   badge?: number
 }
 
+const NAV_TABS: ReadonlyArray<Omit<NavTab, 'badge'>> = [
+  { to: '/discover', label: 'Découvrir', icon: Compass },
+  { to: '/catalogue', label: 'Catalogue', icon: Sparkles },
+  { to: '/library', label: 'Bibliothèque', icon: LibraryIcon },
+  { to: '/downloads', label: 'Téléchargements', icon: Download },
+  { to: '/community', label: 'Communauté', icon: Users },
+]
+
 /**
- * Steam-flavored top navigation. Horizontal tab strip + integrated search
- * + Big Picture shortcut + user menu. Replaces the old left sidebar for
- * top-level navigation; the secondary surfaces (Settings, Themes, Addons)
- * are exposed via the user dropdown to keep the strip clean.
+ * Top navigation refondue — glassmorphism, capsules arrondies, accent
+ * violet. Tab strip avec icônes Lucide, search globale Ctrl+K, user
+ * dropdown élégant. Plus de "Steam-flavored" — c'est du Nexus pur.
  */
 export function TopNav() {
   const location = useLocation()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
-  const activeDownloads = useDownloadStore(
-    (s) => s.downloads.filter((d) => d.status === 'downloading' || d.status === 'queued').length
-  )
+  // Compte sans allouer un array — appelé sur chaque store update,
+  // on évite filter(...).length qui crée un sous-array à jeter.
+  const activeDownloads = useDownloadStore((s) => {
+    let count = 0
+    for (const d of s.downloads) {
+      if (d.status === 'downloading' || d.status === 'queued') count++
+    }
+    return count
+  })
   const friendCount = useSocialStore((s) => s.friends.length)
 
   const [query, setQuery] = useState('')
@@ -48,15 +68,14 @@ export function TopNav() {
   const inputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const tabs: NavTab[] = [
-    { to: '/', label: 'Accueil' },
-    { to: '/library', label: 'Bibliothèque' },
-    { to: '/discover', label: 'Découvrir' },
-    { to: '/downloads', label: 'Téléchargements', badge: activeDownloads },
-    { to: '/community', label: 'Communauté', badge: friendCount },
-  ]
+  // Re-décore les tabs statiques avec leur badge dynamique courant.
+  const tabs: NavTab[] = NAV_TABS.map((t) =>
+    t.to === '/downloads' ? { ...t, badge: activeDownloads }
+    : t.to === '/community' ? { ...t, badge: friendCount }
+    : { ...t }
+  )
 
-  // Ctrl+K focuses search globally — listen at window level so any page works.
+  // Ctrl+K focuses the search globally — listen at window level so any page works.
   useEffect(() => {
     function onKey(e: globalThis.KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -69,14 +88,12 @@ export function TopNav() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Sync search box with URL when the user lands on /discover via another link.
   useEffect(() => {
     const q = new URLSearchParams(location.search).get('q')
     if (q !== null && q !== query) setQuery(q)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search])
 
-  // Click-outside closes the user dropdown.
   useEffect(() => {
     if (!menuOpen) return
     function onDoc(e: MouseEvent) {
@@ -90,7 +107,7 @@ export function TopNav() {
 
   function submitSearch(v: string) {
     const trimmed = v.trim()
-    navigate(trimmed ? `/discover?q=${encodeURIComponent(trimmed)}` : '/discover')
+    navigate(trimmed ? `/catalogue?q=${encodeURIComponent(trimmed)}` : '/catalogue')
   }
 
   function onSearchKey(e: KeyboardEvent<HTMLInputElement>) {
@@ -106,43 +123,43 @@ export function TopNav() {
   const inBigPicture = location.pathname.startsWith('/big-picture')
 
   return (
-    <nav className="h-14 flex items-center gap-2 px-4 bg-bg-secondary border-b border-border-soft shrink-0 select-none">
-      {/* Tab strip */}
-      <ul className="flex items-stretch h-full">
+    <nav className="relative h-16 flex items-center gap-3 px-5 bg-bg-secondary/60 backdrop-blur-xl border-b border-glass-border shrink-0 select-none z-20">
+      {/* Tab strip — capsule arrondie sur fond glass */}
+      <ul className="flex items-center gap-1 p-1 rounded-full glass-card">
         {tabs.map((tab) => (
-          <li key={tab.to} className="h-full">
+          <li key={tab.to}>
             <NavLink
               to={tab.to}
               end={tab.to === '/'}
               className={({ isActive }) =>
                 cn(
-                  'relative h-full px-4 inline-flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wider transition-colors',
+                  'relative h-10 px-4 inline-flex items-center gap-2 rounded-full text-[13px] font-semibold transition-all duration-300 ease-out-expo',
                   isActive
-                    ? 'text-fg-primary'
-                    : 'text-fg-muted hover:text-fg-secondary'
+                    ? 'bg-accent-gradient text-white shadow-[0_4px_16px_-4px_rgba(124,92,255,0.6)]'
+                    : 'text-fg-secondary hover:text-fg-primary hover:bg-surface-soft'
                 )
               }
             >
               {({ isActive }) => (
                 <>
-                  <span>{tab.label}</span>
+                  <tab.icon
+                    className={cn(
+                      'w-4 h-4 transition-transform',
+                      isActive && 'scale-110'
+                    )}
+                  />
+                  <span className="hidden md:inline">{tab.label}</span>
                   {tab.badge != null && tab.badge > 0 && (
                     <span
                       className={cn(
-                        'min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center',
+                        'min-w-[20px] h-5 px-1.5 rounded-full text-[10px] font-bold flex items-center justify-center',
                         isActive
-                          ? 'bg-accent-primary text-white'
-                          : 'bg-[var(--surface-medium)] text-fg-secondary'
+                          ? 'bg-white/25 text-white'
+                          : 'bg-accent-primary/20 text-accent-primary'
                       )}
                     >
                       {tab.badge > 99 ? '99+' : tab.badge}
                     </span>
-                  )}
-                  {isActive && (
-                    <span
-                      aria-hidden
-                      className="absolute left-3 right-3 bottom-0 h-[3px] rounded-t bg-accent-gradient"
-                    />
                   )}
                 </>
               )}
@@ -151,59 +168,72 @@ export function TopNav() {
         ))}
       </ul>
 
-      {/* Search bar — flex-grows to fill the middle. */}
-      <div className="flex-1 max-w-md mx-3">
-        <div className="flex items-center gap-2 h-9 px-3 rounded-sm bg-[#0f1721] border border-[#0a0e15] focus-within:border-accent-primary/50 transition-colors">
-          <Search className="w-3.5 h-3.5 text-fg-muted" />
+      {/* Search — pill flottante */}
+      <div className="flex-1 max-w-xl mx-2">
+        <div
+          className={cn(
+            'flex items-center gap-2.5 h-11 px-4 rounded-full transition-all duration-300',
+            'glass-card hover:border-accent-primary/30',
+            'focus-within:border-accent-primary/60 focus-within:shadow-[0_0_0_4px_rgba(124,92,255,0.18)]'
+          )}
+        >
+          <Search className="w-4 h-4 text-fg-muted shrink-0" />
           <input
             ref={inputRef}
             type="text"
-            placeholder="Rechercher dans Découvrir…"
+            placeholder="Rechercher un jeu, un genre, un développeur…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onSearchKey}
-            className="flex-1 bg-transparent outline-none text-xs text-fg-primary placeholder:text-fg-muted"
+            className="flex-1 bg-transparent outline-none text-sm text-fg-primary placeholder:text-fg-faint"
           />
           {query ? (
             <button
               onClick={() => setQuery('')}
-              className="text-fg-muted hover:text-fg-primary"
+              className="p-1 -m-1 rounded-full text-fg-muted hover:bg-surface-soft hover:text-fg-primary transition-colors"
               aria-label="Effacer la recherche"
             >
-              <X className="w-3 h-3" />
+              <X className="w-3.5 h-3.5" />
             </button>
           ) : (
-            <kbd className="text-[10px] text-fg-muted font-mono px-1.5 py-0.5 rounded-sm bg-black/30">
-              Ctrl+K
+            <kbd className="text-[10px] text-fg-muted font-mono px-2 py-1 rounded-md bg-surface-soft border border-glass-border">
+              Ctrl K
             </kbd>
           )}
         </div>
       </div>
 
-      {/* Big Picture shortcut */}
-      <button
-        onClick={() => navigate(inBigPicture ? '/' : '/big-picture')}
-        title={inBigPicture ? 'Quitter Big Picture' : 'Mode Big Picture'}
-        className={cn(
-          'h-9 px-3 inline-flex items-center gap-1.5 rounded-sm text-[11px] font-bold uppercase tracking-widest transition-colors border',
-          inBigPicture
-            ? 'bg-accent-primary/15 text-accent-primary border-accent-primary/30'
-            : 'border-transparent text-fg-secondary hover:bg-[var(--surface-soft)] hover:text-fg-primary'
-        )}
-      >
-        <Monitor className="w-3.5 h-3.5" />
-        <span className="hidden lg:inline">Big Picture</span>
-      </button>
+      {/* Quick actions cluster */}
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={async () => {
+            const res = await window.nexus.jsonSources.pickRandom()
+            if (res.ok) {
+              navigate(`/json-game/${encodeURIComponent(res.game.id)}`)
+            }
+          }}
+          title="Jeu aléatoire — surprend-moi"
+          className="h-10 w-10 inline-flex items-center justify-center rounded-full text-fg-secondary hover:bg-surface-soft hover:text-accent-primary transition-all duration-200"
+        >
+          <Dices className="w-4 h-4" />
+        </button>
 
-      {/* Nexus Cloud connection chip — green dot when authenticated +
-          live, grey when not signed in, orange when the WebSocket
-          dropped. Clicking opens login or a small popover. */}
-      <CloudStatusBadge />
+        <button
+          onClick={() => navigate(inBigPicture ? '/' : '/big-picture')}
+          title={inBigPicture ? 'Quitter Big Picture' : 'Mode Big Picture'}
+          className={cn(
+            'h-10 w-10 inline-flex items-center justify-center rounded-full transition-all duration-200',
+            inBigPicture
+              ? 'bg-accent-gradient text-white shadow-[0_4px_16px_-4px_rgba(124,92,255,0.5)]'
+              : 'text-fg-secondary hover:bg-surface-soft hover:text-accent-primary'
+          )}
+        >
+          <Monitor className="w-4 h-4" />
+        </button>
 
-      {/* In-app notifications (bell + dropdown). Available whether or
-          not the user is signed in — guest sessions still get download
-          and library notifications. */}
-      <NotificationBell />
+        <CloudStatusBadge />
+        <NotificationBell />
+      </div>
 
       {/* User dropdown */}
       {user && (
@@ -211,46 +241,45 @@ export function TopNav() {
           <button
             onClick={() => setMenuOpen((o) => !o)}
             className={cn(
-              'h-9 pl-1 pr-2 flex items-center gap-2 rounded-sm border transition-colors',
+              'h-11 pl-1 pr-3 flex items-center gap-2.5 rounded-full transition-all duration-200',
               menuOpen
-                ? 'bg-[var(--surface-soft-hover)] border-glass-border'
-                : 'border-transparent hover:bg-[var(--surface-soft)]'
+                ? 'bg-surface-soft-hover border border-accent-primary/30'
+                : 'border border-transparent hover:bg-surface-soft hover:border-glass-border'
             )}
           >
-            <span className="w-7 h-7 rounded-full bg-accent-gradient overflow-hidden flex items-center justify-center shrink-0">
+            <span className="relative w-9 h-9 rounded-full bg-accent-gradient overflow-hidden flex items-center justify-center shrink-0 shadow-[0_2px_8px_-2px_rgba(124,92,255,0.5)]">
               {user.avatarPath ? (
                 <img src={user.avatarPath} alt="" className="w-full h-full object-cover" />
               ) : (
-                <span className="text-[11px] font-bold text-white">
+                <span className="text-xs font-bold text-white">
                   {(user.displayName ?? user.username).slice(0, 1).toUpperCase()}
                 </span>
               )}
             </span>
             <Username
               user={user}
-              className="hidden md:inline text-[13px] font-semibold text-fg-primary max-w-[140px] truncate"
+              className="hidden md:inline text-sm font-semibold text-fg-primary max-w-[140px] truncate"
             />
             <ChevronDown
               className={cn(
-                'w-3.5 h-3.5 text-fg-muted transition-transform',
+                'w-3.5 h-3.5 text-fg-muted transition-transform duration-200',
                 menuOpen && 'rotate-180'
               )}
             />
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 top-[calc(100%+6px)] w-64 z-50 rounded-md bg-bg-secondary border border-glass-border shadow-lift overflow-hidden">
-              {/* Header */}
+            <div className="absolute right-0 top-[calc(100%+8px)] w-72 z-50 rounded-2xl glass-elevated overflow-hidden animate-slide-down">
               <Link
                 to={`/community/profile/${user.id}`}
                 onClick={() => setMenuOpen(false)}
-                className="flex items-center gap-3 px-4 py-3 bg-[var(--surface-soft)] hover:bg-[var(--surface-soft-hover)] transition-colors"
+                className="flex items-center gap-3 px-4 py-4 bg-accent-gradient-soft hover:bg-surface-soft-hover transition-colors border-b border-glass-border"
               >
-                <span className="w-10 h-10 rounded-full bg-accent-gradient overflow-hidden flex items-center justify-center shrink-0">
+                <span className="relative w-12 h-12 rounded-full bg-accent-gradient overflow-hidden flex items-center justify-center shrink-0 shadow-[0_4px_12px_-2px_rgba(124,92,255,0.5)]">
                   {user.avatarPath ? (
                     <img src={user.avatarPath} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <span className="text-sm font-bold text-white">
+                    <span className="text-base font-bold text-white">
                       {(user.displayName ?? user.username).slice(0, 1).toUpperCase()}
                     </span>
                   )}
@@ -258,13 +287,13 @@ export function TopNav() {
                 <div className="min-w-0 flex-1">
                   <Username
                     user={user}
-                    className="block text-sm font-semibold text-fg-primary truncate"
+                    className="block text-sm font-bold text-fg-primary truncate"
                   />
                   <p className="text-[11px] text-fg-muted font-mono truncate">@{user.username}</p>
                 </div>
               </Link>
 
-              <div className="py-1">
+              <div className="py-2">
                 <MenuItem
                   icon={UserIcon}
                   label="Voir mon profil"
@@ -297,13 +326,13 @@ export function TopNav() {
                 />
               </div>
 
-              <div className="border-t border-border-soft py-1">
+              <div className="border-t border-glass-border py-2">
                 <button
                   onClick={() => {
                     setMenuOpen(false)
                     void logout()
                   }}
-                  className="w-full flex items-center gap-2.5 px-4 h-9 text-sm text-fg-secondary hover:bg-[var(--surface-soft-hover)] hover:text-error transition-colors"
+                  className="w-full flex items-center gap-3 px-4 h-10 text-sm font-medium text-fg-secondary hover:bg-error-soft hover:text-error transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Déconnexion</span>
@@ -332,7 +361,7 @@ function MenuItem({
     <Link
       to={to}
       onClick={onClick}
-      className="flex items-center gap-2.5 px-4 h-9 text-sm text-fg-secondary hover:bg-[var(--surface-soft-hover)] hover:text-fg-primary transition-colors"
+      className="flex items-center gap-3 px-4 h-10 text-sm font-medium text-fg-secondary hover:bg-surface-soft-hover hover:text-fg-primary transition-colors"
     >
       <Icon className="w-4 h-4 text-fg-muted" />
       <span>{label}</span>

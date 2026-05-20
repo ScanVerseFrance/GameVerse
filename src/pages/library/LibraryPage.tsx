@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Library as LibraryIcon, Search, X, Star, Compass, FolderTree, Settings2, ArrowUpDown } from 'lucide-react'
+import { Library as LibraryIcon, Search, X, Star, Compass, FolderTree, Settings2, ArrowUpDown, Clock, Trophy, Play, Sparkles } from 'lucide-react'
 import { useLibraryStore } from '@/stores/library.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCollectionStore } from '@/stores/collection.store'
+import { usePinnedStore } from '@/stores/pinned.store'
 import { Card } from '@/components/ui/Card'
 import { LibraryCard } from '@/components/library/LibraryCard'
 import { LibraryEditDialog } from '@/components/library/LibraryEditDialog'
@@ -41,6 +42,9 @@ export default function LibraryPage() {
   const loadCollections = useCollectionStore((s) => s.load)
   const gameMemberships = useCollectionStore((s) => s.gameMemberships)
   const loadForGame = useCollectionStore((s) => s.loadForGame)
+  // Set partagé via store : la LibraryCard pilote son propre toggle,
+  // ici on n'a besoin que de la valeur pour le tri stable.
+  const pinned = usePinnedStore((s) => s.pinned)
 
   const [query, setQuery] = useState('')
   const debouncedQuery = useDebounce(query, 200)
@@ -144,8 +148,16 @@ export default function LibraryPage() {
         sorted.sort((a, b) => (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0))
         break
     }
+    // Stable post-sort : les jeux épinglés remontent en tête, dans
+    // leur ordre relatif déjà calculé par le tri principal. Distinct
+    // de "tri par favori" : pinned > sort, favorite reste un filtre.
+    sorted.sort((a, b) => {
+      const ap = pinned.has(a.id) ? 1 : 0
+      const bp = pinned.has(b.id) ? 1 : 0
+      return bp - ap
+    })
     return sorted
-  }, [games, statusFilter, favoritesOnly, collectionFilter, gameMemberships, debouncedQuery, sortMode])
+  }, [games, statusFilter, favoritesOnly, collectionFilter, gameMemberships, debouncedQuery, sortMode, pinned])
 
   async function handlePlay(game: LibraryGame) {
     setLaunchError(null)
@@ -153,31 +165,103 @@ export default function LibraryPage() {
     if (!res.ok) setLaunchError(res.error ?? 'Échec du lancement')
   }
 
+  // Stats agrégées calculées à la volée. Quand la bibliothèque est
+  // vide on retourne des zéros pour pas avoir à conditionner le JSX.
+  const stats = useMemo(() => {
+    let totalSeconds = 0
+    let played = 0
+    let completed = 0
+    let inProgress = 0
+    for (const g of games) {
+      totalSeconds += g.totalPlaytimeSeconds ?? 0
+      if (g.lastPlayedAt) played++
+      if (g.status === 'completed') completed++
+      if (g.status === 'in_progress') inProgress++
+    }
+    return { totalSeconds, played, completed, inProgress }
+  }, [games])
+
+  function formatTotalTime(seconds: number): string {
+    if (seconds < 60) return '0 h'
+    const hours = seconds / 3600
+    if (hours < 1) return `${Math.round(seconds / 60)} min`
+    if (hours < 100) return `${hours.toFixed(1)} h`
+    return `${Math.round(hours)} h`
+  }
+
   if (!user) return null
 
   return (
     <div className="px-10 py-10 max-w-7xl mx-auto">
       <motion.div
-        initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-end justify-between mb-6 flex-wrap gap-4"
+        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        className="relative mb-8 rounded-2xl glass-card p-7 overflow-hidden"
       >
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <LibraryIcon className="w-4 h-4 text-accent-primary" />
-            <p className="text-xs font-semibold text-fg-secondary uppercase tracking-widest">Ma collection</p>
+        <div
+          aria-hidden
+          className="absolute -top-12 -right-12 w-48 h-48 rounded-full opacity-50"
+          style={{ background: 'radial-gradient(circle, rgba(124,92,255,0.45), transparent 70%)', filter: 'blur(40px)' }}
+        />
+        <div className="relative flex items-end justify-between flex-wrap gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-accent-primary/15 border border-accent-primary/30 text-[10px] font-bold uppercase tracking-widest text-accent-primary">
+                <LibraryIcon className="w-3 h-3" />
+                Ma collection
+              </span>
+            </div>
+            <h1 className="font-display font-bold text-4xl text-fg-primary tracking-tight">
+              <span className="text-gradient">Bibliothèque</span>
+            </h1>
+            <p className="text-sm text-fg-secondary mt-2">
+              {games.length === 0
+                ? 'Aucun jeu pour le moment.'
+                : `${games.length} jeu${games.length === 1 ? '' : 'x'} · ${filtered.length} affiché${filtered.length === 1 ? '' : 's'}`}
+            </p>
           </div>
-          <h1 className="font-display font-bold text-3xl text-fg-primary">Bibliothèque</h1>
-          <p className="text-sm text-fg-secondary mt-1">
-            {games.length === 0
-              ? 'Aucun jeu pour le moment.'
-              : `${games.length} jeu${games.length === 1 ? '' : 'x'} · ${filtered.length} affiché${filtered.length === 1 ? '' : 's'}`}
-          </p>
         </div>
       </motion.div>
 
+      {/* Dashboard stats — visible uniquement quand au moins un jeu
+          existe. Affiche temps total, joués, en cours, terminés. */}
+      {games.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+          className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"
+        >
+          <StatCard
+            icon={<Clock className="w-4 h-4" />}
+            label="Temps total"
+            value={formatTotalTime(stats.totalSeconds)}
+            tone="accent"
+          />
+          <StatCard
+            icon={<Play className="w-4 h-4" />}
+            label="Joués"
+            value={`${stats.played} / ${games.length}`}
+            tone="info"
+          />
+          <StatCard
+            icon={<Sparkles className="w-4 h-4" />}
+            label="En cours"
+            value={`${stats.inProgress}`}
+            tone="warning"
+          />
+          <StatCard
+            icon={<Trophy className="w-4 h-4" />}
+            label="Terminés"
+            value={`${stats.completed}`}
+            tone="success"
+          />
+        </motion.div>
+      )}
+
       {launchError && (
-        <div className="mb-4 px-4 py-3 rounded-md bg-error/10 border border-error/20 text-sm text-error">
+        <div className="mb-4 px-4 py-3 rounded-xl bg-error/10 border border-error/30 text-sm text-error backdrop-blur-sm">
           {launchError}
         </div>
       )}
@@ -314,23 +398,35 @@ export default function LibraryPage() {
       {!loaded ? (
         <div className="py-20 text-center text-sm text-fg-muted">Chargement de la bibliothèque…</div>
       ) : games.length === 0 ? (
-        <Card variant="glass" padding="lg" className="text-center">
-          <div className="max-w-md mx-auto py-6">
-            <div className="w-14 h-14 rounded-xl bg-accent-primary/15 border border-accent-primary/40 flex items-center justify-center mx-auto mb-4">
-              <LibraryIcon className="w-7 h-7 text-accent-primary" />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <Card variant="glass" padding="lg" className="text-center rounded-2xl">
+            <div className="max-w-md mx-auto py-8">
+              <div className="relative w-20 h-20 mx-auto mb-6">
+                <div className="absolute inset-0 rounded-2xl bg-accent-gradient opacity-30 blur-xl" />
+                <div className="relative w-full h-full rounded-2xl bg-accent-gradient flex items-center justify-center shadow-[0_8px_32px_-8px_rgba(124,92,255,0.6)]">
+                  <LibraryIcon className="w-9 h-9 text-white" />
+                </div>
+              </div>
+              <h2 className="font-display font-bold text-2xl text-fg-primary mb-3 tracking-tight">
+                Ta bibliothèque est vide
+              </h2>
+              <p className="text-sm text-fg-secondary leading-relaxed">
+                Ajoute des jeux depuis Découvrir, ou ouvre un catalogue d'addon.
+                La bibliothèque suit installations, statut, temps de jeu et tes notes.
+              </p>
+              <Link
+                to="/discover"
+                className="inline-flex items-center gap-2 h-11 px-6 mt-7 rounded-full bg-accent-gradient text-sm font-semibold text-white shadow-[0_4px_16px_-4px_rgba(124,92,255,0.6)] hover:shadow-glow-strong hover:brightness-110 active:scale-[0.97] transition-all duration-200"
+              >
+                <Compass className="w-4 h-4" /> Parcourir Découvrir
+              </Link>
             </div>
-            <h2 className="font-display font-bold text-xl text-fg-primary mb-2">Ta bibliothèque est vide</h2>
-            <p className="text-sm text-fg-secondary leading-relaxed">
-              Ajoute des jeux depuis Découvrir, ou ouvre un catalogue d'addon. La bibliothèque suit installations, statut, temps de jeu et tes notes.
-            </p>
-            <Link
-              to="/discover"
-              className="inline-flex items-center gap-2 h-10 px-5 mt-6 rounded-md bg-accent-gradient text-sm font-medium text-white hover:shadow-glow transition-shadow"
-            >
-              <Compass className="w-4 h-4" /> Parcourir Découvrir
-            </Link>
-          </div>
-        </Card>
+          </Card>
+        </motion.div>
       ) : filtered.length === 0 ? (
         <div className="py-20 text-center text-sm text-fg-muted">Aucun jeu ne correspond à ces filtres.</div>
       ) : (
@@ -354,6 +450,44 @@ export default function LibraryPage() {
         open={manageCollectionsOpen}
         onClose={() => setManageCollectionsOpen(false)}
       />
+    </div>
+  )
+}
+
+const STAT_TONE = {
+  accent: { ring: 'border-accent-primary/30', icon: 'bg-accent-gradient text-white', text: 'text-accent-primary' },
+  info: { ring: 'border-info/30', icon: 'bg-info/20 text-info', text: 'text-info' },
+  warning: { ring: 'border-warning/30', icon: 'bg-warning/20 text-warning', text: 'text-warning' },
+  success: { ring: 'border-success/30', icon: 'bg-success/20 text-success', text: 'text-success' },
+} as const
+
+function StatCard({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  tone: keyof typeof STAT_TONE
+}) {
+  const t = STAT_TONE[tone]
+  return (
+    <div className={cn('relative rounded-2xl glass-card p-4 border', t.ring)}>
+      <div className="flex items-center gap-3">
+        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', t.icon)}>
+          {icon}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-fg-muted">
+            {label}
+          </p>
+          <p className={cn('text-xl font-display font-bold tracking-tight truncate', t.text)}>
+            {value}
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

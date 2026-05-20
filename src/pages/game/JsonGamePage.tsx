@@ -47,11 +47,16 @@ import { UninstallConfirmDialog } from '@/components/library/UninstallConfirmDia
 import { ExtractDialog } from '@/components/library/ExtractDialog'
 import { StopGameConfirmDialog } from '@/components/library/StopGameConfirmDialog'
 import { SaveConflictDialog } from '@/components/cloud/SaveConflictDialog'
+import { SavesModal } from '@/components/cloud/SavesModal'
 import { SteamNewsSection } from '@/components/game/SteamNewsSection'
 import { SteamMetaSection } from '@/components/game/SteamMetaSection'
 import { HowLongToBeatSection } from '@/components/game/HowLongToBeatSection'
-import { SourcePicker } from '@/components/game/SourcePicker'
+// SourcePicker removed in v0.4 — the install dialog already
+// surfaces the cross-source variant chooser, so a duplicate
+// sidebar one only confused the layout.
 import { useGameVariants } from '@/hooks/useGameVariants'
+import { StarRating } from '@/components/reviews/StarRating'
+import { ReviewBody } from '@/components/reviews/ReviewBody'
 import type { JsonSourceSearchHit } from '@/types/json-source.types'
 import type { GameArtwork, GameComment } from '@/types/artwork.types'
 import type { DownloadKind, DownloadRecord } from '@/types/download.types'
@@ -152,8 +157,22 @@ export default function JsonGamePage() {
 
   const [game, setGame] = useState<JsonSourceSearchHit | null>(null)
   const [loading, setLoading] = useState(true)
+  // Nexus community stats — total downloads + average rating across
+  // ALL variants of this appid (every imported source shipping the
+  // same Steam game contributes). Fetched lazily once we know the
+  // appid; null until the request returns so the chips don't render
+  // a flash-of-zero on first paint.
+  const [nexusStats, setNexusStats] = useState<{
+    downloadCount: number
+    ratingAvg: number | null
+    ratingCount: number
+  } | null>(null)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [commentInput, setCommentInput] = useState('')
+  // v0.3.1: comments became reviews. 0 = pure comment (no rating
+  // contribution), 1-5 = gold-star score factored into the
+  // aggregate. Reset to 0 on successful post.
+  const [reviewRating, setReviewRating] = useState(0)
   const [commentError, setCommentError] = useState<string | null>(null)
   const [posting, setPosting] = useState(false)
   const [heroError, setHeroError] = useState(false)
@@ -200,6 +219,13 @@ export default function JsonGamePage() {
     }
     localMtime: number | null
   } | null>(null)
+  /** "Sauvegardes" button → cloud-saves manager modal. Bumping
+   *  `savesRefreshNonce` from outside (e.g. when the auto-upload-after-
+   *  exit toast lands) makes the modal re-fetch its artifact list so
+   *  a freshly-uploaded version shows up without the user having to
+   *  reopen it. */
+  const [savesModalOpen, setSavesModalOpen] = useState(false)
+  const [savesRefreshNonce, setSavesRefreshNonce] = useState(0)
   // Achievements (Hydra-style) — fetched from Steam Web API when a Steam
   // appid is known AND the user configured their key. Needs a separate
   // state from artwork because the API call is independent.
@@ -252,6 +278,44 @@ export default function JsonGamePage() {
     })
     void loadComments(GAME_KIND, gameId)
   }, [gameId, getGame, loadComments])
+
+  // Refresh the SavesModal's artifact list when an upload event for
+  // THIS library game lands (the post-exit auto-upload pipeline emits
+  // on every game close). Cheap nonce-bump triggers a refetch inside
+  // the modal without forcing the user to close + reopen it.
+  useEffect(() => {
+    if (!installedGame) return
+    const off = window.nexus.cloudSave.onEvent((data) => {
+      if (data.libraryGameId === installedGame.id) {
+        setSavesRefreshNonce((n) => n + 1)
+      }
+    })
+    return off
+  }, [installedGame])
+
+  // Nexus stats — pulled once the appid is known. Uses the catalogue
+  // detail endpoint which already aggregates downloads + ratings
+  // server-side. No Steam-API calls (per user spec: only data from
+  // Nexus users surfaces in the meta strip).
+  useEffect(() => {
+    const appid = game?.steamAppid
+    if (!appid || appid <= 0) {
+      setNexusStats(null)
+      return
+    }
+    let cancelled = false
+    void window.nexus.steamCatalogue.get(appid).then((res) => {
+      if (cancelled || !res.ok) return
+      setNexusStats({
+        downloadCount: res.detail.downloadCount,
+        ratingAvg: res.detail.ratingAvg,
+        ratingCount: res.detail.ratingCount,
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [game?.steamAppid])
 
   // Surface async spawn failures. The launch IPC returns synchronously
   // after spawn(), but missing/blocked exes only fire 'error' on the
@@ -414,17 +478,21 @@ export default function JsonGamePage() {
   // SGDB-then-Steam enrichment, or direct Steam match). We also need the
   // current user so we can show unlocks. Re-runs if either changes.
   const steamAppId = useMemo(() => {
+    // Hydra-style: prefer the appid resolved at JSON-source import
+    // time. Without this, the whole SteamMetaSection (config requise,
+    // langues, news, achievements) stayed empty for any game where
+    // the SGDB lookup hadn't completed yet — which is the majority
+    // of games for users without an SGDB API key.
+    if (game?.steamAppid && game.steamAppid > 0) return game.steamAppid
     if (!artwork) return null
     if (artwork.externalSource === 'steam' && artwork.externalId) {
       const n = parseInt(artwork.externalId, 10)
       return Number.isFinite(n) ? n : null
     }
-    // SGDB-sourced artwork sometimes carries the Steam appid in headerUrl
-    // since we render Steam's CDN URL when available. Extract it as fallback.
     const cdnMatch = artwork.headerUrl?.match(/\/apps\/(\d+)\//)
     if (cdnMatch) return parseInt(cdnMatch[1], 10)
     return null
-  }, [artwork])
+  }, [game?.steamAppid, artwork])
 
   useEffect(() => {
     if (!user || !steamAppId) {
@@ -508,19 +576,25 @@ export default function JsonGamePage() {
     setLaunchError(null)
     // Pre-flight cloud save conflict check. Only fires when the cloud
     // is connected — checkConflict returns cloudIsNewer: false when
-    // offline, so the local-only path stays fast. When a newer cloud
-    // artifact exists AND it was made on a different machine, we open
-    // the Steam-style modal and DELAY the launch until the user has
-    // chosen Cloud / Local / Annuler. The modal's onLaunch callback
-    // resumes the spawn.
+    // offline, so the local-only path stays fast.
+    //
+    // We open the Steam-style modal whenever the latest cloud artifact
+    // is newer than the local mtime, REGARDLESS of hostname. The
+    // earlier "only prompt for cross-machine conflicts" rule turned
+    // out to be the cause of a silent data-loss bug: the user wiped
+    // their saves locally, launched on the same PC, saw no warning,
+    // played a quick session, and on exit the auto-upload overwrote
+    // their 20 KB cloud save with a fresh 6 KB one. Same-host newer-
+    // cloud is just as worth prompting — it's the "I accidentally
+    // deleted my local saves" case, which is exactly when the user
+    // most wants the chance to restore.
+    //
+    // The dialog's "Garder local" button is disabled when localMtime
+    // is null, so the same-host-no-local-save case naturally funnels
+    // the user toward "Garder le cloud".
     try {
       const report = await window.nexus.cloudSave.checkConflict(installedGame.id)
-      if (
-        report.ok &&
-        report.cloudIsNewer &&
-        report.latestArtifact &&
-        report.fromDifferentHost
-      ) {
+      if (report.ok && report.cloudIsNewer && report.latestArtifact) {
         setConflictReport({
           artifact: report.latestArtifact,
           localMtime: report.localMtime,
@@ -740,17 +814,24 @@ export default function JsonGamePage() {
   async function handlePostComment() {
     if (!user || !gameId) return
     if (!commentInput.trim()) {
-      setCommentError('Le commentaire est vide.')
+      setCommentError("L'avis est vide.")
       return
     }
     setPosting(true)
     setCommentError(null)
-    const res = await addComment(user.id, GAME_KIND, gameId, commentInput.trim())
+    const res = await addComment(
+      user.id,
+      GAME_KIND,
+      gameId,
+      commentInput.trim(),
+      reviewRating,
+    )
     setPosting(false)
     if (!res.ok) {
-      setCommentError(res.error ?? 'Échec de l\'envoi.')
+      setCommentError(res.error ?? "Échec de l'envoi.")
     } else {
       setCommentInput('')
+      setReviewRating(0)
     }
   }
 
@@ -780,25 +861,57 @@ export default function JsonGamePage() {
     )
   }
 
+  // Build the artwork chain. ORDER MATTERS — Steam's official
+  // library_*.jpg assets ship with the canonical game branding
+  // (logo, key art) so they look right on the hero strip. SGDB's
+  // community uploads are sometimes lower quality re-mixes that
+  // replace the official art with random fan art; that's the
+  // "covers du remplacement sont PIRE que les covers originals"
+  // bug the user called out.
+  //
+  // New priority:
+  //   1. Steam library_600x900 (cover) / library_hero (banner) —
+  //      official, has the game logo + branding.
+  //   2. SGDB cover/hero — only when Steam returns 404 (recent /
+  //      upcoming games where Steam hasn't published the asset).
+  //   3. Steam header.jpg — last resort, landscape capsule.
+  //   4. Placeholder gradient.
+  const steamLibraryHero =
+    steamAppId && steamAppId > 0
+      ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamAppId}/library_hero.jpg`
+      : null
+  const steamHeader =
+    steamAppId && steamAppId > 0
+      ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamAppId}/header.jpg`
+      : null
+  const steamLibrary600 =
+    steamAppId && steamAppId > 0
+      ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${steamAppId}/library_600x900.jpg`
+      : null
+
+  // Build candidate chains. The renderer walks them on <img onError>
+  // so a 404 at any stage falls through cleanly to the next URL
+  // instead of dropping straight to the gradient placeholder.
+  const heroChain = [
+    steamLibraryHero,
+    artwork?.heroUrl ?? null,
+    artwork?.headerUrl ?? null,
+    steamHeader,
+  ].filter((u): u is string => typeof u === 'string' && u.length > 0)
+  const coverChain = [
+    steamLibrary600,
+    artwork?.coverUrl ?? null,
+    steamHeader,
+  ].filter((u): u is string => typeof u === 'string' && u.length > 0)
+
   return (
     <div className="pb-12">
-      {/* HERO */}
+      {/* HERO — walks `heroChain` on each <img> error so a 404
+          falls through to the next candidate URL instead of
+          dropping to the gradient on the first miss. */}
       <div className="relative h-[360px] overflow-hidden">
-        {artwork?.heroUrl && !heroError ? (
-          <img
-            src={artwork.heroUrl}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover"
-            onError={() => setHeroError(true)}
-          />
-        ) : artwork?.headerUrl && !heroError ? (
-          <img
-            src={artwork.headerUrl}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover blur-sm scale-110"
-            onError={() => setHeroError(true)}
-          />
-        ) : (
+        <HeroFallbackImage chain={heroChain} onAllFailed={() => setHeroError(true)} />
+        {heroError && (
           <div className="absolute inset-0 bg-gradient-to-br from-accent-primary/30 via-bg-secondary to-bg-primary" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-bg-primary via-bg-primary/40 to-bg-primary/10" />
@@ -812,12 +925,10 @@ export default function JsonGamePage() {
 
         <div className="absolute bottom-0 left-0 right-0 px-10 pb-6 flex items-end gap-6">
           <div className="w-32 h-48 rounded-md overflow-hidden border-2 border-white/10 shadow-lift bg-bg-tertiary shrink-0">
-            {artwork?.coverUrl && !coverError ? (
-              <img
-                src={artwork.coverUrl}
-                alt=""
-                className="w-full h-full object-cover"
-                onError={() => setCoverError(true)}
+            {!coverError && coverChain.length > 0 ? (
+              <CoverFallbackImage
+                chain={coverChain}
+                onAllFailed={() => setCoverError(true)}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
@@ -867,6 +978,31 @@ export default function JsonGamePage() {
                   <Users className="w-3 h-3" /> Multi
                 </span>
               )}
+              {/* Nexus community stats — strictly Nexus-side data.
+                  Total downloads via this launcher + average review
+                  rating + number of reviews. Hidden when the appid
+                  isn't resolved or no Nexus user has interacted yet. */}
+              {nexusStats && nexusStats.downloadCount > 0 && (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-primary/15 border border-accent-primary/40 text-[10px] font-semibold uppercase tracking-wider text-accent-primary"
+                  title="Nombre de téléchargements via Nexus"
+                >
+                  <DownloadIcon className="w-3 h-3" />
+                  {nexusStats.downloadCount.toLocaleString('fr-FR')}{' '}
+                  téléchargement{nexusStats.downloadCount === 1 ? '' : 's'}
+                </span>
+              )}
+              {nexusStats &&
+                nexusStats.ratingAvg !== null &&
+                nexusStats.ratingCount > 0 && (
+                  <span
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-[10px] font-semibold uppercase tracking-wider text-amber-300"
+                    title={`Note moyenne sur ${nexusStats.ratingCount} avis Nexus`}
+                  >
+                    <StarRating value={nexusStats.ratingAvg} readonly size="sm" />
+                    {nexusStats.ratingAvg.toFixed(1)} ({nexusStats.ratingCount})
+                  </span>
+                )}
             </div>
           </div>
         </div>
@@ -930,22 +1066,17 @@ export default function JsonGamePage() {
                 Ouvrir le dossier
               </Button>
             )}
-            {/* Open saves folder — Hydra 3.8.2 introduced this shortcut.
-                Resolves via Ludusavi → shell.openPath. Shows a toast
-                error when the game has no Ludusavi mapping (most
-                won't have saves on first launch). */}
+            {/* "Sauvegardes" opens the cloud-saves manager (current
+                version + 3 previous, with restore + force-upload +
+                manual delete). The OS save-folder access stays
+                reachable via the small footer link inside the modal. */}
             {isInstalled && installedGame && (
               <Button
                 size="sm"
                 variant="ghost"
                 leftIcon={<Save className="w-3.5 h-3.5" />}
-                onClick={async () => {
-                  const res = await window.nexus.cloudSave.openSavesFolder(
-                    installedGame.id
-                  )
-                  if (!res.ok) setLaunchError(res.error ?? 'Dossier introuvable')
-                }}
-                title="Ouvrir le dossier des sauvegardes (via Ludusavi)"
+                onClick={() => setSavesModalOpen(true)}
+                title="Gérer les sauvegardes cloud (restaurer une version précédente)"
               >
                 Sauvegardes
               </Button>
@@ -1399,13 +1530,22 @@ export default function JsonGamePage() {
           </details>
         )}
 
-        {/* Comments */}
-        <Section title="Commentaires" count={comments.length}>
+        {/* Reviews — comments + 0-5 star ratings + spoiler tags. */}
+        <Section title="Avis" count={comments.length}>
           <Card padding="lg">
             {user && !user.isGuest ? (
               <CommentComposer
                 value={commentInput}
                 onChange={setCommentInput}
+                rating={reviewRating}
+                onRatingChange={setReviewRating}
+                // playtimeSeconds is null when there's no library row
+                // for this game (= the user never played it via
+                // Nexus); 0 when the row exists but no session was
+                // recorded. The composer surfaces both states.
+                playtimeSeconds={
+                  installedGame ? installedGame.totalPlaytimeSeconds : null
+                }
                 onSubmit={() => void handlePostComment()}
                 error={commentError}
                 posting={posting}
@@ -1413,8 +1553,8 @@ export default function JsonGamePage() {
             ) : (
               <div className="rounded-md bg-[var(--surface-soft)] border border-glass-border p-4 text-sm text-fg-muted">
                 {user?.isGuest
-                  ? 'Mode invité — connecte-toi à un vrai compte pour commenter.'
-                  : 'Connecte-toi pour commenter.'}
+                  ? 'Mode invité — connecte-toi à un vrai compte pour publier un avis.'
+                  : 'Connecte-toi pour publier un avis.'}
               </div>
             )}
 
@@ -1422,7 +1562,7 @@ export default function JsonGamePage() {
               {comments.length === 0 ? (
                 <div className="py-6 text-center">
                   <MessageSquare className="w-7 h-7 text-fg-muted mx-auto mb-2 opacity-50" />
-                  <p className="text-sm text-fg-muted">Aucun commentaire pour ce jeu — sois le premier.</p>
+                  <p className="text-sm text-fg-muted">Pas encore d'avis — sois le premier.</p>
                 </div>
               ) : (
                 comments.map((c) => (
@@ -1431,8 +1571,11 @@ export default function JsonGamePage() {
                       {c.username.slice(0, 2).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-fg-primary">{c.username}</span>
+                        {c.rating > 0 && (
+                          <StarRating value={c.rating} readonly size="sm" />
+                        )}
                         <span className="text-[11px] text-fg-muted">
                           {new Date(c.createdAt).toLocaleString()}
                         </span>
@@ -1446,7 +1589,9 @@ export default function JsonGamePage() {
                           </button>
                         )}
                       </div>
-                      <p className="text-sm text-fg-secondary mt-1 whitespace-pre-wrap break-words">{c.content}</p>
+                      {/* ReviewBody renders ||spoiler|| tokens as
+                          click-to-reveal pills (Discord-style). */}
+                      <ReviewBody content={c.content} className="mt-1" />
                     </div>
                   </div>
                 ))
@@ -1464,13 +1609,12 @@ export default function JsonGamePage() {
               No more "scrollbar in a scrollbar" — main content and
               sidebar move together. */}
           <aside className="mt-6 lg:mt-0">
-        {/* Cross-source picker — lists every variant of the game
-            with a "Recommandé" badge on the best-scored one. Only
-            renders when the game exists in 2+ catalogues (single-
-            source games skip this section entirely). User can stay
-            on the recommended pick (default) or click another card
-            to switch. */}
-        <SourcePicker currentGame={game} />
+        {/* The cross-source picker that lived here was redundant
+            with the source selector inside DownloadConfirmDialog —
+            users got asked to choose the source twice. Removed
+            per v0.4 feedback: keep the variant choice exclusively
+            in the install dialog, the game page focuses on the
+            chosen variant. */}
 
         {/* Steam meta — sidebar slice. Surfaces release date, Modes
             & Manette icon strip (SteamDB-style), and Langues chips.
@@ -1720,6 +1864,19 @@ export default function JsonGamePage() {
           localMtime={conflictReport.localMtime}
           onClose={() => setConflictReport(null)}
           onLaunch={() => void handleLaunchAfterConflict()}
+        />
+      )}
+
+      {/* Cloud-saves manager — opens from the "Sauvegardes" button.
+          Lists the rolling 4-deep history with restore / delete /
+          force-upload actions. */}
+      {installedGame && (
+        <SavesModal
+          open={savesModalOpen}
+          gameTitle={installedGame.title}
+          libraryGameId={installedGame.id}
+          refreshNonce={savesRefreshNonce}
+          onClose={() => setSavesModalOpen(false)}
         />
       )}
 
@@ -2014,21 +2171,64 @@ function DownloadActions(props: {
 function CommentComposer(props: {
   value: string
   onChange: (v: string) => void
+  rating: number
+  onRatingChange: (n: number) => void
+  /** Total seconds the current user has played this game. Shown
+   *  inline as "Tu as joué Xh Ymin" so reviewers can self-check
+   *  before claiming "this game is great after 0.5h". Null when no
+   *  library row exists for the game (= never played here). */
+  playtimeSeconds: number | null
   onSubmit: () => void
   error: string | null
   posting: boolean
 }) {
+  function formatPlaytime(secs: number): string {
+    if (secs < 60) return `${secs}s`
+    if (secs < 3600) return `${Math.round(secs / 60)} min`
+    const h = Math.floor(secs / 3600)
+    const m = Math.round((secs % 3600) / 60)
+    return m > 0 ? `${h}h ${m}min` : `${h}h`
+  }
   return (
     <div>
+      {/* Rating row — sits above the textarea like a Trustpilot
+          review form. 0 stars (default) = pure comment, no rating
+          contributes to the average. Clicking the same star toggles
+          it back to 0 (Discord-style undo). */}
+      <div className="flex items-center gap-3 mb-2 flex-wrap">
+        <span className="text-[11px] uppercase tracking-widest text-fg-muted">Note</span>
+        <StarRating value={props.rating} onChange={props.onRatingChange} size="lg" />
+        {props.rating > 0 && (
+          <span className="text-xs text-amber-400 font-mono">{props.rating}/5</span>
+        )}
+        {/* Self-honesty nudge — surfacing the user's playtime next to
+            the star input discourages "10/10 GOAT" reviews after
+            three minutes. Hidden when there's no library row (= the
+            user never played the game inside Nexus). */}
+        {props.playtimeSeconds != null && props.playtimeSeconds > 0 && (
+          <span className="ml-auto text-[11px] text-fg-secondary inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[var(--surface-soft)] border border-glass-border">
+            <span className="text-fg-muted">Ton temps de jeu :</span>
+            <span className="font-mono text-fg-primary">{formatPlaytime(props.playtimeSeconds)}</span>
+          </span>
+        )}
+        {props.playtimeSeconds === 0 && (
+          <span className="ml-auto text-[11px] text-warning inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-warning/10 border border-warning/30">
+            Jamais joué — ton avis sera marqué « non vérifié ».
+          </span>
+        )}
+      </div>
       <textarea
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
-        placeholder="Partage ton avis sur ce jeu…"
+        placeholder="Partage ton avis sur ce jeu… Utilise ||spoiler|| pour masquer une révélation."
         rows={3}
         maxLength={2000}
         className="w-full px-3.5 py-2.5 rounded-md bg-[var(--surface-soft)] border border-glass-border hover:bg-[var(--surface-soft-hover)] focus:bg-[var(--surface-soft-hover)] focus:border-accent-primary/60 focus:outline-none focus:ring-2 focus:ring-accent-primary/20 text-sm text-fg-primary placeholder:text-fg-muted resize-none transition-all"
       />
-      <div className="flex items-center gap-3 mt-2">
+      <div className="flex items-center gap-3 mt-2 flex-wrap">
+        <span className="text-[10px] text-fg-muted">
+          Astuce : <code className="font-mono">||texte||</code> masque du contenu spoiler.
+        </span>
         {props.error && <span className="text-xs text-error">{props.error}</span>}
         <span className="ml-auto text-[10px] text-fg-muted">{props.value.length} / 2000</span>
         <Button
@@ -2038,9 +2238,65 @@ function CommentComposer(props: {
           loading={props.posting}
           disabled={!props.value.trim()}
         >
-          Publier
+          Publier l'avis
         </Button>
       </div>
     </div>
+  )
+}
+
+/**
+ * <img> wrapper that walks a fallback URL chain on each error.
+ * Used by the hero banner so a 404 (e.g., Steam library_hero for a
+ * delisted appid) advances to the next candidate URL instead of
+ * dropping to the gradient on the first miss.
+ */
+function HeroFallbackImage({
+  chain,
+  onAllFailed,
+}: {
+  chain: string[]
+  onAllFailed: () => void
+}) {
+  const [idx, setIdx] = useState(0)
+  if (chain.length === 0 || idx >= chain.length) return null
+  return (
+    <img
+      key={chain[idx]}
+      src={chain[idx]}
+      alt=""
+      className="absolute inset-0 w-full h-full object-cover"
+      onError={() => {
+        const next = idx + 1
+        if (next >= chain.length) onAllFailed()
+        else setIdx(next)
+      }}
+    />
+  )
+}
+
+/** Portrait-cover variant — same logic, no positioning class so the
+ *  parent box controls the layout. */
+function CoverFallbackImage({
+  chain,
+  onAllFailed,
+}: {
+  chain: string[]
+  onAllFailed: () => void
+}) {
+  const [idx, setIdx] = useState(0)
+  if (chain.length === 0 || idx >= chain.length) return null
+  return (
+    <img
+      key={chain[idx]}
+      src={chain[idx]}
+      alt=""
+      className="w-full h-full object-cover"
+      onError={() => {
+        const next = idx + 1
+        if (next >= chain.length) onAllFailed()
+        else setIdx(next)
+      }}
+    />
   )
 }

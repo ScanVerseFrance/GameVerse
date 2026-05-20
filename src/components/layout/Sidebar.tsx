@@ -50,8 +50,8 @@ export function Sidebar() {
     {
       label: 'Accueil',
       items: [
-        { to: '/', label: 'Accueil', icon: Home },
-        { to: '/discover', label: 'Découvrir', icon: Compass },
+        { to: '/discover', label: 'Découvrir', icon: Home },
+        { to: '/catalogue', label: 'Catalogue', icon: Compass },
       ],
     },
     {

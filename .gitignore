@@ -33,3 +33,10 @@ installer/assets/icon.png
 # Generated icon binaries (created by scripts/gen-installer-art.mjs).
 build/icon.ico
 build/installer-icon.ico
+
+# Hydra source kept locally as a UX cross-reference while we work
+# toward feature parity. GPL upstream — must NEVER end up in our
+# repo even by accident. Same goes for Cygwin / MSYS stack dumps
+# that occasionally appear after a Bash subprocess crashes.
+Hydra Source Code/
+*.stackdump

@@ -72,7 +72,17 @@ export function SteamMetaSection({ steamAppId, bodyOnly: _bodyOnly, sidebarOnly 
   // sidebar of JsonGamePage so the main content area only carries
   // the heavier Metacritic + PC requirements blocks.
   if (sidebarOnly) {
-    if (!meta.releaseDate && meta.categories.length === 0 && meta.languages.length === 0) {
+    // v0.3.1: always render the sidebar card when Steam meta is
+    // available — even if languages are empty, the fallback message
+    // ("Aucune info de langue fournie par Steam") tells the user we
+    // tried. Only suppress when EVERYTHING (release, categories,
+    // langs) is missing — that's a genuinely empty appdetails
+    // response.
+    if (
+      !meta.releaseDate &&
+      meta.categories.length === 0 &&
+      meta.languages.length === 0
+    ) {
       return null
     }
     return (
@@ -101,26 +111,67 @@ export function SteamMetaSection({ steamAppId, bodyOnly: _bodyOnly, sidebarOnly 
               <SteamCategoryStrip categories={meta.categories} showOnlineBadge />
             </div>
           )}
-          {meta.languages.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 text-fg-muted mb-1.5">
-                <Globe className="w-3.5 h-3.5" />
-                <span className="text-[10px] font-semibold uppercase tracking-widest">
-                  Langues disponibles · {meta.languages.length}
-                </span>
-              </div>
+          <div>
+            <div className="flex items-center gap-2 text-fg-muted mb-1.5">
+              <Globe className="w-3.5 h-3.5" />
+              <span className="text-[10px] font-semibold uppercase tracking-widest">
+                Langues disponibles
+                {meta.languages.length > 0 && ` · ${meta.languages.length}`}
+              </span>
+            </div>
+            {meta.languages.length === 0 ? (
+              // Fallback when Steam returned no supported_languages
+              // (common for unreleased / pre-installed indies on
+              // AnkerGames). Surfacing the empty state is better
+              // than hiding the block silently — the user knows
+              // the lookup happened.
+              <p className="text-[11px] text-fg-muted italic">
+                Aucune info de langue fournie par Steam pour ce jeu.
+              </p>
+            ) : null}
+            {meta.languages.length > 0 && (
+              <>
+              {/* When languagesDetailed is present (v0.3.1+), render
+                  each language with an indicator distinguishing
+                  full-audio (●) from subtitles-only (○). Falls back
+                  to the flat chip list when the field is missing
+                  (older cached entries from v0.3.0). */}
               <div className="flex flex-wrap gap-1.5">
-                {meta.languages.map((l) => (
+                {(meta.languagesDetailed && meta.languagesDetailed.length > 0
+                  ? meta.languagesDetailed
+                  : meta.languages.map((name) => ({ name, fullAudio: false }))
+                ).map((l) => (
                   <span
-                    key={l}
-                    className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--surface-soft)] border border-glass-border text-fg-secondary"
+                    key={l.name}
+                    title={l.fullAudio ? 'Audio + sous-titres' : 'Sous-titres uniquement'}
+                    className={cn(
+                      'text-[11px] px-2 py-0.5 rounded-full border inline-flex items-center gap-1.5',
+                      l.fullAudio
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                        : 'bg-[var(--surface-soft)] border-glass-border text-fg-secondary',
+                    )}
                   >
-                    {l}
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'w-1.5 h-1.5 rounded-full',
+                        l.fullAudio ? 'bg-emerald-400' : 'bg-fg-muted/50',
+                      )}
+                    />
+                    {l.name}
                   </span>
                 ))}
               </div>
-            </div>
-          )}
+              {meta.languagesDetailed &&
+                meta.languagesDetailed.some((l) => l.fullAudio) && (
+                  <p className="text-[10px] text-fg-muted mt-1.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 align-middle" />
+                    Audio doublé · sinon sous-titres uniquement
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </Card>
     )

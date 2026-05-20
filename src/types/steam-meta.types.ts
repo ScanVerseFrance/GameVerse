@@ -32,9 +32,11 @@ export interface SteamMeta {
   steamAppId: number
   metacritic: SteamMetacritic | null
   pcRequirements: SteamPcRequirements | null
-  /** "Anglais", "Français" … (audio flag stripped). Empty when Steam
-   *  has no language data. */
+  /** Flat list of language names — kept for backwards compatibility.
+   *  New code should prefer `languagesDetailed`. */
   languages: string[]
+  /** v0.3.1: each language tagged with the full-audio flag. */
+  languagesDetailed: Array<{ name: string; fullAudio: boolean }>
   /** Free-form release date string ("20 oct. 2023", "à venir"). */
   releaseDate: string | null
   /** Multijoueur / Solo / Co-op / Support manette etc. — now with

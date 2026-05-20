@@ -211,6 +211,53 @@ const api = {
     searchGames: (query: string, limit?: number, sourceIds?: string[]) =>
       ipcRenderer.invoke('jsonSources:searchGames', query, limit, sourceIds),
     getGame: (gameId: string) => ipcRenderer.invoke('jsonSources:getGame', gameId),
+    /** Pick a random game from the imported JSON catalogues —
+     *  drives the "Surprise-moi" / dice button in the top nav. */
+    pickRandom: () => ipcRenderer.invoke('jsonSources:pickRandom'),
+    /** Subscribe to backfill-progress events. Main process fires
+     *  these every 200 resolved titles + once at completion so the
+     *  Discover page can re-fetch and re-dedup as appids land.
+     *  Returns an unsubscribe function. */
+    onAppidsUpdated: (cb: (payload: { resolved: number; total: number }) => void) => {
+      const handler = (
+        _: unknown,
+        payload: { resolved: number; total: number },
+      ) => cb(payload)
+      ipcRenderer.on('jsonSources:appidsUpdated', handler)
+      return () => ipcRenderer.removeListener('jsonSources:appidsUpdated', handler)
+    },
+  },
+  /** Hydra-exact Steam catalogue: every Steam game on Discover lives
+   *  here. JSON sources match by appid to surface as download options. */
+  steamCatalogue: {
+    search: (opts: {
+      query?: string
+      withSourceOnly?: boolean
+      limit?: number
+      offset?: number
+      sort?: 'popularity' | 'name'
+    }) => ipcRenderer.invoke('steamCatalogue:search', opts),
+    get: (appid: number) => ipcRenderer.invoke('steamCatalogue:get', appid),
+    status: () => ipcRenderer.invoke('steamCatalogue:status'),
+    players: (appid: number) => ipcRenderer.invoke('steamCatalogue:players', appid),
+    resolveCovers: (appids: number[]) =>
+      ipcRenderer.invoke('steamCatalogue:resolveCovers', appids),
+    filterPlayable: (appids: number[]) =>
+      ipcRenderer.invoke('steamCatalogue:filterPlayable', appids),
+    mostPlayed: (limit?: number) =>
+      ipcRenderer.invoke('steamCharts:mostPlayed', limit),
+    topReleases: (limit?: number) =>
+      ipcRenderer.invoke('steamCharts:topReleases', limit),
+    topOwned: (opts?: { limit?: number; offset?: number }) =>
+      ipcRenderer.invoke('steamCharts:topOwned', opts),
+    onProgress: (cb: (payload: { seeded: number; pages: number }) => void) => {
+      const handler = (
+        _: unknown,
+        payload: { seeded: number; pages: number },
+      ) => cb(payload)
+      ipcRenderer.on('steamCatalogue:progress', handler)
+      return () => ipcRenderer.removeListener('steamCatalogue:progress', handler)
+    },
   },
   artwork: {
     lookup: (query: string) => ipcRenderer.invoke('artwork:lookup', query),
@@ -219,10 +266,26 @@ const api = {
   comments: {
     list: (gameKind: string, gameExternalId: string) =>
       ipcRenderer.invoke('comments:list', gameKind, gameExternalId),
-    add: (userId: string, gameKind: string, gameExternalId: string, content: string) =>
-      ipcRenderer.invoke('comments:add', userId, gameKind, gameExternalId, content),
+    add: (
+      userId: string,
+      gameKind: string,
+      gameExternalId: string,
+      content: string,
+      rating?: number,
+    ) =>
+      ipcRenderer.invoke('comments:add', userId, gameKind, gameExternalId, content, rating),
     delete: (commentId: string, userId: string) =>
       ipcRenderer.invoke('comments:delete', commentId, userId),
+    /** Aggregate rating + comment count for one game. */
+    ratingSummary: (gameKind: string, gameExternalId: string) =>
+      ipcRenderer.invoke('comments:ratingSummary', gameKind, gameExternalId),
+    /** Bulk variant — keyed by `${kind}:${id}` to hydrate catalogue
+     *  tiles in a single IPC round-trip. */
+    ratingSummariesBulk: (items: Array<{ kind: string; id: string }>) =>
+      ipcRenderer.invoke('comments:ratingSummariesBulk', items),
+    /** Local download count for one game (completed status only). */
+    downloadCount: (gameExternalId: string) =>
+      ipcRenderer.invoke('comments:downloadCount', gameExternalId),
   },
   profile: {
     getCosmetics: (userId: string) => ipcRenderer.invoke('profile:getCosmetics', userId),
@@ -309,8 +372,12 @@ const api = {
   cloudSave: {
     preview: (libraryGameId: string) =>
       ipcRenderer.invoke('cloudSave:preview', libraryGameId),
-    upload: (libraryGameId: string, label?: string) =>
-      ipcRenderer.invoke('cloudSave:upload', libraryGameId, label),
+    /** Upload the local save tree.
+     *  `force === true` bypasses the local-shrunk-vs-cloud safety
+     *  check (used after the user confirmed "Forcer l'envoi" in the
+     *  SavesModal — an explicit overwrite). */
+    upload: (libraryGameId: string, label?: string, force?: boolean) =>
+      ipcRenderer.invoke('cloudSave:upload', libraryGameId, label, force),
     restore: (libraryGameId: string, artifactId: string) =>
       ipcRenderer.invoke('cloudSave:restore', libraryGameId, artifactId),
     checkConflict: (libraryGameId: string) =>
@@ -321,6 +388,14 @@ const api = {
      *  un toast. */
     openSavesFolder: (libraryGameId: string) =>
       ipcRenderer.invoke('cloudSave:openSavesFolder', libraryGameId),
+    /** List all cloud artifacts for a game (newest first). Server-
+     *  side retention caps this at 4 (current + 3 previous) — older
+     *  versions are auto-pruned after every successful upload. */
+    listArtifacts: (libraryGameId: string, limit?: number) =>
+      ipcRenderer.invoke('cloudSave:listArtifacts', libraryGameId, limit),
+    /** Delete a single cloud artifact by id. */
+    deleteArtifact: (artifactId: string) =>
+      ipcRenderer.invoke('cloudSave:deleteArtifact', artifactId),
     /** Toasts emitted by the post-exit auto-upload pipeline. */
     onEvent: (
       cb: (data: {
@@ -333,6 +408,13 @@ const api = {
         skipped?: boolean
         skipReason?: string
         error?: string
+        latestArtifact?: {
+          id: string
+          sizeBytes: number
+          label: string | null
+          hostname: string | null
+          createdAt: string
+        }
       }) => void
     ) => subscribe('library:cloudSave', cb),
   },

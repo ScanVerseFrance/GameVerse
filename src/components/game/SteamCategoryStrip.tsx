@@ -147,6 +147,21 @@ const FILTER_STEAMDB: Record<Tone, string> = {
   remote: 'brightness(0) invert(1) sepia(1) saturate(8) hue-rotate(0deg) brightness(1.15)',
 }
 
+/** Tailwind text-color classes per tone — applied to the parent
+ *  span so inline SVGs using `currentColor` pick up the right hue.
+ *  Mirrors the tinted PNG colour so PNG + inline SVG look identical. */
+const TONE_TEXT: Record<Tone, string> = {
+  multi: 'text-emerald-400',
+  solo: 'text-sky-400',
+  cloud: 'text-cyan-400',
+  controller: 'text-violet-400',
+  meta: 'text-amber-400',
+  accessibility: 'text-rose-400',
+  audio: 'text-fuchsia-400',
+  vr: 'text-indigo-400',
+  remote: 'text-orange-400',
+}
+
 const TONE_BG: Record<Tone, string> = {
   multi: 'bg-emerald-500/10 border-emerald-500/25',
   solo: 'bg-sky-500/10 border-sky-500/25',
@@ -161,6 +176,176 @@ const TONE_BG: Record<Tone, string> = {
 
 const ONLINE_NEEDED_IDS = new Set([1, 9, 20, 27, 36, 37, 38, 47, 48, 49])
 
+/**
+ * Nexus-branded French labels — replaces the raw Steam category
+ * descriptions that mention "Steam Cloud / Steam Achievements / Steam
+ * Trading Cards" with neutral Nexus phrasing. The user is in Nexus
+ * Launcher, not Steam, so "Cloud" without the brand is less confusing.
+ *
+ * Anything outside this map falls back to the Steam-provided
+ * description (still localised by Steam to the user's locale via the
+ * `&l=french` filter in steam-meta.service).
+ */
+const NEXUS_LABELS: Record<number, string> = {
+  1: 'Multijoueur',
+  2: 'Solo',
+  9: 'Coop',
+  13: 'Sous-titres disponibles',
+  14: 'Commentaire audio',
+  15: 'Stats',
+  16: 'Inclut un SDK',
+  17: 'VR',
+  18: 'Support manette partiel',
+  20: 'MMO',
+  21: 'DLC disponible',
+  22: 'Succès',
+  23: 'Cloud',
+  24: 'Écran partagé / local',
+  25: 'Classements',
+  27: 'Multijoueur cross-platform',
+  28: 'Support manette complet',
+  29: 'Cartes à échanger',
+  30: 'Workshop',
+  31: 'VR uniquement',
+  32: 'VR uniquement',
+  35: 'Achats intégrés',
+  36: 'PvP en ligne',
+  37: 'PvP écran partagé',
+  38: 'Coop en ligne',
+  39: 'Coop écran partagé',
+  41: 'Remote Play téléphone',
+  42: 'Remote Play tablette',
+  43: 'Remote Play TV',
+  44: 'Remote Play ensemble',
+  47: 'PvP LAN',
+  48: 'Coop LAN',
+  49: 'PvP',
+  53: 'VR supporté',
+  54: 'VR uniquement',
+  61: 'HDR disponible',
+  62: 'Sous-titres audio',
+  63: 'Sous-titres adaptés',
+  64: 'Taille de texte réglable',
+  65: 'Caméra et confort de vue',
+  66: 'Alternatives de couleurs',
+  67: 'Contrôle du volume différencié',
+  68: 'Difficulté ajustable',
+  69: 'Menus de jeu narrés',
+  70: 'Jouable sans saisie en temps imparti',
+  71: 'Sauvegarde à tout moment',
+  72: 'Son stéréo',
+  73: 'Son multicanal',
+  74: 'Souris + Clavier',
+}
+
+/**
+ * IDs we explicitly DON'T render. These Steam categories only make
+ * sense inside the Steam ecosystem — Nexus doesn't issue trading
+ * cards, doesn't have a Workshop, doesn't track stats/leaderboards
+ * server-side, doesn't sell DLC. Showing the icon would be a false
+ * promise to the user ("oh nice, Nexus has trading cards").
+ */
+const HIDDEN_IDS = new Set<number>([
+  21, // Downloadable Content (Steam DLC catalogue — irrelevant)
+  22, // Steam Achievements — duplicated by our own achievements panel
+  25, // Steam Leaderboards
+  29, // Steam Trading Cards
+  30, // Steam Workshop
+  35, // In-App Purchases
+  11, // Stats (Steam stats API)
+  15, // Stats (modern variant)
+])
+
+/** Filter out categories Nexus can't honour. The renderer calls
+ *  this once per category list — O(N) over a small array. */
+export function filterDisplayableCategories(
+  cats: SteamCategory[],
+): SteamCategory[] {
+  return cats.filter((c) => !HIDDEN_IDS.has(c.id))
+}
+
+/** Return the Nexus-branded label if mapped, else fall back to the
+ *  Steam-provided description. Keeps unknown ids legible. */
+function labelFor(c: SteamCategory): string {
+  return NEXUS_LABELS[c.id] ?? c.description
+}
+
+/**
+ * Inline-SVG fallbacks for the Steam category ids that SteamDB does
+ * NOT serve as `/static/img/categories/{id}.png` — most notably 29
+ * (Trading Cards) which the user spotted rendering as the literal
+ * text "29" on their game card. Paths are 24×24 viewBox, monochrome
+ * line style matching the SteamDB aesthetic. Tinted via the same
+ * `filter` chain so they're indistinguishable from the real PNGs.
+ *
+ * Each entry is a JSX node — not a string — so React renders them
+ * directly without dangerouslySetInnerHTML.
+ */
+const FALLBACK_SVGS: Record<number, JSX.Element> = {
+  // Stats (11, 15) — bar chart
+  11: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
+      <path d="M3 3v18h18" />
+      <rect x="7" y="13" width="3" height="5" />
+      <rect x="12" y="9" width="3" height="9" />
+      <rect x="17" y="5" width="3" height="13" />
+    </svg>
+  ),
+  15: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
+      <path d="M3 3v18h18" />
+      <rect x="7" y="13" width="3" height="5" />
+      <rect x="12" y="9" width="3" height="9" />
+      <rect x="17" y="5" width="3" height="13" />
+    </svg>
+  ),
+  // SDK (16) — code brackets
+  16: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
+      <polyline points="16 18 22 12 16 6" />
+      <polyline points="8 6 2 12 8 18" />
+    </svg>
+  ),
+  // Mods (19) — wrench
+  19: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </svg>
+  ),
+  // Leaderboards (25) — trophy podium
+  25: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
+      <rect x="9" y="11" width="6" height="10" />
+      <rect x="3" y="14" width="6" height="7" />
+      <rect x="15" y="8" width="6" height="13" />
+      <path d="M12 8V3" />
+      <path d="M9 5h6" />
+    </svg>
+  ),
+  // Commentary (26) — message square
+  26: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <path d="M8 9h8M8 13h5" />
+    </svg>
+  ),
+  // Trading Cards (29) — pair of overlapping cards
+  29: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
+      <rect x="3" y="5" width="11" height="15" rx="1.5" transform="rotate(-8 8.5 12.5)" />
+      <rect x="10" y="4" width="11" height="15" rx="1.5" transform="rotate(6 15.5 11.5)" />
+    </svg>
+  ),
+  // SteamVR Collectibles (34) — gem
+  34: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
+      <path d="M6 3h12l4 6-10 13L2 9z" />
+      <path d="M11 3 8 9l4 13 4-13-3-6" />
+      <path d="M2 9h20" />
+    </svg>
+  ),
+}
+
 interface SteamCategoryStripProps {
   categories: SteamCategory[]
   className?: string
@@ -174,24 +359,29 @@ export function SteamCategoryStrip({
   className,
   showOnlineBadge = false,
 }: SteamCategoryStripProps) {
-  if (categories.length === 0) return null
+  // Hide categories that don't apply to Nexus (Trading Cards,
+  // Workshop, etc.) before rendering. Done here rather than at the
+  // service layer so the data stays canonical — the hide list is a
+  // pure UI concern.
+  const displayable = filterDisplayableCategories(categories)
+  if (displayable.length === 0) return null
 
-  const needsOnline = categories.some((c) => ONLINE_NEEDED_IDS.has(c.id))
+  const needsOnline = displayable.some((c) => ONLINE_NEEDED_IDS.has(c.id))
 
   return (
     <div className={cn('flex flex-wrap gap-1.5', className)}>
-      {categories.map((c) => {
+      {displayable.map((c) => {
         const url = ICON_BY_ID.get(c.id)
         const tone = CATEGORY_TONE[c.id] ?? 'meta'
         return (
           <span
             key={c.id}
-            title={c.description}
+            title={labelFor(c)}
             className={cn(
               'inline-flex items-center justify-center w-8 h-8 rounded-md border transition-transform hover:scale-110 cursor-help overflow-hidden',
               TONE_BG[tone],
             )}
-            aria-label={c.description}
+            aria-label={labelFor(c)}
           >
             {url ? (
               // SteamDB's official PNG — monochrome gray+alpha. CSS
@@ -202,6 +392,17 @@ export function SteamCategoryStrip({
                 className="w-5 h-5 object-contain"
                 style={{ filter: FILTER_STEAMDB[tone] }}
               />
+            ) : FALLBACK_SVGS[c.id] ? (
+              // Inline SVG fallback for ids SteamDB doesn't serve
+              // (Trading Cards, Stats, SDK, Commentary, Leaderboards…).
+              // currentColor lets the parent's text-color tint take
+              // over so the icon matches the tone palette without
+              // needing the brightness/sepia filter chain.
+              <span
+                className={cn('w-5 h-5 inline-flex items-center justify-center', TONE_TEXT[tone])}
+              >
+                {FALLBACK_SVGS[c.id]}
+              </span>
             ) : (
               <span className="text-[10px] font-mono text-fg-muted">
                 {c.id}

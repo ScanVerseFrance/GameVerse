@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
-import { Play, Settings, Star, Clock, Gamepad2, Download, FolderCog, Package } from 'lucide-react'
+import { Play, Settings, Star, Clock, Gamepad2, Download, FolderCog, Package, Pin } from 'lucide-react'
 import type { LibraryGame } from '@/types/library.types'
 import { Card } from '@/components/ui/Card'
+import { usePinnedStore } from '@/stores/pinned.store'
 import { cn } from '@/utils/cn'
 
 interface LibraryCardProps {
@@ -83,6 +84,8 @@ function formatBytes(bytes: number): string {
 export function LibraryCard({ game, onPlay, onEdit, onToggleFavorite }: LibraryCardProps) {
   const href = detailHref(game)
   const navigate = useNavigate()
+  const isPinned = usePinnedStore((s) => s.pinned.has(game.id))
+  const togglePin = usePinnedStore((s) => s.toggle)
 
   // Async setup detection — only fires when the game is downloaded but no
   // executable is yet configured. Result is cached in local state; we
@@ -161,37 +164,65 @@ export function LibraryCard({ game, onPlay, onEdit, onToggleFavorite }: LibraryC
   const cardInner = (
     <Card
       padding="none"
+      variant="glass"
       className={cn(
-        'overflow-hidden group transition-all',
-        href ? 'hover:border-accent-primary/60 cursor-pointer' : 'hover:border-accent-primary/30'
+        'overflow-hidden group transition-all duration-300 ease-out-expo rounded-xl',
+        'border border-glass-border',
+        href
+          ? 'hover:border-accent-primary/50 hover:shadow-[0_12px_36px_-12px_rgba(124,92,255,0.5)] hover:-translate-y-1 cursor-pointer'
+          : 'hover:border-accent-primary/30 hover:-translate-y-0.5'
       )}
     >
-      <div className="aspect-[3/4] relative bg-bg-tertiary">
+      <div className="aspect-[3/4] relative bg-bg-tertiary overflow-hidden">
         {game.coverUrl ? (
-          <img src={game.coverUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+          <img
+            src={game.coverUrl}
+            alt=""
+            className="w-full h-full object-cover transition-transform duration-500 ease-out-expo group-hover:scale-[1.06]"
+            loading="lazy"
+          />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Gamepad2 className="w-10 h-10 text-fg-muted" />
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-bg-tertiary to-bg-secondary">
+            <Gamepad2 className="w-10 h-10 text-fg-faint" />
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/95 via-bg-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="absolute inset-0 bg-gradient-to-t from-bg-primary via-bg-primary/30 to-transparent opacity-50 group-hover:opacity-90 transition-opacity duration-300" />
 
-        <button
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            onToggleFavorite()
-          }}
-          className={cn(
-            'absolute top-2 right-2 p-1.5 rounded-full backdrop-blur transition-all z-10',
-            game.isFavorite
-              ? 'bg-warning/80 text-white'
-              : 'bg-black/40 text-white/70 hover:text-white opacity-0 group-hover:opacity-100'
-          )}
-          aria-label={game.isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-        >
-          <Star className={cn('w-3.5 h-3.5', game.isFavorite && 'fill-current')} />
-        </button>
+        <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              togglePin(game.id)
+            }}
+            className={cn(
+              'p-1.5 rounded-full backdrop-blur transition-all',
+              isPinned
+                ? 'bg-accent-gradient text-white shadow-[0_2px_8px_-2px_rgba(124,92,255,0.6)]'
+                : 'bg-black/40 text-white/70 hover:text-white opacity-0 group-hover:opacity-100'
+            )}
+            aria-label={isPinned ? 'Désépingler' : 'Épingler en tête'}
+            title={isPinned ? 'Désépingler' : 'Épingler en tête de la bibliothèque'}
+          >
+            <Pin className={cn('w-3.5 h-3.5', isPinned && 'fill-current')} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onToggleFavorite()
+            }}
+            className={cn(
+              'p-1.5 rounded-full backdrop-blur transition-all',
+              game.isFavorite
+                ? 'bg-warning/80 text-white'
+                : 'bg-black/40 text-white/70 hover:text-white opacity-0 group-hover:opacity-100'
+            )}
+            aria-label={game.isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+          >
+            <Star className={cn('w-3.5 h-3.5', game.isFavorite && 'fill-current')} />
+          </button>
+        </div>
 
         {game.isRunning && (
           <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-success/90 text-white text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 z-10">
@@ -204,12 +235,10 @@ export function LibraryCard({ game, onPlay, onEdit, onToggleFavorite }: LibraryC
             onClick={handlePrimaryAction}
             disabled={game.isRunning}
             className={cn(
-              'w-full h-9 rounded-md text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-shadow disabled:opacity-60',
+              'w-full h-10 rounded-full text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-200 disabled:opacity-60 active:scale-[0.97]',
               installState === 'ready-to-play' || installState === 'has-setup'
-                ? // Both "Jouer" and "Setup" are real one-click actions
-                  // worth promoting visually with the accent gradient.
-                  'bg-accent-gradient hover:shadow-glow'
-                : 'bg-bg-tertiary/90 border border-glass-border hover:border-accent-primary/60 backdrop-blur'
+                ? 'bg-accent-gradient shadow-[0_4px_16px_-4px_rgba(124,92,255,0.7)] hover:shadow-glow-strong hover:brightness-110'
+                : 'glass-card hover:border-accent-primary/60'
             )}
             title={
               installState === 'has-setup'

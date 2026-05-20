@@ -7,6 +7,10 @@ import {
   type JsonSourceRecord,
 } from '@/types/json-source.types'
 import { getDatabase } from './database.service'
+import {
+  resolveTitleToAppid,
+  resolveTitlesBulkAsync,
+} from './steam-apps.service'
 
 interface SourceRow {
   id: string
@@ -25,6 +29,9 @@ interface GameRow {
   file_size: string | null
   uris_json: string
   added_at: number
+  /** Hydra-style canonical Steam appid resolved at import time.
+   *  NULL when no match in the steam_apps mirror. */
+  steam_appid: number | null
 }
 
 const toSource = (r: SourceRow): JsonSourceRecord => ({
@@ -52,6 +59,7 @@ const toGame = (r: GameRow): JsonSourceGame => {
     fileSize: r.file_size,
     uris,
     addedAt: r.added_at,
+    steamAppid: r.steam_appid ?? null,
   }
 }
 
@@ -134,7 +142,7 @@ export function searchJsonSourceGames(
     : ''
 
   const baseSelect =
-    'SELECT g.*, s.name AS source_name FROM json_source_games g JOIN json_sources s ON s.id = g.source_id'
+    'SELECT g.id, g.source_id, g.title, g.upload_date, g.file_size, g.uris_json, g.added_at, g.steam_appid, s.name AS source_name FROM json_source_games g JOIN json_sources s ON s.id = g.source_id'
 
   let sql: string
   let params: unknown[]
@@ -175,10 +183,32 @@ export function searchJsonSourceGames(
   return rows.map((r) => ({ ...toGame(r), sourceName: r.source_name }))
 }
 
+/**
+ * Pick a random game from the imported JSON catalogues. Used by the
+ * "Surprise-moi" / "Jeu aléatoire" button in the top nav — same
+ * shape as searchJsonSourceGames so the renderer can just navigate
+ * to `/json-game/{id}` afterwards.
+ *
+ * Returns null when no sources have been imported yet.
+ */
+export function pickRandomJsonSourceGame(): JsonSourceSearchHit | null {
+  const db = getDatabase()
+  // SQLite's `ORDER BY RANDOM() LIMIT 1` is O(N) but acceptable
+  // for the catalogue sizes we ship (≤ low millions). The renderer
+  // calls this on user click, not in a tight loop.
+  const row = db
+    .prepare(
+      'SELECT g.id, g.source_id, g.title, g.upload_date, g.file_size, g.uris_json, g.added_at, g.steam_appid, s.name AS source_name FROM json_source_games g JOIN json_sources s ON s.id = g.source_id ORDER BY RANDOM() LIMIT 1',
+    )
+    .get() as (GameRow & { source_name: string }) | undefined
+  if (!row) return null
+  return { ...toGame(row), sourceName: row.source_name }
+}
+
 export function getJsonSourceGame(gameId: string): JsonSourceSearchHit | null {
   const row = getDatabase()
     .prepare(
-      'SELECT g.*, s.name AS source_name FROM json_source_games g JOIN json_sources s ON s.id = g.source_id WHERE g.id = ?'
+      'SELECT g.id, g.source_id, g.title, g.upload_date, g.file_size, g.uris_json, g.added_at, g.steam_appid, s.name AS source_name FROM json_source_games g JOIN json_sources s ON s.id = g.source_id WHERE g.id = ?'
     )
     .get(gameId) as (GameRow & { source_name: string }) | undefined
   if (!row) return null
@@ -393,7 +423,9 @@ function reconstructUri(s: string): string {
   return u
 }
 
-export function importJsonSourceFromFile(filePath: string): ImportJsonSourceResult {
+export async function importJsonSourceFromFile(
+  filePath: string,
+): Promise<ImportJsonSourceResult> {
   let text: string
   try {
     text = fs.readFileSync(filePath, 'utf8')
@@ -466,15 +498,29 @@ export async function refreshJsonSource(
   }
 
   const insertGame = db.prepare(
-    'INSERT INTO json_source_games (id, source_id, title, upload_date, file_size, uris_json, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO json_source_games (id, source_id, title, upload_date, file_size, uris_json, added_at, steam_appid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   )
   const updateSource = db.prepare(
     'UPDATE json_sources SET game_count = ?, updated_at = ? WHERE id = ?',
   )
   const totalCount = existingTitles.size + newDownloads.length
   const now = Date.now()
+
+  // Hydra-style: resolve every new title → Steam appid BEFORE the DB
+  // transaction so the renderer sees deduped tiles immediately. We
+  // hit Steam's SearchApps endpoint with bounded concurrency; cached
+  // titles short-circuit to the local DB row without a network call.
+  // Falls through with the appid map empty if Steam is unreachable —
+  // background backfill will catch up on next boot.
+  const appidByTitle = await resolveTitlesBulkAsync(newDownloads.map((d) => d.title))
+
   const txn = db.transaction(() => {
     for (const d of newDownloads) {
+      // Try the just-populated remote map first, then the cache (for
+      // any title that resolved via a different alias during this
+      // batch). NULL when neither finds a match.
+      const appid =
+        appidByTitle.get(d.title) ?? resolveTitleToAppid(d.title) ?? null
       insertGame.run(
         `jsg-${crypto.randomBytes(8).toString('hex')}`,
         row.id,
@@ -483,6 +529,7 @@ export async function refreshJsonSource(
         d.fileSize ?? null,
         JSON.stringify(d.uris),
         now,
+        appid,
       )
     }
     updateSource.run(totalCount, now, row.id)
@@ -526,10 +573,10 @@ export async function refreshAllJsonSources(): Promise<{
   return { total: sources.length, refreshed, newGamesTotal }
 }
 
-export function importJsonSourceFromText(
+export async function importJsonSourceFromText(
   text: string,
-  originPath: string | null
-): ImportJsonSourceResult {
+  originPath: string | null,
+): Promise<ImportJsonSourceResult> {
   const parsed = parseJsonSource(text)
   if (!parsed.ok) return { ok: false, error: parsed.error }
 
@@ -542,12 +589,20 @@ export function importJsonSourceFromText(
     'INSERT INTO json_sources (id, name, origin_path, game_count, imported_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
   )
   const insertGame = db.prepare(
-    'INSERT INTO json_source_games (id, source_id, title, upload_date, file_size, uris_json, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO json_source_games (id, source_id, title, upload_date, file_size, uris_json, added_at, steam_appid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  )
+
+  // Resolve every title → appid BEFORE the DB transaction so the
+  // Discover catalogue sees deduped tiles on the very first paint.
+  const appidByTitle = await resolveTitlesBulkAsync(
+    fileSafe.downloads.map((d) => d.title),
   )
 
   const txn = db.transaction(() => {
     insertSource.run(sourceId, fileSafe.name, originPath, fileSafe.downloads.length, now, now)
     for (const d of fileSafe.downloads) {
+      const appid =
+        appidByTitle.get(d.title) ?? resolveTitleToAppid(d.title) ?? null
       insertGame.run(
         `jsg-${crypto.randomBytes(8).toString('hex')}`,
         sourceId,
@@ -555,7 +610,8 @@ export function importJsonSourceFromText(
         d.uploadDate ?? null,
         d.fileSize ?? null,
         JSON.stringify(d.uris),
-        now
+        now,
+        appid,
       )
     }
   })

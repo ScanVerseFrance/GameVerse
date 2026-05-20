@@ -87,9 +87,17 @@ export function SaveConflictDialog({
   async function keepLocal() {
     setBusy('local')
     setError(null)
+    // `force: true` because the user has EXPLICITLY chosen to overwrite
+    // the cloud copy with their local state. Without it, the
+    // anti-shrink safety check could silently skip the upload (e.g.
+    // when the user restored an older version and the new local is
+    // smaller than the previous "current" in cloud) — the dialog
+    // would then close + launch the game with the user thinking the
+    // cloud was updated when it wasn't.
     const res = await window.nexus.cloudSave.upload(
       libraryGameId,
-      `Manuel · ${new Date().toLocaleString('fr-FR')}`
+      `Manuel · ${new Date().toLocaleString('fr-FR')}`,
+      true,
     )
     setBusy(null)
     if (!res.ok && !res.skipped) {
@@ -100,9 +108,22 @@ export function SaveConflictDialog({
     onClose()
   }
 
-  function cancel() {
+  /** "Annuler" button at the bottom — closes the dialog AND launches
+   *  the game using whatever local save state is on disk. The post-
+   *  exit auto-upload will still fire (subject to the shrink guard)
+   *  so the cloud catches up on the next quit. */
+  function cancelAndLaunch() {
     if (busy) return
     onLaunch?.()
+    onClose()
+  }
+
+  /** Top-right "X" — closes the dialog WITHOUT launching the game.
+   *  The user explicitly asked for this: clicking the close icon
+   *  should be a pure "dismiss this modal" action, not a covert
+   *  "launch with local state" button. */
+  function dismiss() {
+    if (busy) return
     onClose()
   }
 
@@ -136,10 +157,11 @@ export function SaveConflictDialog({
                 </p>
               </div>
               <button
-                onClick={cancel}
+                onClick={dismiss}
                 disabled={!!busy}
                 className="text-fg-muted hover:text-fg-primary p-1 rounded-sm hover:bg-[var(--surface-soft)] disabled:opacity-50"
                 aria-label="Fermer"
+                title="Fermer (ne lance pas le jeu)"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -196,9 +218,11 @@ export function SaveConflictDialog({
               <p className="text-[11px] text-fg-muted leading-snug max-w-md">
                 <strong>Annuler</strong> lance le jeu directement avec la save
                 actuelle de ce PC. Le cloud sera mis à jour à la fermeture.
+                La croix (×) en haut à droite ferme juste le modal sans
+                lancer le jeu.
               </p>
               <button
-                onClick={cancel}
+                onClick={cancelAndLaunch}
                 disabled={!!busy}
                 className="h-9 px-4 rounded-md text-sm font-semibold text-fg-secondary hover:text-fg-primary hover:bg-[var(--surface-soft)] disabled:opacity-50"
               >

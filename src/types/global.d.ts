@@ -69,7 +69,7 @@ import type {
   JsonSourceRecord,
   JsonSourceSearchHit,
 } from './json-source.types'
-import type { GameArtwork, GameComment } from './artwork.types'
+import type { GameArtwork, GameComment, GameRatingSummary } from './artwork.types'
 
 interface PickFileOptions {
   filters?: Array<{ name: string; extensions: string[] }>
@@ -483,6 +483,108 @@ export interface NexusAPI {
     getGame: (
       gameId: string
     ) => Promise<{ ok: true; game: JsonSourceSearchHit } | { ok: false; error: string }>
+    pickRandom: () => Promise<
+      | { ok: true; game: JsonSourceSearchHit }
+      | { ok: false; error: string }
+    >
+    onAppidsUpdated: (
+      cb: (payload: { resolved: number; total: number }) => void,
+    ) => () => void
+  }
+  steamCatalogue: {
+    search: (opts: {
+      query?: string
+      withSourceOnly?: boolean
+      limit?: number
+      offset?: number
+      sort?: 'popularity' | 'name'
+    }) => Promise<{
+      ok: boolean
+      error?: string
+      rows: Array<{
+        appid: number
+        name: string
+        ownersRank: number
+        scoreRank: number
+        sourceCount: number
+        sourceNames: string
+        coverUrl: string | null
+      }>
+      total: number
+    }>
+    get: (appid: number) => Promise<
+      | {
+          ok: true
+          detail: {
+            appid: number
+            name: string
+            ownersRank: number
+            scoreRank: number
+            downloadCount: number
+            ratingAvg: number | null
+            ratingCount: number
+            sources: Array<{
+              gameId: string
+              sourceId: string
+              sourceName: string
+              title: string
+              uris: string[]
+              fileSize: string | null
+              uploadDate: string | null
+            }>
+          }
+        }
+      | { ok: false; error: string }
+    >
+    status: () => Promise<{
+      ok: boolean
+      total: number
+      lastFetchedAt: number | null
+    }>
+    players: (
+      appid: number,
+    ) => Promise<{ ok: boolean; count: number | null; error?: string }>
+    resolveCovers: (
+      appids: number[],
+    ) => Promise<{
+      ok: boolean
+      urls: Record<number, string | null>
+      error?: string
+    }>
+    filterPlayable: (
+      appids: number[],
+    ) => Promise<{ ok: boolean; kept: number[]; error?: string }>
+    mostPlayed: (limit?: number) => Promise<{
+      ok: boolean
+      entries: Array<{
+        rank: number
+        appId: number
+        name: string
+        peakInGame: number
+        lastWeekRank: number
+      }>
+      error?: string
+    }>
+    topReleases: (limit?: number) => Promise<{
+      ok: boolean
+      monthName: string
+      entries: Array<{ rank: number; appId: number; name: string }>
+      error?: string
+    }>
+    topOwned: (opts?: { limit?: number; offset?: number }) => Promise<{
+      ok: boolean
+      entries: Array<{
+        rank: number
+        appId: number
+        name: string
+        ownersLowerBound: number
+      }>
+      total: number
+      error?: string
+    }>
+    onProgress: (
+      cb: (payload: { seeded: number; pages: number }) => void,
+    ) => () => void
   }
   artwork: {
     lookup: (query: string) => Promise<{ ok: true; artwork: GameArtwork } | { ok: false; error: string }>
@@ -499,9 +601,18 @@ export interface NexusAPI {
       userId: string,
       gameKind: string,
       gameExternalId: string,
-      content: string
+      content: string,
+      rating?: number,
     ) => Promise<{ ok: true; comment: GameComment } | { ok: false; error: string }>
     delete: (commentId: string, userId: string) => Promise<{ ok: boolean }>
+    ratingSummary: (
+      gameKind: string,
+      gameExternalId: string,
+    ) => Promise<{ ok: true; summary: GameRatingSummary }>
+    ratingSummariesBulk: (
+      items: Array<{ kind: string; id: string }>,
+    ) => Promise<{ ok: true; summaries: Record<string, GameRatingSummary> }>
+    downloadCount: (gameExternalId: string) => Promise<{ ok: true; count: number }>
   }
   profile: {
     getCosmetics: (userId: string) => Promise<{
@@ -757,12 +868,23 @@ export interface NexusAPI {
   }
   cloudSave: {
     preview: (libraryGameId: string) => Promise<
-      | { ok: true; fileCount: number; totalBytes: number; games: string[] }
+      | {
+          ok: true
+          fileCount: number
+          totalBytes: number
+          games: string[]
+          /** Newest mtime (ms epoch) across the local save files
+           *  Ludusavi knows about. null if no local saves exist. */
+          latestMtime: number | null
+        }
       | { ok: false; error: string }
     >
     upload: (
       libraryGameId: string,
-      label?: string
+      label?: string,
+      /** Bypass the local-shrunk-vs-cloud safety check.
+       *  Set after the user explicitly confirms an overwrite. */
+      force?: boolean
     ) => Promise<{
       ok: boolean
       artifactId?: string
@@ -771,6 +893,15 @@ export interface NexusAPI {
       skipped?: boolean
       skipReason?: string
       error?: string
+      /** When skipReason === 'local_shrunk_vs_cloud', the cloud
+       *  artifact we refused to overwrite. */
+      latestArtifact?: {
+        id: string
+        sizeBytes: number
+        label: string | null
+        hostname: string | null
+        createdAt: string
+      }
     }>
     restore: (
       libraryGameId: string,
@@ -795,6 +926,27 @@ export interface NexusAPI {
     openSavesFolder: (
       libraryGameId: string
     ) => Promise<{ ok: boolean; path?: string; error?: string }>
+    /** Full cloud-side history for one game, newest first. The
+     *  server's retention policy caps at 4 rows (current + 3
+     *  previous). */
+    listArtifacts: (
+      libraryGameId: string,
+      limit?: number
+    ) => Promise<{
+      ok: boolean
+      artifacts?: Array<{
+        id: string
+        sizeBytes: number
+        label: string | null
+        hostname: string | null
+        createdAt: string
+      }>
+      error?: string
+    }>
+    /** Delete a single cloud artifact (manual prune). */
+    deleteArtifact: (
+      artifactId: string
+    ) => Promise<{ ok: boolean; error?: string }>
     onEvent: (
       cb: (data: {
         libraryGameId: string
@@ -806,6 +958,13 @@ export interface NexusAPI {
         skipped?: boolean
         skipReason?: string
         error?: string
+        latestArtifact?: {
+          id: string
+          sizeBytes: number
+          label: string | null
+          hostname: string | null
+          createdAt: string
+        }
       }) => void
     ) => () => void
   }
@@ -904,12 +1063,12 @@ export interface NexusAPI {
   }
   steam250: {
     lists: () => Promise<Record<
-      'top-100-in-2-weeks' | 'hidden-gems' | 'best-of-the-year' | 'most-played' | 'top-250',
-      Array<{ rank: number; appId: number; name: string }>
+      'top-100-in-2-weeks' | 'hidden-gems' | 'best-of-the-year' | 'most-played' | 'top-250' | 'last-30-days',
+      Array<{ rank: number; appId: number; name: string; coverUrl: string | null }>
     >>
     list: (
-      listId: 'top-100-in-2-weeks' | 'hidden-gems' | 'best-of-the-year' | 'most-played' | 'top-250',
-    ) => Promise<Array<{ rank: number; appId: number; name: string }>>
+      listId: 'top-100-in-2-weeks' | 'hidden-gems' | 'best-of-the-year' | 'most-played' | 'top-250' | 'last-30-days',
+    ) => Promise<Array<{ rank: number; appId: number; name: string; coverUrl: string | null }>>
   }
   notifs: {
     list: (

@@ -990,14 +990,24 @@ function normalizeForMatch(s: string): string {
  */
 export function findExecutableInFolder(folder: string, hintTitle?: string): string | null {
   let scanned = 0
-  const SCAN_CAP = 4000
-  const MAX_DEPTH = 5
-  // Two buckets: candidates that pass the strict size cutoff (≥ 2 MB)
-  // and a fallback bucket for the lenient pass (≥ 100 KB).
+  // Bumped MAX_DEPTH 5 → 8 because some games nest the binary deep:
+  //   <install>/Game/win64/Release/Game.exe → depth 4
+  //   <install>/Game/Binaries/Win64/x64/Game-Win64-Shipping.exe → depth 6
+  //   <install>/SomePublisher/Title/Bin/Win64/Game.exe → depth 6
+  // The previous 5 limit silently dropped these. SCAN_CAP bumped in
+  // step so deeper trees still terminate within ~200 ms.
+  const SCAN_CAP = 8000
+  const MAX_DEPTH = 8
+  // Three buckets: strict (≥ 2 MB main binary), lenient (≥ 50 KB —
+  // legitimate smaller indies like Geometry Dash), and last-resort
+  // (any size > 0). Geometry Dash's exe is ~5 MB so should fall
+  // into strict; the buckets exist so smaller indies / tiny games
+  // (Vampire Survivors at one point was < 100 KB) don't get dropped.
   const strict: ExeCandidate[] = []
   const lenient: ExeCandidate[] = []
+  const lastResort: ExeCandidate[] = []
   const STRICT_MIN = 2 * 1024 * 1024
-  const LENIENT_MIN = 100 * 1024
+  const LENIENT_MIN = 50 * 1024
 
   function walk(dir: string, depth: number): void {
     if (depth > MAX_DEPTH || scanned >= SCAN_CAP) return
@@ -1021,7 +1031,7 @@ export function findExecutableInFolder(folder: string, hintTitle?: string): stri
       if (EXE_NAME_BLOCKLIST.some((re) => re.test(entry.name))) continue
       try {
         const stat = fs.statSync(full)
-        if (stat.size < LENIENT_MIN) continue
+        if (stat.size <= 0) continue
         const cand: ExeCandidate = {
           fullPath: full,
           size: stat.size,
@@ -1029,7 +1039,8 @@ export function findExecutableInFolder(folder: string, hintTitle?: string): stri
           baseName: entry.name.replace(/\.exe$/i, ''),
         }
         if (stat.size >= STRICT_MIN) strict.push(cand)
-        else lenient.push(cand)
+        else if (stat.size >= LENIENT_MIN) lenient.push(cand)
+        else lastResort.push(cand)
       } catch {
         // ignore — unreadable files are non-candidates
       }
@@ -1042,7 +1053,12 @@ export function findExecutableInFolder(folder: string, hintTitle?: string): stri
     return null
   }
 
-  const pool = strict.length > 0 ? strict : lenient
+  // Use the most-permissive populated bucket. Last-resort only kicks
+  // in for truly tiny exe games (rare) — the blocklist already
+  // filters helpers like crash handlers, so anything that survived
+  // is worth trying as the game binary.
+  const pool =
+    strict.length > 0 ? strict : lenient.length > 0 ? lenient : lastResort
   if (pool.length === 0) return null
   if (pool.length === 1) return pool[0].fullPath
 

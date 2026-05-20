@@ -114,9 +114,12 @@ export function CloudAuthGate() {
   if (status === 'connecting') {
     return (
       <div className="fixed inset-0 z-[1000] bg-bg-primary flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3 text-fg-secondary">
-          <Loader2 className="w-8 h-8 animate-spin text-accent-primary" />
-          <p className="text-sm font-mono">Connexion à Nexus Cloud…</p>
+        <div className="flex flex-col items-center gap-4 text-fg-secondary">
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 rounded-full bg-accent-gradient opacity-30 blur-2xl animate-pulse" />
+            <Loader2 className="relative w-16 h-16 animate-spin text-accent-primary" />
+          </div>
+          <p className="text-sm font-mono tracking-wide">Connexion à Nexus Cloud…</p>
         </div>
       </div>
     )
@@ -131,22 +134,40 @@ export function CloudAuthGate() {
           className="absolute inset-0"
           style={{
             background:
-              'radial-gradient(circle at 20% 30%, rgba(102,192,244,0.20), transparent 55%), radial-gradient(circle at 80% 70%, rgba(91,163,43,0.18), transparent 55%), linear-gradient(135deg, #1b2838 0%, #0b1622 100%)',
+              'radial-gradient(circle at 20% 30%, rgba(124, 92, 255, 0.32), transparent 60%),' +
+              'radial-gradient(circle at 85% 75%, rgba(255, 122, 200, 0.20), transparent 55%),' +
+              'radial-gradient(circle at 60% 110%, rgba(91, 60, 255, 0.25), transparent 60%),' +
+              'linear-gradient(135deg, #0a0a12 0%, #14142a 100%)',
+          }}
+        />
+        {/* Animated floating blob accent */}
+        <div
+          aria-hidden
+          className="absolute -top-32 -right-32 w-[420px] h-[420px] rounded-full opacity-40 animate-float"
+          style={{
+            background: 'radial-gradient(circle, rgba(167,139,255,0.6), transparent 70%)',
+            filter: 'blur(80px)',
+            animationDuration: '14s',
           }}
         />
         <div className="relative z-10">
-          <div className="inline-flex items-center gap-2 mb-8">
-            <div className="w-10 h-10 rounded-lg bg-accent-gradient flex items-center justify-center shadow-glow">
-              <Cloud className="w-5 h-5 text-white" />
+          <div className="inline-flex items-center gap-3 mb-10">
+            <div className="relative w-12 h-12 rounded-xl bg-accent-gradient flex items-center justify-center shadow-[0_8px_32px_-4px_rgba(124,92,255,0.6)]">
+              <Cloud className="w-6 h-6 text-white" />
             </div>
-            <span className="font-display font-black text-2xl text-white">
-              Nexus Cloud
-            </span>
+            <div className="flex flex-col">
+              <span className="font-display font-black text-2xl text-white tracking-tight">
+                Nexus Cloud
+              </span>
+              <span className="text-[10px] uppercase tracking-[0.25em] text-fg-muted">
+                Launcher next-gen
+              </span>
+            </div>
           </div>
-          <h1 className="font-display font-black text-4xl xl:text-5xl text-white leading-tight mb-6">
-            Tes parties,
+          <h1 className="font-display font-black text-4xl xl:text-5xl leading-[1.05] mb-6 tracking-tight">
+            <span className="text-white">Tes parties,</span>
             <br />
-            partout où tu joues.
+            <span className="text-gradient">partout où tu joues.</span>
           </h1>
           <ul className="flex flex-col gap-3 text-fg-secondary text-sm max-w-md">
             <Bullet>
@@ -234,21 +255,21 @@ export function CloudAuthGate() {
             </AnimatePresence>
           </div>
 
-          {/* Tabs */}
-          <div className="grid grid-cols-2 gap-1 p-1 rounded-md bg-[var(--surface-soft)] border border-glass-border mb-5">
+          {/* Tabs — capsule glass arrondie */}
+          <div className="grid grid-cols-2 gap-1 p-1.5 rounded-full glass-card mb-6">
             <button
               onClick={() => {
                 setTab('register')
                 setError(null)
               }}
               className={cn(
-                'h-9 rounded-sm text-sm font-medium inline-flex items-center justify-center gap-1.5 transition-colors',
+                'h-10 rounded-full text-sm font-semibold inline-flex items-center justify-center gap-2 transition-all duration-300 ease-out-expo',
                 tab === 'register'
-                  ? 'bg-bg-secondary text-fg-primary shadow-sm'
-                  : 'text-fg-muted hover:text-fg-secondary'
+                  ? 'bg-accent-gradient text-white shadow-[0_4px_16px_-4px_rgba(124,92,255,0.6)]'
+                  : 'text-fg-muted hover:text-fg-primary hover:bg-surface-soft'
               )}
             >
-              <UserPlus className="w-3.5 h-3.5" />
+              <UserPlus className="w-4 h-4" />
               Créer un compte
             </button>
             <button
@@ -257,13 +278,13 @@ export function CloudAuthGate() {
                 setError(null)
               }}
               className={cn(
-                'h-9 rounded-sm text-sm font-medium inline-flex items-center justify-center gap-1.5 transition-colors',
+                'h-10 rounded-full text-sm font-semibold inline-flex items-center justify-center gap-2 transition-all duration-300 ease-out-expo',
                 tab === 'login'
-                  ? 'bg-bg-secondary text-fg-primary shadow-sm'
-                  : 'text-fg-muted hover:text-fg-secondary'
+                  ? 'bg-accent-gradient text-white shadow-[0_4px_16px_-4px_rgba(124,92,255,0.6)]'
+                  : 'text-fg-muted hover:text-fg-primary hover:bg-surface-soft'
               )}
             >
-              <LogIn className="w-3.5 h-3.5" />
+              <LogIn className="w-4 h-4" />
               Se connecter
             </button>
           </div>

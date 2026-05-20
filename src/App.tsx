@@ -12,9 +12,11 @@ import { useNotificationsStore } from './stores/notifications.store'
 import { useCloudStore } from './stores/cloud.store'
 import { useApplyTheme } from './hooks/useApplyTheme'
 import { useThemePreset } from './hooks/useThemePreset'
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts'
 import { UpdatePopup } from './components/common/UpdatePopup'
 import { CommandPalette } from './components/common/CommandPalette'
 import { ChangelogDialog } from './components/common/ChangelogDialog'
+import { KeyboardShortcutsDialog } from './components/common/KeyboardShortcutsDialog'
 
 export default function App() {
   const restore = useAuthStore((s) => s.restoreSession)
@@ -34,6 +36,8 @@ export default function App() {
   // re-applying on remount.
   useThemePreset()
   useApplyTheme()
+  // Raccourcis clavier globaux : Ctrl+H, Ctrl+L, Ctrl+D, Ctrl+,, etc.
+  useGlobalShortcuts()
 
   useEffect(() => {
     void restore()
@@ -292,6 +296,8 @@ export default function App() {
           catalogues and friends. Mounted outside RouterProvider so
           the keyboard listener binds once for the whole session. */}
       <CommandPalette />
+      {/* Cheat-sheet des raccourcis clavier — Ctrl+/ depuis n'importe où. */}
+      <KeyboardShortcutsDialog />
       {/* "Quoi de neuf" — auto-pops the first time the user launches
           a build that's newer than the version they last saw. Reads
           __NEXUS_VERSION__ + localStorage to make the call, so this

@@ -81,6 +81,16 @@ export function registerJsonSourcesIpc() {
     }
   })
 
+  ipcMain.handle('jsonSources:pickRandom', async () => {
+    try {
+      const game = svc.pickRandomJsonSourceGame()
+      if (!game) return { ok: false, error: 'Aucune source importée.' }
+      return { ok: true, game }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
   ipcMain.handle('jsonSources:getGame', async (_e, gameId: string) => {
     try {
       const game = svc.getJsonSourceGame(sanitizeString(gameId, 64))

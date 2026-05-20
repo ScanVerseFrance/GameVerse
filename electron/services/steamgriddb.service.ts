@@ -143,3 +143,53 @@ export async function lookupSGDB(title: string): Promise<SgdbArtwork | null> {
 export function isSGDBConfigured(): boolean {
   return getApiKey().length > 0
 }
+
+/**
+ * Fast-path SGDB lookup keyed directly by Steam appid. Skips the
+ * autocomplete-by-title step — we already KNOW the canonical Steam
+ * id from our catalogue. SGDB exposes `/grids/steam/{appid}` which
+ * returns the user-uploaded portrait covers indexed under that
+ * Steam game.
+ *
+ * Filters to 600×900 portraits (Steam library tile dimensions). When
+ * SGDB has nothing in that aspect, we return null — the caller then
+ * falls back to Steam's `header.jpg` (landscape) which at least
+ * shows something for the tile.
+ *
+ * Returns null silently when no SGDB key is configured so the
+ * catalogue keeps rendering without forcing the user to set one up.
+ */
+export async function lookupSGDBCoverByAppid(
+  appid: number,
+): Promise<string | null> {
+  const apiKey = getApiKey()
+  if (!apiKey) return null
+  if (!Number.isFinite(appid) || appid <= 0) return null
+
+  const release = await sgdbSemaphore.acquire()
+  try {
+    // dimensions=600x900 narrows the result to portrait covers
+    // matching Steam's library tile spec. types=static avoids the
+    // animated covers some titles ship (browsers can render them
+    // but they bloat the page).
+    const grids = await sgdbGet<SgdbAssetHit[]>(
+      `/grids/steam/${appid}?dimensions=600x900&types=static`,
+      apiKey,
+    )
+    if (grids && grids.length > 0 && grids[0]?.url) {
+      return grids[0].url
+    }
+    // No 600×900 result → try without the dimension filter; community
+    // covers in other aspects are still better than a landscape
+    // header awkwardly cropped to portrait.
+    const fallback = await sgdbGet<SgdbAssetHit[]>(
+      `/grids/steam/${appid}?types=static`,
+      apiKey,
+    )
+    return fallback?.[0]?.url ?? null
+  } catch {
+    return null
+  } finally {
+    release()
+  }
+}

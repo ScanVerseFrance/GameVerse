@@ -58,6 +58,43 @@ export function CloudSaveToastContainer() {
         ) {
           return
         }
+        // Cloud backend transient 5xx — already retried once
+        // server-side. Show a calm grey toast that reassures the
+        // user the LOCAL save is fine and the cloud copy will
+        // catch up on the next launch.
+        if (data.skipReason === 'cloud_server_error') {
+          entry = {
+            id,
+            kind: 'skipped',
+            title: 'Sauvegarde cloud reportée',
+            body: `${gameName} — Le serveur a un hoquet, on réessaie au prochain lancement. Ta save locale est intacte.`,
+          }
+          setToasts((prev) => [...prev, entry].slice(-MAX_VISIBLE))
+          return
+        }
+        // Anti-écrasement: la save locale est nettement plus petite
+        // que celle du cloud (probablement un effacement accidentel).
+        // On surface un toast rouge pour que l'utilisateur ouvre la
+        // modale Sauvegardes et choisisse "Restaurer le cloud" ou
+        // "Forcer l'envoi". L'upload N'A PAS eu lieu — la version
+        // cloud précédente est intacte.
+        if (data.skipReason === 'local_shrunk_vs_cloud') {
+          const cloudSize = data.latestArtifact?.sizeBytes
+          const localSize = data.sizeBytes
+          entry = {
+            id,
+            kind: 'error',
+            title: 'Sauvegarde locale beaucoup plus petite que le cloud',
+            body:
+              `${gameName} — ` +
+              (cloudSize != null && localSize != null
+                ? `Cloud ${bytes(cloudSize)} → local ${bytes(localSize)}. `
+                : '') +
+              `Cloud intact. Ouvre Sauvegardes pour restaurer ou forcer l'envoi.`,
+          }
+          setToasts((prev) => [...prev, entry].slice(-MAX_VISIBLE))
+          return
+        }
         entry = {
           id,
           kind: 'skipped',

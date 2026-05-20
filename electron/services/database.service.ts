@@ -106,6 +106,42 @@ function runMigrations(d: Database.Database) {
    *  after PRESENCE_DECAY_MS in social.service. */
   ensureColumn('users', 'last_active_at', 'INTEGER')
 
+  // v0.3.1: comments became reviews — 0-5 star rating column added
+  // to game_comments. Existing rows backfill to 0 ("no rating
+  // given") so the row stays a plain comment in the new UI.
+  ensureColumn('game_comments', 'rating', 'INTEGER NOT NULL DEFAULT 0')
+
+  // v0.3.1: Hydra-style canonical Steam appid on every JSON-source
+  // game row. Backfilled lazily by steam-apps.service after the
+  // GetAppList mirror is seeded; NULL when no match was found (no
+  // recognisable title or genuinely non-Steam game). The discovery
+  // page groups by this column to collapse FitGirl + AnkerGames +
+  // DODI variants of the same game into a single tile.
+  ensureColumn('json_source_games', 'steam_appid', 'INTEGER')
+  // Hash-path cover URL for catalogue tiles. Steam's legacy
+  // cdn.cloudflare.steamstatic.com/steam/apps/{appid}/library_600x900.jpg
+  // returns 404 for recent / upcoming games (Forza Horizon 6, Resident
+  // Evil Requiem, Pragmata, etc.) — the only path that works is the
+  // store_item_assets/steam/apps/{appid}/{HASH}/capsule_*.jpg variant
+  // which carries an asset hash. We populate this lazily from the
+  // Steam storefront `appdetails` API on first render and from
+  // Steam-250's HTML when those lists land.
+  ensureColumn('steam_catalogue', 'cover_url', 'TEXT')
+  // Filtering metadata lazily populated from Steam's appdetails API.
+  // Used to exclude apps the user said don't belong on Trending:
+  //   - Non-game apps (Wallpaper Engine, software, demos)
+  //   - 100 % multiplayer / online-only games (PUBG, CS:GO)
+  // is_game     : 1 when appdetails.type === 'game', 0 otherwise.
+  // is_single_player : 1 when Steam category id 2 is present.
+  // is_multi_player  : 1 when Steam category id 1 is present.
+  // meta_fetched_at  : epoch ms of the last appdetails fetch (NULL when
+  //                    not yet probed). NULL-checks let us batch-fetch
+  //                    just the unresolved appids on demand.
+  ensureColumn('steam_catalogue', 'is_game', 'INTEGER')
+  ensureColumn('steam_catalogue', 'is_single_player', 'INTEGER')
+  ensureColumn('steam_catalogue', 'is_multi_player', 'INTEGER')
+  ensureColumn('steam_catalogue', 'meta_fetched_at', 'INTEGER')
+
   // Per-user Top 5 games showcase. Up to 5 rows per user, each pointing at
   // a library_games id. Position is the slot (1..5).
   try {
@@ -412,6 +448,14 @@ function createSchema(d: Database.Database) {
       content TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
+      -- v0.3.1: comments became reviews. The rating column is 0-5
+      -- (0 = no rating given, treated as "skip" in the average) and
+      -- lives here rather than in a separate table so the existing
+      -- comment list query stays a single SELECT. Older rows backfill
+      -- to 0 via the ALTER TABLE in runMigrations so the column is
+      -- always present and the renderer can always assume a number.
+      rating INTEGER NOT NULL DEFAULT 0
+        CHECK (rating >= 0 AND rating <= 5),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_game_comments_game
@@ -429,6 +473,31 @@ function createSchema(d: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_steam_apps_norm ON steam_apps(normalized_name);
 
     CREATE TABLE IF NOT EXISTS steam_apps_meta (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      last_fetched_at INTEGER NOT NULL,
+      total_count INTEGER NOT NULL
+    );
+
+    -- Hydra-exact Steam catalogue. Seeded once from SteamSpy paginated
+    -- request=all endpoint (~85k popular games with ownership rank).
+    -- Every Steam game on Discover is one row here. json_source_games
+    -- rows match by steam_appid to surface download buttons on the
+    -- game page. normalized_name is the same aggressive strip used by
+    -- the title-to-appid resolver. owners_rank is the lower bound of
+    -- SteamSpy owners range, used as a popularity proxy.
+    CREATE TABLE IF NOT EXISTS steam_catalogue (
+      appid INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      normalized_name TEXT NOT NULL,
+      owners_rank INTEGER NOT NULL DEFAULT 0,
+      score_rank INTEGER NOT NULL DEFAULT 0,
+      added_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_steam_catalogue_norm ON steam_catalogue(normalized_name);
+    CREATE INDEX IF NOT EXISTS idx_steam_catalogue_owners ON steam_catalogue(owners_rank DESC);
+    CREATE INDEX IF NOT EXISTS idx_steam_catalogue_name ON steam_catalogue(name COLLATE NOCASE);
+
+    CREATE TABLE IF NOT EXISTS steam_catalogue_meta (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       last_fetched_at INTEGER NOT NULL,
       total_count INTEGER NOT NULL

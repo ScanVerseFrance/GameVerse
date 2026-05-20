@@ -40,6 +40,12 @@ export interface JsonSourceGame {
   fileSize: string | null
   uris: string[]
   addedAt: number
+  /** v0.3.1 (Hydra-style): canonical Steam appid resolved at import
+   *  time via steam-apps.service. NULL when no match was found (no
+   *  recognisable title or genuinely non-Steam game). Lets the
+   *  catalogue render a single tile per appid regardless of how many
+   *  repackers carry it. */
+  steamAppid: number | null
 }
 
 export interface ImportJsonSourceResult {

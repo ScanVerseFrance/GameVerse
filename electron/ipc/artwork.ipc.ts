@@ -40,17 +40,60 @@ export function registerArtworkIpc() {
 
   ipcMain.handle(
     'comments:add',
-    async (_e, userId: string, gameKind: string, gameExternalId: string, content: string) => {
+    async (
+      _e,
+      userId: string,
+      gameKind: string,
+      gameExternalId: string,
+      content: string,
+      rating?: number,
+    ) => {
       return comments.addComment(
         sanitizeString(userId, 64),
         sanitizeString(gameKind, 32),
         sanitizeString(gameExternalId, 128),
-        sanitizeString(content, 2000)
+        sanitizeString(content, 2000),
+        typeof rating === 'number' ? rating : 0,
       )
     }
   )
 
   ipcMain.handle('comments:delete', async (_e, commentId: string, userId: string) => {
     return { ok: comments.deleteComment(sanitizeString(commentId, 64), sanitizeString(userId, 64)) }
+  })
+
+  // v0.3.1 — aggregate rating + download-count surface for the
+  // catalogue tile + game page sidebar.
+  ipcMain.handle(
+    'comments:ratingSummary',
+    async (_e, gameKind: string, gameExternalId: string) => {
+      return {
+        ok: true,
+        summary: comments.getRatingSummary(
+          sanitizeString(gameKind, 32),
+          sanitizeString(gameExternalId, 128),
+        ),
+      }
+    },
+  )
+  ipcMain.handle(
+    'comments:ratingSummariesBulk',
+    async (_e, items: Array<{ kind: string; id: string }>) => {
+      const safe = Array.isArray(items)
+        ? items
+            .filter((i) => i && typeof i.kind === 'string' && typeof i.id === 'string')
+            .map((i) => ({
+              kind: sanitizeString(i.kind, 32),
+              id: sanitizeString(i.id, 128),
+            }))
+        : []
+      return { ok: true, summaries: comments.getRatingSummariesBulk(safe) }
+    },
+  )
+  ipcMain.handle('comments:downloadCount', async (_e, gameExternalId: string) => {
+    return {
+      ok: true,
+      count: comments.getDownloadCount(sanitizeString(gameExternalId, 128)),
+    }
   })
 }

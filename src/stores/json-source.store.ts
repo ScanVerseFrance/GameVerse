@@ -11,6 +11,11 @@ interface JsonSourceState {
   sources: JsonSourceRecord[]
   /** sourceId → games (populated lazily on expand) */
   gamesBySource: Record<string, JsonSourceGame[]>
+  /** Bumps every time the main process resolves a chunk of new
+   *  steam_appids in the background. Consumers (e.g. DiscoverPage)
+   *  list this in their useEffect deps so they re-fetch and re-dedup
+   *  the visible catalogue without the user having to reload. */
+  catalogueVersion: number
 
   load: () => Promise<void>
   loadGames: (sourceId: string, force?: boolean) => Promise<JsonSourceGame[]>
@@ -26,6 +31,7 @@ export const useJsonSourceStore = create<JsonSourceState>((set, get) => ({
   loaded: false,
   sources: [],
   gamesBySource: {},
+  catalogueVersion: 0,
 
   load: async () => {
     const res = await window.nexus.jsonSources.list()
@@ -85,3 +91,16 @@ export const useJsonSourceStore = create<JsonSourceState>((set, get) => ({
     return res.ok ? res.game : null
   },
 }))
+
+// Bridge: main process fires `jsonSources:appidsUpdated` every 200
+// resolved titles + once at backfill completion. We translate each
+// event into a `catalogueVersion` bump so the Discover page (and any
+// other consumer that lists it in their effect deps) re-fetches the
+// catalogue and re-runs the cross-source dedup. Without this, the
+// renderer's first paint shows the pre-backfill snapshot and stays
+// frozen there until the user navigates away and back.
+if (typeof window !== 'undefined' && window.nexus?.jsonSources?.onAppidsUpdated) {
+  window.nexus.jsonSources.onAppidsUpdated(() => {
+    useJsonSourceStore.setState((s) => ({ catalogueVersion: s.catalogueVersion + 1 }))
+  })
+}
