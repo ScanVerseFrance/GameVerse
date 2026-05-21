@@ -330,19 +330,32 @@ export default function ProfilePage() {
   async function handlePickAvatar() {
     const file = await imageUpload.pick()
     if (!file) return
-    // Tous formats (PNG / JPG / GIF / APNG / WebP) passent par le
-    // cropper (parité ScanVerse + UX cohérente demandée par l'user).
-    // Trade-off explicite : les GIF/APNG perdent leur animation parce
-    // que canvas.toDataURL flatten en première frame. L'user accepte
-    // ce compromis pour pouvoir cadrer toutes les images.
+    // GIF / APNG : bypass le cropper (canvas.toDataURL flatten →
+    // perd l'animation). Push direct le data URL → l'animation
+    // survit. Cadrage user sacrifié pour ce format. Parité avec
+    // ScanVerse qui fait la même chose côté web.
+    if (isAnimatedImage(file.mime)) {
+      const ok = await updateAuthProfile({ avatarPath: file.dataUrl })
+      await refreshProfile()
+      toast[ok ? 'success' : 'error'](
+        ok ? 'Avatar animé mis à jour' : "Échec mise à jour de l'avatar",
+      )
+      return
+    }
     setCrop({ source: file.dataUrl, target: 'avatar' })
   }
 
   async function handlePickBanner() {
     const file = await imageUpload.pick()
     if (!file) return
-    // Idem avatar — tous formats passent par le cropper, animation
-    // sacrifiée pour la cohérence du flow.
+    if (isAnimatedImage(file.mime)) {
+      const ok = await updateAuthProfile({ bannerPath: file.dataUrl })
+      await refreshProfile()
+      toast[ok ? 'success' : 'error'](
+        ok ? 'Bannière animée mise à jour' : 'Échec mise à jour de la bannière',
+      )
+      return
+    }
     setCrop({ source: file.dataUrl, target: 'banner' })
   }
 
@@ -1602,15 +1615,17 @@ function PlayedGamesTab({ userId }: { userId: string }) {
  * and handlePickBanner) so future additions to the animated-format
  * allow-list touch a single spot.
  */
-// Legacy helper — gardée pour les futures additions au allow-list
-// d'animated formats. Référencée nulle part actuellement (les crops
-// GIF/APNG passent maintenant par react-easy-crop comme les autres).
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+/**
+ * Détecte les formats d'image qui supportent l'animation. Utilisé
+ * dans handlePickAvatar / handlePickBanner pour bypass le cropper
+ * (qui flatten via canvas.toDataURL). L'image est uploadée telle
+ * quelle — l'user perd la possibilité de cadrer mais garde
+ * l'animation. Trade-off accepté pour parité ScanVerse.
+ */
 function isAnimatedImage(mime: string): boolean {
   const m = mime.toLowerCase()
   return m === 'image/gif' || m === 'image/apng'
 }
-void isAnimatedImage
 
 function TabPlaceholder({
   icon: Icon,

@@ -265,12 +265,18 @@ void app.whenReady().then(async () => {
   // pas casser les chargements de chunks JS / CSS qui sont déjà
   // bien adressés par Vite.
   if (!VITE_DEV_SERVER_URL) {
+    // Préfixes assets : on les cherche d'abord dans RENDERER_DIST
+    // (où Vite copie le contenu de public/ — sauf cosmetics qu'il
+    // skip silently à cause de la taille de 1.8 GB), puis fallback
+    // sur process.resourcesPath (où electron-builder copie cosmetics
+    // direct via extraResources).
     const ASSET_PREFIXES = [
       'cosmetics',
       'controller-buttons',
       'controller-bodies',
       'steam-glyphs',
     ]
+    const RESOURCES_BASE = process.resourcesPath ?? ''
     protocol.interceptFileProtocol('file', (request, callback) => {
       try {
         const u = new URL(request.url)
@@ -282,13 +288,24 @@ void app.whenReady().then(async () => {
           return callback({ path: pathname.slice(1) })
         }
         // Si le path commence par un de nos préfixes assets connus,
-        // on le rebase sur RENDERER_DIST.
+        // on tente RENDERER_DIST d'abord, puis resourcesPath en
+        // fallback (cas cosmetics qui n'est pas dans dist/).
         for (const prefix of ASSET_PREFIXES) {
           if (
             pathname === `/${prefix}` ||
             pathname.startsWith(`/${prefix}/`)
           ) {
-            return callback({ path: path.join(RENDERER_DIST, pathname) })
+            const inDist = path.join(RENDERER_DIST, pathname)
+            try {
+              if (fs.existsSync(inDist)) {
+                return callback({ path: inDist })
+              }
+            } catch {
+              /* fallthrough */
+            }
+            // Fallback resources/ (où electron-builder copie cosmetics)
+            const inResources = path.join(RESOURCES_BASE, pathname)
+            return callback({ path: inResources })
           }
         }
         callback({ path: pathname })

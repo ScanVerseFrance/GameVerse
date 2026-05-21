@@ -49,6 +49,20 @@ extraResources:
   # registry au start et lance l'installer en UAC-elevated si absent.
   - from: installer-extras/ViGEmBus_Setup.exe
     to: drivers/ViGEmBus_Setup.exe
+  # Avatar decorations + nameplates : 574 MB de PNG. Vite skip
+  # silently la copie de public/cosmetics au build (1.8 GB total,
+  # timeout / file watcher issue). On bundle direct via extraResources
+  # → `<resources>/cosmetics/...`. Le file:// interceptor dans main.ts
+  # connaît ce path en fallback de RENDERER_DIST.
+  # profile_effects (1.2 GB) reste exclu — future v0.5 le streamera
+  # depuis un CDN.
+  - from: public/cosmetics
+    to: cosmetics
+    filter:
+      - "**/*.png"
+      - "**/*.webm"
+      - "**/*.json"
+      - "!profile_effects/**/*"
 win:
   target:
     # `dir` = bare unpacked output, no installer. The Setup.exe is then

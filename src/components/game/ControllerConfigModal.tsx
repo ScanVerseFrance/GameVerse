@@ -603,11 +603,19 @@ function MainView({
         </div>
       </section>
 
-      {/* Phase 2 disclosure */}
+      {/* Phase 2 status note + hint Gamepad API */}
       <p className="text-[11px] text-fg-faint italic leading-relaxed">
-        <strong>Phase 1 actuelle :</strong> Nexus enregistre ta config mais
-        n'injecte pas encore le pad virtuel. Phase 2 ajoutera le bridge
-        natif via ViGEmBus.
+        <strong>💡 Astuce :</strong> Windows ne révèle les manettes branchées
+        qu'après que tu aies <strong>appuyé sur un bouton</strong> (sécurité
+        Chromium / Gamepad API). Si la liste reste vide, presse n'importe
+        quel bouton de ta manette pour qu'elle apparaisse.
+      </p>
+      <p className="text-[11px] text-fg-faint leading-relaxed">
+        Nexus Input v0.4.3 bridge la manette physique → virtual Xbox 360 pad
+        via ViGEmBus. Le driver est installé automatiquement à la 1ère
+        activation. Limitations connues : pas encore de HidHide (rare jeux
+        qui scrutent Windows.Gaming.Input voient encore les 2 pads),
+        pas de touchpad, pas de chord.
       </p>
     </div>
   )

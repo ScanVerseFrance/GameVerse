@@ -59,6 +59,19 @@ export function compareVersions(a: string, b: string): number {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.4.4',
+    date: '2026-05-21',
+    title: 'Fix cosmetics manquantes en release + UX manette',
+    highlights: [
+      "Avatar decorations + nameplates VRAIMENT visibles maintenant en release",
+      "Astuce visible dans la modale Nexus Input pour le 'press a button' Gamepad API",
+    ],
+    changes: [
+      { kind: 'fix', text: "Vite skip silently la copie de `public/cosmetics` (1.8 GB) à `dist/cosmetics` au build — c'est pourquoi v0.4.3 n'avait toujours pas les decos animées en release. Fix : on bundle direct via electron-builder `extraResources` → `<resources>/cosmetics/...`. L'interceptor file:// dans main.ts a maintenant un fallback sur process.resourcesPath quand le path n'est pas trouvé dans RENDERER_DIST." },
+      { kind: 'fix', text: "ControllerConfigModal : disclaimer 'Phase 1 actuelle' remplacé par une astuce sur le comportement Gamepad API + un récap Phase 2 actuelle. La Gamepad API ne révèle les manettes qu'après un user gesture (security W3C contre fingerprinting), donc l'user doit appuyer sur un bouton de sa manette pour qu'elle apparaisse dans la liste." },
+    ],
+  },
+  {
     version: '0.4.3',
     date: '2026-05-21',
     title: 'Nexus Input Phase 2 — bridge ViGEm fonctionnel + driver bundled',
