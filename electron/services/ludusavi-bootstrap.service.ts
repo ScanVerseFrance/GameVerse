@@ -254,18 +254,82 @@ export async function runBackup(
 ): Promise<LudusaviBackupResult> {
   const inst = await ensureLudusaviInstalled()
   if (!inst.ok) throw new Error(inst.error ?? 'Ludusavi bootstrap failed')
-  const args = [
-    '--config',
-    configDir(),
-    'backup',
-    objectId,
-    '--api',
-    '--force',
-    '--path',
-    backupPath,
-  ]
-  if (preview) args.push('--preview')
-  return runJson(args)
+
+  // Ludusavi matche les noms de jeux de façon case-sensitive contre
+  // son manifest PCGamingWiki. Donc "LEGO MARVEL Super Heroes 2"
+  // (titre que les repacks fournissent souvent en majuscules)
+  // n'attrape PAS l'entrée "LEGO Marvel Super Heroes 2" du manifest.
+  // On essaye le nom brut d'abord ; si Ludusavi répond "no info for
+  // these games", on relance un `find --normalized` qui fait une
+  // recherche fuzzy + insensitive case, et on retry le backup avec
+  // le nom canonique trouvé. C'est l'équivalent du "fuzzy fallback"
+  // de Hydra. Si find non plus ne retourne rien, on laisse remonter
+  // l'erreur originale.
+  const buildArgs = (name: string): string[] => {
+    const a = [
+      '--config',
+      configDir(),
+      'backup',
+      name,
+      '--api',
+      '--force',
+      '--path',
+      backupPath,
+    ]
+    if (preview) a.push('--preview')
+    return a
+  }
+
+  try {
+    return await runJson<LudusaviBackupResult>(buildArgs(objectId))
+  } catch (e) {
+    const msg = (e as Error).message
+    if (!/no info for these games/i.test(msg)) throw e
+    // Fuzzy fallback via `ludusavi find --normalized <name>`. Returns
+    // the canonical manifest entries that match the normalized form.
+    const canonical = await runFindCanonicalName(objectId)
+    if (!canonical || canonical === objectId) throw e
+    return runJson<LudusaviBackupResult>(buildArgs(canonical))
+  }
+}
+
+/**
+ * Cherche le nom canonique du jeu dans le manifest Ludusavi via
+ * `ludusavi find --normalized <name>`. `--normalized` fait une
+ * comparaison case-insensitive et ignore les variations mineures de
+ * ponctuation. Retourne le 1er résultat ou null.
+ *
+ * Exemple :
+ *   input  : "LEGO MARVEL Super Heroes 2"
+ *   output : "LEGO Marvel Super Heroes 2"
+ *
+ * Best-effort : si Ludusavi `find` plante (vieille version qui ne
+ * supporte pas --normalized, etc.) on retourne null et le caller
+ * remonte l'erreur originale.
+ */
+async function runFindCanonicalName(name: string): Promise<string | null> {
+  try {
+    const result = await runJson<{ games: Record<string, unknown> | string[] }>([
+      '--config',
+      configDir(),
+      'find',
+      '--api',
+      '--normalized',
+      name,
+    ])
+    // `find --api` retourne `games` qui peut être soit un Record (avec
+    // les noms en clés), soit un Array selon la version de Ludusavi.
+    if (Array.isArray(result.games)) {
+      return result.games[0] ?? null
+    }
+    if (result.games && typeof result.games === 'object') {
+      const keys = Object.keys(result.games)
+      return keys[0] ?? null
+    }
+    return null
+  } catch {
+    return null
+  }
 }
 
 export async function runRestore(

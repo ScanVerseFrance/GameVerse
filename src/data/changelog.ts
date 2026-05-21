@@ -59,6 +59,20 @@ export function compareVersions(a: string, b: string): number {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.4.9',
+    date: '2026-05-21',
+    title: 'Cloud saves : fallback fuzzy match + message UX clair',
+    highlights: [
+      "Bug Lego Marvel : Ludusavi matche les noms case-sensitive contre PCGamingWiki. « LEGO MARVEL Super Heroes 2 » ne matchait pas « LEGO Marvel Super Heroes 2 » du manifest → `no info for these games`. Fallback automatique via `ludusavi find --normalized` retrouve le nom canonique.",
+      "Modal sauvegardes : message UX clair au lieu du code dev `no_ludusavi_manifest` brut. Skip informationnels (manifest manquant, Steam-managed) en pill grise neutre au lieu de pill rouge erreur.",
+    ],
+    changes: [
+      { kind: 'fix', text: "runBackup retry automatiquement via `ludusavi find --normalized <title>` quand le matching exact échoue. Trouve le nom canonique PCGamingWiki insensitive case + ponctuation et relance le backup avec ce nom. Résout les titres en majuscules (LEGO MARVEL → LEGO Marvel) sans intervention user." },
+      { kind: 'fix', text: "SavesModal map `no_ludusavi_manifest` vers « Ce jeu n'est pas indexé dans PCGamingWiki — le launcher ne sait pas où sont les fichiers de sauvegarde » au lieu du code brut. Map aussi `steam_managed` vers « Steam gère lui-même les sauvegardes de ce jeu »." },
+      { kind: 'polish', text: "Skip reasons informationnels (no_ludusavi_manifest, no_save_files, steam_managed) affichés en pill grise neutre au lieu de pill rouge erreur. C'est pas un échec de l'user — juste une info que le jeu n'est pas géré côté cloud." },
+    ],
+  },
+  {
     version: '0.4.8',
     date: '2026-05-21',
     title: 'Musique YT enfin OK (raw iframe) + toast manette propre',

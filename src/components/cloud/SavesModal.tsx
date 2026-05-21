@@ -90,6 +90,13 @@ export function SavesModal({
       }
   >({ phase: 'idle' })
   const [uploadError, setUploadError] = useState<string | null>(null)
+  /** Severity of the upload error message. `error` = vrai échec (rouge),
+   *  `info` = skip attendu (gris/neutre). Évite de paniquer l'user avec
+   *  une pill rouge quand le jeu n'est juste pas dans PCGamingWiki —
+   *  ce n'est pas une erreur de SA part, juste une info. */
+  const [uploadErrorKind, setUploadErrorKind] = useState<'error' | 'info'>(
+    'error',
+  )
   /** Confirmation modals for destructive actions. */
   const [confirm, setConfirm] = useState<
     | { kind: 'restore'; artifact: CloudArtifact }
@@ -210,6 +217,7 @@ export function SavesModal({
 
   async function handleUploadNow() {
     setUploadError(null)
+    setUploadErrorKind('error')
     setUploadState({ phase: 'uploading' })
     const res = await window.nexus.cloudSave.upload(
       libraryGameId,
@@ -230,7 +238,17 @@ export function SavesModal({
       return
     }
     if (res.skipped) {
-      // no_save_files, cloud_disconnected, cloud_server_error…
+      // Map les skipReason internes vers des phrases user-friendly.
+      // Sans ça, l'UI affiche le code brut (`no_ludusavi_manifest`)
+      // qui n'a aucun sens pour l'user. Chaque branche couvre une
+      // raison RÉELLE qu'on a vue en prod.
+      // Skip reasons "attendus" (informationnels, pas erreur user) :
+      const infoSkips: Array<string | undefined> = [
+        'no_ludusavi_manifest',
+        'no_save_files',
+        'steam_managed',
+      ]
+      setUploadErrorKind(infoSkips.includes(res.skipReason) ? 'info' : 'error')
       const human =
         res.skipReason === 'no_save_files'
           ? 'Aucune sauvegarde trouvée localement.'
@@ -238,7 +256,18 @@ export function SavesModal({
             ? 'Cloud déconnecté.'
             : res.skipReason === 'cloud_server_error'
               ? 'Serveur cloud injoignable, réessaie plus tard.'
-              : (res.skipReason ?? 'Upload ignoré')
+              : res.skipReason === 'no_ludusavi_manifest'
+                ? // L'entrée PCGamingWiki / Ludusavi pour ce jeu n'existe
+                  // pas (ou le titre dans la lib ne match aucun nom
+                  // canonique même après fuzzy find). Le launcher ne peut
+                  // pas localiser les fichiers de save tout seul. Suggestion
+                  // pour l'user : signaler le titre exact ou ajouter
+                  // manuellement plus tard. C'est un cas attendu pour les
+                  // jeux indé pas indexés sur PCGamingWiki.
+                  "Ce jeu n'est pas indexé dans PCGamingWiki — le launcher ne sait pas où sont les fichiers de sauvegarde. (Tu peux ouvrir un ticket pour qu'on l'ajoute, ou attendre que PCGamingWiki le référence.)"
+                : res.skipReason === 'steam_managed'
+                  ? 'Steam gère lui-même les sauvegardes de ce jeu (Steam Cloud).'
+                  : (res.skipReason ?? 'Upload ignoré')
       setUploadError(human)
       setUploadState({ phase: 'idle' })
       return
@@ -384,7 +413,14 @@ export function SavesModal({
               </button>
 
               {uploadError && (
-                <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-md bg-error/10 border border-error/30 text-sm text-error">
+                <div
+                  className={cn(
+                    'mt-3 flex items-start gap-2 px-3 py-2 rounded-md border text-sm',
+                    uploadErrorKind === 'info'
+                      ? 'bg-text-secondary/5 border-glass-border text-text-secondary'
+                      : 'bg-error/10 border-error/30 text-error',
+                  )}
+                >
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span className="flex-1">{uploadError}</span>
                 </div>
