@@ -39,19 +39,18 @@ import {
 const AUDIO_KEYWORDS =
   /headset|cloud|audio|headphone|stinger|spectre|wireless audio|casque/i
 
-/** Libellé marque + emoji affiché en préfixe du nom du modèle dans
- *  la notif. L'user a explicitement demandé "il faut qu'il y ai le
- *  modèle de la manette" → on rend la marque visible aussi pour pas
- *  laisser le doute (DualSense est un modèle Sony, Pro Controller un
- *  modèle Nintendo, etc.). */
-function vendorLabel(vendor: ControllerVendor): string {
+/** Emoji vendor — gardé court parce que le modèle est déjà très
+ *  explicite (`Xbox 360 Controller`, `DualSense Wireless Controller`,
+ *  `Pro Controller`). Préfixer en plus avec "Xbox " donnait
+ *  "🟢 Xbox Xbox 360 Controller connectée" — doublon disgracieux. */
+function vendorEmoji(vendor: ControllerVendor): string {
   switch (vendor) {
     case 'xbox':
-      return '🟢 Xbox'
+      return '🟢'
     case 'playstation':
-      return '🔵 PlayStation'
+      return '🔵'
     case 'nintendo':
-      return '🔴 Nintendo'
+      return '🔴'
     default:
       return '🎮'
   }
@@ -97,7 +96,7 @@ export function useGamepadToast(): void {
       announced.add(key)
       const vendor = detectVendor(id)
       const name = shortControllerName(id)
-      toast.success(`${vendorLabel(vendor)} ${name} connectée`)
+      toast.success(`${vendorEmoji(vendor)} ${name} connectée`)
     }
 
     function announceDisconnect(id: string, index: number) {

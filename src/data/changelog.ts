@@ -59,6 +59,24 @@ export function compareVersions(a: string, b: string): number {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.4.8',
+    date: '2026-05-21',
+    title: 'Musique YT enfin OK (raw iframe) + toast manette propre',
+    highlights: [
+      "Musique de profil YouTube : on drop la YT IFrame API en prod et on utilise un raw iframe `<iframe src=youtube/embed/...?autoplay=1&loop=1>`. L'API JS plantait à cause d'une asymétrie origin embed/parent insoluble en `nexus://`. Trade-off : pas de contrôle volume granulaire cross-origin (mute fonctionne par contre).",
+      "Toast manette propre : strip toutes les parenthèses (avant ça gardait `(XInput STANDARD GAMEPAD)`). Drop aussi le préfixe brand pour éviter `Xbox Xbox 360 Controller` — emoji + nom suffit.",
+    ],
+    changes: [
+      // === Music v3 (raw iframe) ===
+      { kind: 'fix', text: "MusicContext.playUrl utilise un raw iframe en prod (scheme `nexus://`) au lieu de la YT IFrame API JS. La YT API échouait des deux côtés : si on passait `origin=https://www.youtube.com` l'embed acceptait mais le browser droppait les postMessages embed→parent (target origin ne match pas parent réel `nexus://`). Si on passait `origin=nexus://`, l'embed refusait le handshake (pas http(s)). Asymétrie insoluble. Maintenant on monte un `<iframe src=youtube/embed/...?autoplay=1&loop=1>` direct, sans postMessage handshake. Métadata récupérée via oEmbed." },
+      { kind: 'feat', text: "Adapter raw-iframe qui mime l'interface YT.Player : playVideo (re-mount), pauseVideo (détache), mute/unMute (rebuild avec param mute=0/1), seekTo (rebuild avec param start=X), getCurrentTime/getDuration (compteur local). Le code consommateur (MiniPlayer, ticker, etc.) marche tel quel sans modification." },
+      { kind: 'polish', text: "setVolume devient no-op en raw-iframe mode (cross-origin block). Le slider volume bouge dans l'UI mais ne change pas le volume réel. L'user peut couper via le bouton mute ou le Windows volume mixer. À améliorer en v0.5 via webview tag + JS injection si besoin." },
+      // === Toast cleanup ===
+      { kind: 'fix', text: "shortControllerName strip toutes les parens descriptives (`(XInput STANDARD GAMEPAD)`, `(Vendor: 045e Product: 028e)`, etc.) au lieu de seulement celles avec `Vendor:`. Sinon les Xbox via XInput gardaient `(XInput STANDARD GAMEPAD)` dans leur nom toast." },
+      { kind: 'polish', text: "Toast manette : drop le préfixe brand (`Xbox`/`PlayStation`/`Nintendo`) parce que le modèle inclut déjà la marque (Xbox 360 Controller, DualSense Wireless Controller, etc.). Avant : `🟢 Xbox Xbox 360 Controller connectée`. Maintenant : `🟢 Xbox 360 Controller connectée`." },
+    ],
+  },
+  {
     version: '0.4.7',
     date: '2026-05-21',
     title: 'HidHide vraiment cloak + musique YT v2 + toast pas confondu',

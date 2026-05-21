@@ -111,11 +111,18 @@ export function detectVendor(id: string): ControllerVendor {
   return 'generic'
 }
 
-/** Nom court lisible pour la liste des manettes branchées. */
+/** Nom court lisible pour la liste des manettes branchées.
+ *  Strip TOUTES les parenthèses descriptives de Chrome :
+ *    "Xbox 360 Controller (XInput STANDARD GAMEPAD Vendor: 045e Product: 028e)"
+ *    "Xbox 360 Controller (XInput STANDARD GAMEPAD)"
+ *    "DualSense Wireless Controller (Vendor: 054c Product: 0ce6)"
+ *  → on garde uniquement la partie avant les parens. */
 export function shortControllerName(id: string): string {
   const vendor = detectVendor(id)
-  // Strip vendor/product info parenthesis.
-  const cleaned = id.replace(/\s*\([^)]*Vendor[^)]*\)\s*/i, '').trim()
+  // Strip toutes les parenthèses (Vendor:, STANDARD GAMEPAD, XInput, etc.)
+  // Pas juste celles avec "Vendor:" — Chrome peut retourner "(XInput
+  // STANDARD GAMEPAD)" sans champ Vendor sur les pads xinput.
+  const cleaned = id.replace(/\s*\([^)]*\)\s*/g, '').trim()
   if (cleaned) return cleaned
   if (vendor === 'xbox') return 'Manette Xbox'
   if (vendor === 'playstation') return 'Manette PlayStation'
