@@ -539,17 +539,27 @@ export function MusicProvider({ children }: { children: ReactNode }) {
             ...(clipEnd != null ? { end: clipEnd } : {}),
             // Origin handling — la YT IFrame API valide le champ
             // `origin` côté embed page : si ce n'est pas http(s)://
-            // (ex: `nexus://.`), YT refuse le postMessage handshake et
-            // le player ne joue jamais. En production le launcher
-            // charge index.html via le scheme custom `nexus://` → on
-            // OMIT origin dans ce cas (YT skip alors la vérif d'origine
-            // côté embed et accepte tous nos postMessage). En dev (Vite
-            // http://localhost:5173) on garde origin pour la sécurité
-            // normale.
-            ...(typeof location !== 'undefined' &&
-            /^https?:$/.test(location.protocol)
-              ? { origin: location.origin }
-              : {}),
+            // (ex: `nexus://.`), l'embed refuse le postMessage
+            // handshake et le player ne joue jamais.
+            //
+            // SUBTLE : omettre l'origin ne suffit PAS parce que la YT
+            // IFrame API JS injecte automatiquement
+            // `origin = origin || window.location.origin` avant
+            // d'appeler l'embed. Donc on doit le passer EXPLICITEMENT
+            // à une valeur acceptée. Astuce connue : passer l'origin
+            // de l'embed lui-même (`https://www.youtube.com`) →
+            // l'embed voit "même origine que moi" et skip la validation.
+            // Aucun impact sécurité : la communication postMessage
+            // continue de marcher (l'embed envoie depuis sa vraie
+            // origine youtube.com, notre handler vérifie ça).
+            //
+            // En dev (Vite http://localhost:5173) on garde l'origin
+            // réel pour la sécurité standard.
+            origin:
+              typeof location !== 'undefined' &&
+              /^https?:$/.test(location.protocol)
+                ? location.origin
+                : 'https://www.youtube.com',
           },
           events: {
             onReady: (e) => {

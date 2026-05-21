@@ -13,6 +13,16 @@
  *   - À la déconnexion : toast info "[Modèle] déconnectée"
  *   - Filtre les casques audio (HyperX Cloud, Logitech G-headset...)
  *     qui exposent un endpoint HID misdetected comme gamepad.
+ *   - **Suppress les virtual pads ViGEm** quand le bridge Nexus Input
+ *     tourne : le helper C# spawne un virtual Xbox 360 controller qui
+ *     apparaît dans Gamepad API sous le nom "Xbox 360 Controller for
+ *     Windows". Sans filtre, l'user qui branche une PS5 voyait
+ *     "🟢 Xbox 360 Controller connectée" parce qu'on toaste sur la
+ *     présence du virtual pad au lieu du physique (qui lui est cloaké
+ *     par HidHide donc n'apparaît plus dans Gamepad API). Le bridge
+ *     émet son propre toast "Nexus Input actif sur DualSense" qui est
+ *     l'info utile, donc on skip le toast Gamepad-API pour les pads
+ *     xbox quand le bridge est actif.
  *   - Dédup par id+index : un pad déjà annoncé n'est pas re-toasté
  *     même si `gamepadconnected` fire après le poll.
  *
@@ -58,9 +68,30 @@ export function useGamepadToast(): void {
     // `gamepadconnected` qui peut fire plus tard).
     const announced = new Set<string>()
 
+    // Track si le bridge Nexus Input tourne — sync au mount + suit
+    // les events bridge. Quand bridgeActive=true, on assume que TOUT
+    // pad vendor xbox détecté est notre virtual ViGEm (le bridge a
+    // cloaké le pad physique via HidHide, ne reste que le virtual).
+    // L'user PEUT avoir une vraie manette Xbox en plus, mais c'est
+    // un edge case ultra-rare (PS5 + Xbox en même temps). Le bridge
+    // émet déjà son propre toast "Nexus Input actif sur [modèle]"
+    // qui est l'info utile.
+    let bridgeActive = false
+
+    function isLikelyViGEmVirtual(id: string): boolean {
+      // ViGEm Xbox 360 virtual pad se présente exactement comme un
+      // vrai pad Xbox 360 dans la Gamepad API :
+      //   "Xbox 360 Controller for Windows (STANDARD GAMEPAD Vendor: 045e Product: 028e)"
+      // Pas moyen de distinguer "vraie Xbox 360" vs "virtual ViGEm".
+      // Heuristique : si le bridge tourne ET vendor=xbox, c'est notre
+      // virtual avec 99% de probabilité.
+      return bridgeActive && detectVendor(id) === 'xbox'
+    }
+
     function announceConnect(id: string, index: number) {
       if (!id) return
       if (AUDIO_KEYWORDS.test(id)) return
+      if (isLikelyViGEmVirtual(id)) return
       const key = padKey(id, index)
       if (announced.has(key)) return
       announced.add(key)
@@ -72,6 +103,7 @@ export function useGamepadToast(): void {
     function announceDisconnect(id: string, index: number) {
       if (!id) return
       if (AUDIO_KEYWORDS.test(id)) return
+      if (isLikelyViGEmVirtual(id)) return
       const key = padKey(id, index)
       announced.delete(key)
       const name = shortControllerName(id)
@@ -113,10 +145,33 @@ export function useGamepadToast(): void {
 
     window.addEventListener('gamepadconnected', onConnect)
     window.addEventListener('gamepaddisconnected', onDisconnect)
+
+    // Sync initial du status bridge + écoute les events bridge pour
+    // que isLikelyViGEmVirtual() ait la bonne info au moment où la
+    // Gamepad API émet un connect pour le virtual pad.
+    let offBridge: (() => void) | null = null
+    try {
+      void window.nexus.controller.bridgeStatus().then((res) => {
+        if (res.ok) bridgeActive = res.running
+      })
+      offBridge = window.nexus.controller.onBridgeEvent((payload) => {
+        const evt = payload.event as string
+        if (evt === 'connected') {
+          bridgeActive = true
+        } else if (evt === 'disconnected' || evt === 'exited' || evt === 'stopped') {
+          bridgeActive = false
+        }
+      })
+    } catch {
+      /* nexus IPC indisponible (toast overlay, etc.) — pas de bridge
+         de toute façon dans ces contexts, donc safe d'ignorer */
+    }
+
     return () => {
       window.clearInterval(pollIv)
       window.removeEventListener('gamepadconnected', onConnect)
       window.removeEventListener('gamepaddisconnected', onDisconnect)
+      if (offBridge) offBridge()
     }
   }, [])
 }

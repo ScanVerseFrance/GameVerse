@@ -60,6 +60,13 @@ internal static class Program
     private static readonly object _emitLock = new();
     private static HidHideControlService? _hidHide;
     private static string? _cloakedInstancePath;
+    /// Toutes les instance IDs blacklistées dans HidHide pour cette
+    /// session — peut contenir le main HID interface + les siblings
+    /// (audio interface, touchpad interface, etc.) de la même manette.
+    /// On les unblock TOUS au stop pour rendre la manette visible
+    /// proprement (sinon elle reste partiellement cachée jusqu'au
+    /// reboot Windows).
+    private static readonly List<string> _allCloakedInstanceIds = new();
     /// True quand la DualSense est en Bluetooth (Report ID 0x31, 78
     /// bytes input). Influence le parsing input ET le format du
     /// rumble output report.
@@ -259,16 +266,42 @@ internal static class Program
                     Emit("log", new { level = "warn", msg = $"HidHide whitelist failed: {ex.Message}" });
                 }
             }
-            // Récupère l'instance path du HID device (l'identifiant
-            // unique côté Windows, e.g. "HID\\VID_054C&PID_0CE6\\…")
-            // HidHide demande ce format pour blacklister.
-            var instancePath = hidDevice.DevicePath;
-            if (!string.IsNullOrEmpty(instancePath))
+            // Convertit le DevicePath HidSharp → instance ID Windows.
+            //
+            // HidSharp expose le SymbolicLink :
+            //   \\?\HID#VID_054C&PID_0CE6&MI_03#9&abc&0&0000#{GUID}
+            //
+            // HidHide attend l'instance ID Windows :
+            //   HID\VID_054C&PID_0CE6&MI_03\9&abc&0&0000
+            //
+            // Transformation :
+            //   1. Strip "\\?\" préfixe
+            //   2. Strip "#{GUID...}" suffixe (= class interface guid)
+            //   3. Remplace les '#' restants par '\'
+            //
+            // SANS cette conversion, AddBlockedInstanceId() reçoit un
+            // path bidon, ne match aucun device dans le store HidHide,
+            // et le cloak no-op silencieusement → la manette physique
+            // reste visible aux jeux → bug "2 joueurs" sur Lego Marvel.
+            var rawPath = hidDevice.DevicePath;
+            if (!string.IsNullOrEmpty(rawPath))
             {
                 try
                 {
-                    _hidHide.AddBlockedInstanceId(instancePath);
-                    _cloakedInstancePath = instancePath;
+                    var instanceId = ConvertDevicePathToInstanceId(rawPath);
+                    Emit("log", new { level = "info", msg = $"HidHide blocking: {instanceId}" });
+                    _hidHide.AddBlockedInstanceId(instanceId);
+                    _cloakedInstancePath = instanceId;
+                    _allCloakedInstanceIds.Add(instanceId);
+
+                    // Ajoute aussi les autres interfaces de la même
+                    // manette (audio, touchpad, etc.). On enumère tous
+                    // les HID devices Sony et on blacklist ceux qui
+                    // partagent le même PID, même s'ils sont sur un
+                    // MI_xx (collection number) différent. Sans ça,
+                    // certains jeux qui scannent toutes les interfaces
+                    // HID voient encore le pad via l'interface audio.
+                    BlockSiblingInterfaces(hidDevice);
                 }
                 catch (Exception ex)
                 {
@@ -285,6 +318,66 @@ internal static class Program
         }
     }
 
+    /// Convertit un SymbolicLink HidSharp en instance ID Windows
+    /// accepté par HidHide.
+    ///
+    /// In  : `\\?\HID#VID_054C&PID_0CE6&MI_03#9&abc&0&0000#{4d1e55b2-...}`
+    /// Out : `HID\VID_054C&PID_0CE6&MI_03\9&abc&0&0000`
+    ///
+    /// 1. Strip `\\?\` préfixe (NT object manager namespace marker)
+    /// 2. Strip `#{...}` suffixe (class interface GUID)
+    /// 3. Remplace tous les `#` restants par `\` (delimiter Windows)
+    private static string ConvertDevicePathToInstanceId(string devicePath)
+    {
+        if (string.IsNullOrEmpty(devicePath)) return devicePath;
+        var s = devicePath;
+        if (s.StartsWith(@"\\?\")) s = s.Substring(4);
+        // Strip ClassGuid suffix : "...#0000#{guid}" → "...#0000"
+        var braceIdx = s.IndexOf("#{", StringComparison.Ordinal);
+        if (braceIdx > 0) s = s.Substring(0, braceIdx);
+        // Sometimes the suffix is "#{guid}" with no extra delimiter,
+        // sometimes "{guid}" directly. Handle both.
+        var braceIdx2 = s.IndexOf('{');
+        if (braceIdx2 > 0) s = s.Substring(0, braceIdx2).TrimEnd('#');
+        return s.Replace('#', '\\');
+    }
+
+    /// Bloque aussi les "sibling" HID interfaces de la même manette
+    /// (audio interface, touchpad interface, etc.). On enumère TOUS les
+    /// HID devices Sony et on blacklist ceux qui partagent le même PID
+    /// que le device principal, peu importe leur MI_xx (collection
+    /// number). Sans ça, certains jeux qui scannent toutes les
+    /// interfaces HID Sony peuvent encore voir le pad via une
+    /// interface secondaire → bug 2-joueurs persiste partiellement.
+    private static void BlockSiblingInterfaces(HidDevice mainDevice)
+    {
+        if (_hidHide == null) return;
+        try
+        {
+            ushort vendorId = (ushort)mainDevice.VendorID;
+            ushort productId = (ushort)mainDevice.ProductID;
+            var mainInstance = ConvertDevicePathToInstanceId(mainDevice.DevicePath);
+            foreach (var dev in DeviceList.Local.GetHidDevices(vendorId, productId))
+            {
+                try
+                {
+                    var sibInstance = ConvertDevicePathToInstanceId(dev.DevicePath);
+                    if (string.IsNullOrEmpty(sibInstance)) continue;
+                    if (string.Equals(sibInstance, mainInstance, StringComparison.OrdinalIgnoreCase))
+                        continue; // déjà blacklisté
+                    Emit("log", new { level = "info", msg = $"HidHide blocking sibling: {sibInstance}" });
+                    _hidHide.AddBlockedInstanceId(sibInstance);
+                    _allCloakedInstanceIds.Add(sibInstance);
+                }
+                catch { /* skip — best-effort */ }
+            }
+        }
+        catch (Exception ex)
+        {
+            Emit("log", new { level = "warn", msg = $"sibling block failed: {ex.Message}" });
+        }
+    }
+
     /// Désactive le HidHide cloak proprement au stop du bridge.
     /// Sans ça, la manette resterait invisible aux autres apps
     /// jusqu'au reboot ou jusqu'à ouverture manuelle de HidHide
@@ -294,12 +387,17 @@ internal static class Program
         if (_hidHide == null) return;
         try
         {
-            if (_cloakedInstancePath != null)
+            // Cleanup all blocked instances we added — pas que le main,
+            // aussi les siblings (audio interface, touchpad interface,
+            // etc.) sinon la manette reste partiellement cachée
+            // après stop du bridge.
+            foreach (var id in _allCloakedInstanceIds)
             {
-                try { _hidHide.RemoveBlockedInstanceId(_cloakedInstancePath); }
+                try { _hidHide.RemoveBlockedInstanceId(id); }
                 catch { /* swallow */ }
-                _cloakedInstancePath = null;
             }
+            _allCloakedInstanceIds.Clear();
+            _cloakedInstancePath = null;
             _hidHide.IsActive = false;
         }
         catch { /* swallow — best-effort cleanup */ }

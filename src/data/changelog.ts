@@ -59,6 +59,25 @@ export function compareVersions(a: string, b: string): number {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.4.7',
+    date: '2026-05-21',
+    title: 'HidHide vraiment cloak + musique YT v2 + toast pas confondu',
+    highlights: [
+      "Bug « 2 joueurs Lego Marvel » résolu : HidHide recevait un instance path mal formaté (SymbolicLink HidSharp `\\?\\HID#...#{GUID}` au lieu du format Windows `HID\\VID_...\\...`) → cloak no-op silencieux. Conversion ajoutée + blocage des interfaces sœurs.",
+      "Toast manette ne dit plus « Xbox » quand tu branches une PS5 : on suppress le toast pour les pads ViGEm virtuels (qui se font passer pour des Xbox 360) quand le bridge est actif. Le toast utile « Nexus Input actif sur DualSense » reste.",
+      "Musique YT enfin OK : on force `origin: 'https://www.youtube.com'` en prod (omettre origin ne marchait pas car la YT JS lib le ré-injecte automatiquement avec `window.location.origin = 'nexus://'`).",
+    ],
+    changes: [
+      // === HidHide fix critique ===
+      { kind: 'fix', text: "NexusInput.exe convertit maintenant le DevicePath HidSharp vers l'instance ID Windows attendu par HidHide. HidSharp renvoie `\\\\?\\HID#VID_054C&PID_0CE6&MI_03#9&abc&0&0000#{GUID}` mais HidHide attend `HID\\VID_054C&PID_0CE6&MI_03\\9&abc&0&0000`. Avant, on passait le format brut → HidHide ne matchait aucun device dans son store → cloak no-op → la manette physique restait visible → bug « 2 joueurs » sur Lego Marvel SH 2 persiste même avec Nexus Input activé." },
+      { kind: 'feat', text: "Block aussi les interfaces sœurs du même pad (audio interface, touchpad interface, etc.) — certains jeux scannent toutes les interfaces HID Sony et peuvent encore voir le pad via une interface secondaire. On enumère tous les HID devices avec le même VID/PID et on les blacklist tous. Cleanup approprié au stop." },
+      // === Toast virtual pad ===
+      { kind: 'fix', text: "useGamepadToast suppress le toast pour les pads vendor `xbox` quand le bridge Nexus Input est actif. Raison : le bridge spawn un virtual Xbox 360 via ViGEm qui apparaît dans Gamepad API sous le même nom qu'un vrai pad Xbox. Sans filtre, brancher une PS5 avec Nexus Input actif déclenchait un toast `🟢 Xbox 360 Controller for Windows connectée` au lieu du toast utile du bridge `Nexus Input actif sur DualSense`. Sync du bridge status au mount + écoute des events pour adapter en live." },
+      // === Music v2 ===
+      { kind: 'fix', text: "MusicContext FORCE maintenant `origin: 'https://www.youtube.com'` en production (quand location.protocol n'est pas http(s)). Omettre origin ne marchait pas parce que la YT IFrame API JS fait `origin = origin || window.location.origin` en interne — donc même sans paramètre, YT ré-injectait notre `nexus://` qui faisait planter le handshake côté embed. En passant l'origine de l'embed lui-même, le côté YT voit « même origine que moi » et skip la validation → la musique joue." },
+    ],
+  },
+  {
     version: '0.4.6',
     date: '2026-05-21',
     title: 'Fix Nexus Input Bluetooth + musique YT + notif manette + GIF Settings',
