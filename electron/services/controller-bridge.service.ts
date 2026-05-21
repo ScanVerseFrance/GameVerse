@@ -79,6 +79,84 @@ function resolveViGEmInstallerPath(): string | null {
   return null
 }
 
+/** Path vers le bundled HidHide installer (7-8 MB). */
+function resolveHidHideInstallerPath(): string | null {
+  const candidates = [
+    path.join(app.getAppPath(), 'installer-extras', 'HidHide_Setup.exe'),
+    path.join(process.cwd(), 'installer-extras', 'HidHide_Setup.exe'),
+    path.join(process.resourcesPath ?? '', 'drivers', 'HidHide_Setup.exe'),
+  ]
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p
+    } catch {
+      /* skip */
+    }
+  }
+  return null
+}
+
+/** Vérifie via reg.exe si le service HidHide est enregistré. */
+async function isHidHideInstalled(): Promise<boolean> {
+  if (process.platform !== 'win32') return true
+  try {
+    const { stdout } = await execFileP('reg', [
+      'query',
+      'HKLM\\SYSTEM\\CurrentControlSet\\Services\\HidHide',
+    ])
+    return stdout.toLowerCase().includes('hidhide')
+  } catch {
+    return false
+  }
+}
+
+async function runHidHideInstaller(installerPath: string): Promise<boolean> {
+  if (process.platform !== 'win32') return false
+  try {
+    await execFileP(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Start-Process -FilePath '${installerPath.replace(/'/g, "''")}' -ArgumentList '/quiet' -Verb RunAs -Wait`,
+      ],
+      { windowsHide: true, timeout: 5 * 60 * 1000 },
+    )
+    return true
+  } catch (err) {
+    debugLog('controller-bridge', 'HidHide install failed', {
+      err: (err as Error).message,
+    })
+    return false
+  }
+}
+
+/** Pareil que ensureViGEmInstalled mais pour HidHide. */
+export async function ensureHidHideInstalled(): Promise<{
+  ok: boolean
+  alreadyInstalled?: boolean
+  error?: string
+}> {
+  if (await isHidHideInstalled()) {
+    return { ok: true, alreadyInstalled: true }
+  }
+  const installer = resolveHidHideInstallerPath()
+  if (!installer) {
+    return { ok: false, error: 'NO_INSTALLER' }
+  }
+  debugLog('controller-bridge', 'HidHide missing, running installer', {
+    installer,
+  })
+  const ok = await runHidHideInstaller(installer)
+  if (!ok) return { ok: false, error: 'INSTALL_FAILED' }
+  await new Promise((r) => setTimeout(r, 1500))
+  if (!(await isHidHideInstalled())) {
+    return { ok: false, error: 'INSTALL_FAILED' }
+  }
+  return { ok: true, alreadyInstalled: false }
+}
+
 /** Vérifie via reg.exe si le service ViGEmBus est enregistré. Steam
  *  fait pareil avec son driver maison — le 1er run check, install si
  *  manquant, et tous les runs suivants skip car already installed. */
@@ -189,9 +267,9 @@ export async function startBridge(): Promise<{ ok: boolean; error?: string }> {
   }
   // Auto-install ViGEmBus driver si absent (équivalent du driver que
   // Steam install au 1er run). UAC prompt unique pour l'user.
-  const driverCheck = await ensureViGEmInstalled()
-  if (!driverCheck.ok) {
-    if (driverCheck.error === 'NO_INSTALLER') {
+  const viGEmCheck = await ensureViGEmInstalled()
+  if (!viGEmCheck.ok) {
+    if (viGEmCheck.error === 'NO_INSTALLER') {
       return {
         ok: false,
         error:
@@ -204,10 +282,24 @@ export async function startBridge(): Promise<{ ok: boolean; error?: string }> {
         "L'installation du driver ViGEmBus a échoué ou a été refusée. Sans ce driver, Nexus Input ne peut pas fonctionner.",
     }
   }
-  if (!driverCheck.alreadyInstalled) {
-    // Broadcast un event pour que le toast UI affiche "Driver
-    // installé, redémarrage du bridge…" — UX claire pour l'user.
-    broadcastStatus({ event: 'driverInstalled' })
+  if (!viGEmCheck.alreadyInstalled) {
+    broadcastStatus({ event: 'driverInstalled', driver: 'ViGEmBus' })
+  }
+  // Auto-install HidHide aussi — c'est le kernel filter qui CACHE
+  // vraiment la manette physique aux jeux (sans ça, le bug "2 joueurs"
+  // persiste sur les jeux qui lisent via Windows.Gaming.Input direct).
+  const hidHideCheck = await ensureHidHideInstalled()
+  if (!hidHideCheck.ok) {
+    // Non-fatal — on continue sans HidHide. Le user verra peut-être
+    // encore le bug 2-joueurs sur certains jeux mais le bridge ViGEm
+    // marche quand même.
+    broadcastStatus({
+      event: 'log',
+      level: 'warn',
+      msg: 'HidHide install failed — fallback HID exclusif uniquement',
+    })
+  } else if (!hidHideCheck.alreadyInstalled) {
+    broadcastStatus({ event: 'driverInstalled', driver: 'HidHide' })
   }
 
   const exe = resolveHelperPath()

@@ -109,6 +109,19 @@ export function ControllerConfigModal({
       const gp = navigator.getGamepads?.() ?? []
       for (const p of gp) {
         if (!p) continue
+        // Skip audio devices misdetected comme gamepad. Certains
+        // casques (HyperX Cloud III, Logitech G733, etc.) exposent
+        // un petit HID endpoint pour les boutons mute/vol qui
+        // remonte dans la Gamepad API. On filtre par mots-clés
+        // dans le nom — les vraies manettes n'ont jamais
+        // "headset/cloud/audio/headphone" dans leur id.
+        if (
+          /headset|cloud|audio|headphone|stinger|spectre|wireless audio|casque/i.test(
+            p.id,
+          )
+        ) {
+          continue
+        }
         raw.push({
           id: p.id,
           index: p.index,

@@ -161,7 +161,11 @@ function createWindow() {
     void mainWindow.loadURL(VITE_DEV_SERVER_URL)
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   } else {
-    void mainWindow.loadFile(path.join(RENDERER_DIST, 'index.html'))
+    // Production : on charge via le scheme custom `nexus://` plutôt
+    // que file:// → l'origine devient `nexus://` (privileged secure
+    // standard) qui est accepté par YouTube/Vimeo/etc. en
+    // postMessage parent origin → la musique de profil YT joue.
+    void mainWindow.loadURL('nexus://./index.html')
   }
 
   // v0.2.2 — beta users get DevTools via Ctrl+Shift+I / F12 even in
@@ -240,6 +244,35 @@ function registerWindowIpc() {
   })
 }
 
+// Register `nexus://` comme scheme privileged BEFORE app ready.
+// Why : la YT IFrame API refuse le postMessage handshake avec un
+// parent en `file://` (origine non-sécurisée selon Google). En
+// chargeant index.html via `nexus://./index.html`, l'origine
+// devient `nexus://` qui est traité comme HTTPS-like (privileged
+// + secure + standard) → YouTube accepte → la musique de profil
+// joue en production comme en dev.
+//
+// L'asset interceptor file:// reste pour les rares cas où le
+// renderer demande explicitement file:// (fichiers externes).
+if (!process.env.VITE_DEV_SERVER_URL) {
+  try {
+    protocol.registerSchemesAsPrivileged([
+      {
+        scheme: 'nexus',
+        privileges: {
+          standard: true,
+          secure: true,
+          supportFetchAPI: true,
+          stream: true,
+          corsEnabled: true,
+        },
+      },
+    ])
+  } catch {
+    /* déjà enregistré (hot-restart en dev) */
+  }
+}
+
 void app.whenReady().then(async () => {
   // --uninstall fork: skip everything else, just show the custom
   // uninstall window. No DB, no cloud, no library scan — the user
@@ -277,38 +310,66 @@ void app.whenReady().then(async () => {
       'steam-glyphs',
     ]
     const RESOURCES_BASE = process.resourcesPath ?? ''
+
+    /** Résout un pathname (`/foo/bar.png`) en chemin disque réel
+     *  via RENDERER_DIST → resourcesPath fallback. Réutilisé par
+     *  le file:// interceptor ET le nexus:// handler. */
+    function resolveAssetPath(pathname: string): string {
+      // chemin absolu Windows direct (`/C:/...`)
+      const driveMatch = pathname.match(/^\/[A-Za-z]:[/\\]/)
+      if (driveMatch) return pathname.slice(1)
+      // préfixes assets : tente RENDERER_DIST, sinon resourcesPath
+      for (const prefix of ASSET_PREFIXES) {
+        if (
+          pathname === `/${prefix}` ||
+          pathname.startsWith(`/${prefix}/`)
+        ) {
+          const inDist = path.join(RENDERER_DIST, pathname)
+          try {
+            if (fs.existsSync(inDist)) return inDist
+          } catch {
+            /* fallthrough */
+          }
+          return path.join(RESOURCES_BASE, pathname)
+        }
+      }
+      // Reste : on sert depuis RENDERER_DIST (assets/, index.html, etc.)
+      return path.join(RENDERER_DIST, pathname)
+    }
+
+    // ── Handler nexus:// ───────────────────────────────────────────
+    // Loadé via mainWindow.loadURL('nexus://./index.html') quand
+    // pas en dev. Sert tout depuis RENDERER_DIST + resourcesPath en
+    // fallback. Avantage critique vs file:// : l'origine `nexus://`
+    // est traitée comme HTTPS-like par YouTube/Vimeo/etc → la
+    // musique de profil joue, les iframes externes communiquent en
+    // postMessage normalement.
+    try {
+      protocol.handle('nexus', async (request) => {
+        try {
+          const u = new URL(request.url)
+          let pathname = decodeURIComponent(u.pathname)
+          if (!pathname || pathname === '/') pathname = '/index.html'
+          const local = resolveAssetPath(pathname)
+          // net.fetch(`file://...`) gère asar + content-type auto.
+          const { net } = await import('electron')
+          return net.fetch(`file://${local.replace(/\\/g, '/')}`)
+        } catch (err) {
+          return new Response(String(err), { status: 500 })
+        }
+      })
+    } catch {
+      /* déjà register, ignore */
+    }
+
+    // Le file:// interceptor reste pour les rares cas où un asset
+    // est requêté en file:// au lieu de via nexus:// (legacy, hot
+    // reload, etc.). Même résolution que nexus://.
     protocol.interceptFileProtocol('file', (request, callback) => {
       try {
         const u = new URL(request.url)
-        let pathname = decodeURIComponent(u.pathname)
-        // Sur Windows, pathname d'un file:// est `/C:/...`, on garde
-        // tel quel pour les chemins absolus reconnus.
-        const driveMatch = pathname.match(/^\/[A-Za-z]:[/\\]/)
-        if (driveMatch) {
-          return callback({ path: pathname.slice(1) })
-        }
-        // Si le path commence par un de nos préfixes assets connus,
-        // on tente RENDERER_DIST d'abord, puis resourcesPath en
-        // fallback (cas cosmetics qui n'est pas dans dist/).
-        for (const prefix of ASSET_PREFIXES) {
-          if (
-            pathname === `/${prefix}` ||
-            pathname.startsWith(`/${prefix}/`)
-          ) {
-            const inDist = path.join(RENDERER_DIST, pathname)
-            try {
-              if (fs.existsSync(inDist)) {
-                return callback({ path: inDist })
-              }
-            } catch {
-              /* fallthrough */
-            }
-            // Fallback resources/ (où electron-builder copie cosmetics)
-            const inResources = path.join(RESOURCES_BASE, pathname)
-            return callback({ path: inResources })
-          }
-        }
-        callback({ path: pathname })
+        const pathname = decodeURIComponent(u.pathname)
+        callback({ path: resolveAssetPath(pathname) })
       } catch {
         callback({ path: request.url.replace(/^file:\/\//, '') })
       }

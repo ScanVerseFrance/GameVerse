@@ -39,6 +39,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using HidSharp;
+using Nefarius.Drivers.HidHide;
 using Nefarius.ViGEm.Client;
 using Nefarius.ViGEm.Client.Targets;
 using Nefarius.ViGEm.Client.Targets.Xbox360;
@@ -57,6 +58,8 @@ internal static class Program
     private static HidDevice? _hidDevice;
     private static CancellationTokenSource _cts = new();
     private static readonly object _emitLock = new();
+    private static HidHideControlService? _hidHide;
+    private static string? _cloakedInstancePath;
 
     // Current bridge configuration (remap + deadzones + invertY + gyro
     // + rumble). Updated via `{cmd:"config"}` from Electron — applied
@@ -182,6 +185,12 @@ internal static class Program
             return;
         }
 
+        // HidHide cloak — cache la manette physique aux jeux.
+        // Sans ça, le jeu peut encore voir la DualSense via
+        // Windows.Gaming.Input même si on a le HID exclusif lock.
+        // C'est ce qui résout vraiment le bug "2 joueurs".
+        TryActivateHidHide(_hidDevice);
+
         Emit("connected", new
         {
             name = _hidDevice.GetFriendlyName(),
@@ -189,10 +198,98 @@ internal static class Program
             productId = _hidDevice.ProductID,
             isDualSense = DUALSENSE_PIDS.Contains((ushort)_hidDevice.ProductID),
             isDS4 = DS4_PIDS.Contains((ushort)_hidDevice.ProductID),
+            hidHideActive = _cloakedInstancePath != null,
         });
 
         _cts = new CancellationTokenSource();
         Task.Run(() => HidLoop(_cts.Token));
+    }
+
+    /// Active HidHide kernel filter pour cacher la manette physique
+    /// aux apps autres que le helper. C'est l'équivalent exact du
+    /// "Hide from games" de Steam Input.
+    ///
+    /// Steps :
+    ///   1. Whitelist le path de NexusInput.exe → seul lui pourra
+    ///      lire le HID (ViGEmBus virtual pad lui reste accessible
+    ///      depuis le jeu via XInput, c'est le but).
+    ///   2. Ajoute l'instance path du HID DualSense à la blacklist.
+    ///   3. Active le cloak global.
+    ///
+    /// Best-effort : si HidHide n'est pas installé OU si l'activation
+    /// échoue (permissions, etc.), on continue sans → fallback sur
+    /// le HID exclusif open qui marche pour la plupart des jeux.
+    private static void TryActivateHidHide(HidDevice hidDevice)
+    {
+        try
+        {
+            _hidHide = new HidHideControlService();
+            if (!_hidHide.IsInstalled)
+            {
+                Emit("log", new { level = "warn", msg = "HidHide non installé, skip cloak" });
+                _hidHide = null;
+                return;
+            }
+            // Whitelist NexusInput.exe lui-même pour qu'il puisse
+            // continuer à lire le HID après le cloak.
+            var ourExe = Environment.ProcessPath ??
+                System.Reflection.Assembly.GetExecutingAssembly().Location;
+            if (!string.IsNullOrEmpty(ourExe))
+            {
+                try
+                {
+                    _hidHide.AddApplicationPath(ourExe);
+                }
+                catch (Exception ex)
+                {
+                    Emit("log", new { level = "warn", msg = $"HidHide whitelist failed: {ex.Message}" });
+                }
+            }
+            // Récupère l'instance path du HID device (l'identifiant
+            // unique côté Windows, e.g. "HID\\VID_054C&PID_0CE6\\…")
+            // HidHide demande ce format pour blacklister.
+            var instancePath = hidDevice.DevicePath;
+            if (!string.IsNullOrEmpty(instancePath))
+            {
+                try
+                {
+                    _hidHide.AddBlockedInstanceId(instancePath);
+                    _cloakedInstancePath = instancePath;
+                }
+                catch (Exception ex)
+                {
+                    Emit("log", new { level = "warn", msg = $"HidHide blacklist failed: {ex.Message}" });
+                }
+            }
+            _hidHide.IsActive = true;
+            Emit("log", new { level = "info", msg = "HidHide cloak activé" });
+        }
+        catch (Exception ex)
+        {
+            Emit("log", new { level = "warn", msg = $"HidHide init failed: {ex.Message}" });
+            _hidHide = null;
+        }
+    }
+
+    /// Désactive le HidHide cloak proprement au stop du bridge.
+    /// Sans ça, la manette resterait invisible aux autres apps
+    /// jusqu'au reboot ou jusqu'à ouverture manuelle de HidHide
+    /// CLI pour cleanup.
+    private static void DeactivateHidHide()
+    {
+        if (_hidHide == null) return;
+        try
+        {
+            if (_cloakedInstancePath != null)
+            {
+                try { _hidHide.RemoveBlockedInstanceId(_cloakedInstancePath); }
+                catch { /* swallow */ }
+                _cloakedInstancePath = null;
+            }
+            _hidHide.IsActive = false;
+        }
+        catch { /* swallow — best-effort cleanup */ }
+        _hidHide = null;
     }
 
     private static HidDevice? FindFirstSonyController()
@@ -585,6 +682,10 @@ internal static class Program
         _vpad = null;
         try { _vigem?.Dispose(); } catch { }
         _vigem = null;
+        // Désactive le cloak HidHide proprement pour rendre la
+        // manette visible au système (sinon elle reste cachée
+        // jusqu'au reboot ou intervention manuelle HidHide CLI).
+        DeactivateHidHide();
     }
 
     private static readonly JsonSerializerOptions _jsonOpts = new()

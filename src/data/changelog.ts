@@ -59,6 +59,31 @@ export function compareVersions(a: string, b: string): number {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.4.5',
+    date: '2026-05-21',
+    title: 'Nexus Input complet — HidHide + custom protocol + filtres',
+    highlights: [
+      "HidHide kernel filter intégré → résout VRAIMENT le bug 2-joueurs (la manette physique est cachée du jeu, pas juste lockée)",
+      "Custom protocol `nexus://` → musique de profil YouTube fonctionne en release (avant rejeté par YT à cause de l'origine file://)",
+      "Filtre headsets : HyperX Cloud / Logitech G-* ne sont plus listés comme manettes",
+      "Notification globale '🎮 manette connectée' avec vendor + nom",
+    ],
+    changes: [
+      // === HidHide kernel filter ===
+      { kind: 'feat', text: "HidHide driver bundlé (Nefarius, MIT, 7.8 MB) avec auto-install UAC à la 1ère activation Nexus Input. C'est le kernel filter qui CACHE la manette physique aux apps non-whitelistées. Sans ça l'HID exclusif suffit pour 80% des jeux mais Lego Marvel + ceux qui lisent via Windows.Gaming.Input voient encore le pad physique → bug 2-joueurs." },
+      { kind: 'feat', text: "Helper C# intègre `Nefarius.Drivers.HidHide` : à l'activation du bridge, (1) whitelist NexusInput.exe pour qu'il puisse continuer à lire le HID après cloak, (2) ajoute l'instance path de la DualSense à la blacklist, (3) active le cloak global. Au stop, désactivation propre pour rendre la manette visible au système." },
+      // === Custom protocol nexus:// ===
+      { kind: 'feat', text: "Custom protocol `nexus://` enregistré comme privileged + secure + standard + corsEnabled. En production, index.html chargé via `nexus://./index.html` au lieu de `file://...`. L'origine devient `nexus://` qui est traité comme HTTPS-like par YouTube/Vimeo/etc → la YT IFrame API postMessage handshake passe enfin → la musique de profil joue." },
+      { kind: 'feat', text: "Handler `nexus://` mutualise la résolution des assets avec le file:// interceptor (RENDERER_DIST puis fallback resourcesPath). Cosmetics + steam-glyphs + controller bodies marchent en release sans changer le code renderer." },
+      // === Headset filter ===
+      { kind: 'fix', text: "Filtre les casques audio dans le détecteur de manettes : HyperX Cloud III, Logitech G-headsets, etc. exposent un endpoint HID pour les boutons mute/vol qui remonte dans Gamepad API → s'affichait comme une 'PAD' dans la liste. Filtre par mots-clés (headset / cloud / audio / headphone / etc.)." },
+      // === Global gamepad toast ===
+      { kind: 'feat', text: "useGamepadToast hook global dans AppLayout : toast '🟢 Manette Xbox connectée' / '🔵 DualSense Wireless Controller connectée' au branchement, '... déconnectée' au débranchement. Vendor-aware (emoji par couleur officielle), filtre les casques audio." },
+      // === GIF bypass ===
+      { kind: 'fix', text: "handlePickAvatar / handlePickBanner : bypass le cropper pour GIF/APNG → push direct le data URL au updateProfile → l'animation survit. Avant, canvas.toDataURL flatten en première frame, donc l'avatar / banner GIF était figé." },
+    ],
+  },
+  {
     version: '0.4.4',
     date: '2026-05-21',
     title: 'Fix cosmetics manquantes en release + UX manette',

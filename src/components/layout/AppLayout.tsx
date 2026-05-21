@@ -11,6 +11,7 @@ import { ExtendedPlayer } from '@/components/ui/ExtendedPlayer'
 import { InAppToastContainer } from '@/components/common/InAppToastContainer'
 import { HomeBackground } from '@/components/layout/HomeBackground'
 import { usePresence } from '@/hooks/usePresence'
+import { useGamepadToast } from '@/hooks/useGamepadToast'
 
 /**
  * Shell de l'application — empile titlebar / topnav / main / statusbar.
@@ -28,6 +29,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   // où il n'a aucun rapport avec ce que l'user est en train de faire.
   const showMusicPlayer = location.pathname.startsWith('/community/profile/')
   usePresence()
+  // Notif globale "🎮 manette connectée" quand un pad est branché.
+  // Branché ici (AppLayout) plutôt que dans la modal Nexus Input
+  // pour que la notif fire MÊME quand la modal est fermée → l'user
+  // sait toujours qu'il a branché un truc.
+  useGamepadToast()
 
   return (
     <div className="relative flex flex-col w-screen h-screen overflow-hidden bg-bg-primary">

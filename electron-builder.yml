@@ -49,6 +49,14 @@ extraResources:
   # registry au start et lance l'installer en UAC-elevated si absent.
   - from: installer-extras/ViGEmBus_Setup.exe
     to: drivers/ViGEmBus_Setup.exe
+  # HidHide driver — kernel filter qui cache les manettes physiques
+  # aux apps qui ne sont pas dans la whitelist. C'est CE qui fait
+  # que Steam Input "remplace" vraiment la manette : le jeu ne
+  # voit littéralement plus le pad physique, juste notre virtual.
+  # Sans ça, l'open-exclusive HID n'empêche pas le jeu de scruter
+  # le device via Windows.Gaming.Input → bug 2-joueurs persiste.
+  - from: installer-extras/HidHide_Setup.exe
+    to: drivers/HidHide_Setup.exe
   # Avatar decorations + nameplates : 574 MB de PNG. Vite skip
   # silently la copie de public/cosmetics au build (1.8 GB total,
   # timeout / file watcher issue). On bundle direct via extraResources
