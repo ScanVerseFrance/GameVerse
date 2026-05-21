@@ -17,13 +17,15 @@ directories:
 files:
   - dist
   - dist-electron
-  # Cosmetics (~1.8 GB of avatar decorations + profile effects + nameplates)
-  # are excluded from v0.1.0 because they balloon the installer past
-  # what 7-Zip can compress on a typical developer machine. They'll be
-  # re-introduced in v0.2.0 via a runtime CDN loader (likely served
-  # from nexus.scanverse.online's static asset bucket) so the launcher
-  # ships lean and cosmetics stream on demand.
-  - "!dist/cosmetics/**/*"
+  # Cosmetics breakdown (1.8 GB total) :
+  #   - avatar_decorations : 557 MB → INCLUS depuis v0.4.0 (l'user attendait
+  #     ses decos animées dans le build release ; sans elles l'avatar
+  #     reste nu en prod alors qu'il marche en dev)
+  #   - nameplates        : 17 MB → INCLUS
+  #   - profile_effects   : 1.2 GB → EXCLUS (rare cosmetics qui shippent un
+  #     APNG multi-couches par effet ; trop lourd pour l'installer.
+  #     Future v0.5 : runtime CDN loader pour streamer à la demande.)
+  - "!dist/cosmetics/profile_effects/**/*"
 asarUnpack:
   - "**/*.{node,dll}"
 # PowerShell helpers we shell out to from electron/services. These ride
@@ -35,6 +37,18 @@ extraResources:
     to: scripts
     filter:
       - "**/*.ps1"
+  # Phase 2 Nexus Input helper — single-file self-contained .NET
+  # executable qui parle à ViGEmBus + read HID DualSense. Spawned
+  # par controller-bridge.service.ts au toggle "Activer Nexus Input".
+  # Build via `dotnet publish` dans tools/nexus-input/dist/.
+  - from: tools/nexus-input/dist/NexusInput.exe
+    to: nexus-input/NexusInput.exe
+  # ViGEmBus driver installer (par Nefarius, MIT) — bundlé pour que
+  # l'user n'ait pas à le chercher manuellement comme Steam le fait
+  # avec son propre driver. controller-bridge.service vérifie la
+  # registry au start et lance l'installer en UAC-elevated si absent.
+  - from: installer-extras/ViGEmBus_Setup.exe
+    to: drivers/ViGEmBus_Setup.exe
 win:
   target:
     # `dir` = bare unpacked output, no installer. The Setup.exe is then

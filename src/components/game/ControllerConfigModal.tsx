@@ -100,16 +100,50 @@ export function ControllerConfigModal({
   useEffect(() => {
     if (!open) return
     function refresh() {
-      const list: DetectedPad[] = []
+      // 1) Raw enumeration via Gamepad API.
+      const raw: DetectedPad[] = []
       const gp = navigator.getGamepads?.() ?? []
       for (const p of gp) {
         if (!p) continue
-        list.push({
+        raw.push({
           id: p.id,
           index: p.index,
           vendor: detectVendor(p.id),
           shortName: shortControllerName(p.id),
         })
+      }
+      // 2) Dédup virtual-pad-vs-real-pad.
+      // Cas typique : l'user a une DualSense + DS4Windows ouvert.
+      // Windows expose alors DEUX gamepads :
+      //   - "DualSense Wireless Controller (Vendor: 054c Product: 0ce6)"
+      //     → la vraie manette physique, AVEC vendor/product IDs
+      //   - "PS5 Controller" (sans Vendor: dans la string)
+      //     → le pad virtuel émis par DS4Windows / ViGEm pour exposer
+      //       la DualSense au format XInput compatible jeux
+      // Steam Input fusionne ces deux en UN seul slot ; on fait pareil
+      // pour pas confondre l'user. Règle : pour chaque vendor, on
+      // garde la première entrée qui a un "Vendor: XXXX Product: XXXX"
+      // dans son id (= hardware réel détecté par Windows), et on
+      // squash les entrées sans IDs qui partagent le même vendor.
+      const list: DetectedPad[] = []
+      const realByVendor = new Set<typeof raw[number]['vendor']>()
+      // 1ère passe : on identifie les "vrais" hardware par vendor
+      for (const p of raw) {
+        if (/Vendor:\s*[0-9a-f]+/i.test(p.id)) {
+          if (!realByVendor.has(p.vendor)) {
+            realByVendor.add(p.vendor)
+            list.push(p)
+          }
+        }
+      }
+      // 2ème passe : on ajoute les pads sans Vendor: id UNIQUEMENT si
+      // aucun vrai hardware du même vendor n'a déjà été ajouté
+      // (sinon on suppose que c'est un mirror virtuel DS4Windows /
+      // ViGEm de la manette déjà listée).
+      for (const p of raw) {
+        if (/Vendor:\s*[0-9a-f]+/i.test(p.id)) continue
+        if (realByVendor.has(p.vendor)) continue
+        list.push(p)
       }
       setPads(list)
     }
@@ -126,6 +160,38 @@ export function ControllerConfigModal({
     }
   }, [open])
 
+  // ── Bridge events from C# helper ───────────────────────────────
+  // Le helper émet "connected" (manette bridged), "error" (ViGEm absent,
+  // HID busy), "disconnected" (pad débranché), "exited" (process killed).
+  // On surface via toasts pour que l'user comprenne ce qui se passe.
+  useEffect(() => {
+    if (!open) return
+    const off = window.nexus.controller.onBridgeEvent((payload) => {
+      const evt = payload.event as string
+      if (evt === 'connected') {
+        const name = (payload.name as string) ?? 'manette'
+        toast.success(`Nexus Input actif sur ${name}`)
+      } else if (evt === 'disconnected') {
+        toast.info('Manette débranchée')
+      } else if (evt === 'error') {
+        const code = payload.code as string
+        const msg = (payload.msg as string) ?? 'Erreur Nexus Input'
+        if (code === 'VIGEM_MISSING') {
+          toast.error(
+            "Driver ViGEmBus introuvable. Installe-le depuis github.com/nefarius/ViGEmBus/releases puis réessaye.",
+          )
+        } else if (code === 'HID_BUSY') {
+          toast.error(
+            'La manette est utilisée par une autre app (Steam / DS4Windows). Ferme-la et réessaye.',
+          )
+        } else {
+          toast.error(msg)
+        }
+      }
+    })
+    return () => off()
+  }, [open])
+
   // ── Save handlers ───────────────────────────────────────────────
   async function handleSave() {
     if (!user) return
@@ -137,6 +203,10 @@ export function ControllerConfigModal({
         config,
       )
       if (res.ok) {
+        // Push la config fraîche au helper si le bridge tourne.
+        // Sans ça l'user devait redémarrer le bridge pour voir ses
+        // nouveaux remap / deadzones / gyro pris en compte.
+        void window.nexus.controller.pushBridgeConfig(config)
         toast.success('Configuration manette sauvegardée')
         onClose()
       } else {
@@ -283,7 +353,31 @@ function MainView({
             Utilise une couche de compatibilité Nexus Input
           </p>
           <button
-            onClick={() => setConfig({ ...config, enabled: !config.enabled })}
+            onClick={() => {
+              const next = !config.enabled
+              setConfig({ ...config, enabled: next })
+              // Phase 2 : démarre / arrête le helper C# en même temps
+              // que le toggle UI. Les events arrivent ensuite via
+              // onBridgeEvent (cf. useEffect plus bas) et populent
+              // toasts succès / erreur (driver ViGEm manquant, etc.).
+              if (next) {
+                void window.nexus.controller.startBridge().then((res) => {
+                  if (!res.ok) {
+                    toast.error(res.error ?? 'Échec démarrage Nexus Input')
+                    return
+                  }
+                  // Push la config courante au helper dès le start
+                  // pour que remap / deadzones / gyro soient pris en
+                  // compte sans attendre un save explicite.
+                  void window.nexus.controller.pushBridgeConfig({
+                    ...config,
+                    enabled: true,
+                  })
+                })
+              } else {
+                void window.nexus.controller.stopBridge()
+              }
+            }}
             className={cn(
               'h-8 px-3 rounded-md text-xs font-semibold border transition-colors shrink-0',
               config.enabled

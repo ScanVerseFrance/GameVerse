@@ -44,3 +44,13 @@ Hydra Source Code/
 # time, the served version lives there. Keeping `assets/` out of git
 # avoids duplicating ~3 MB of PNGs.
 /assets/
+# Phase 2 Nexus Input — .NET build artifacts (bin/obj) + le binaire
+# self-contained 69 MB (regen via `dotnet publish` dans tools/).
+tools/nexus-input/NexusInput/bin/
+tools/nexus-input/NexusInput/obj/
+tools/nexus-input/dist/
+# ViGEmBus installer (6 MB, fetché depuis github.com/nefarius/ViGEmBus
+# au moment du build via scripts/fetch-vigembus.mjs ou manuellement).
+# Pas commité pour éviter de redistribuer un binaire third-party
+# dans le repo source — on le bundle UNIQUEMENT dans l'installer final.
+installer-extras/*.exe

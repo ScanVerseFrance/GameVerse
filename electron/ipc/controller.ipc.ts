@@ -6,6 +6,7 @@
  */
 import { ipcMain } from 'electron'
 import * as svc from '../services/controller-config.service'
+import * as bridge from '../services/controller-bridge.service'
 import { sanitizeString } from '../utils/security'
 
 export function registerControllerIpc(): void {
@@ -101,4 +102,30 @@ export function registerControllerIpc(): void {
       }
     },
   )
+
+  // ── Phase 2 : virtual pad bridge ─────────────────────────────────
+  // Start le helper C# NexusInput.exe qui :
+  //   1) connecte ViGEmBus → spawn un virtual Xbox 360 pad
+  //   2) prend le HID exclusif de la DualSense/DS4 physique
+  //   3) forward inputs → virtual pad en hot loop
+  // Le jeu ne voit alors plus que le virtual pad (XInput) → fini le
+  // bug "2 joueurs" sur les jeux qui lisent XInput + DInput.
+  ipcMain.handle('controller:startBridge', async () => {
+    return bridge.startBridge()
+  })
+
+  ipcMain.handle('controller:stopBridge', async () => {
+    return bridge.stopBridge()
+  })
+
+  ipcMain.handle('controller:bridgeStatus', async () => {
+    return { ok: true as const, running: bridge.isBridgeRunning() }
+  })
+
+  // Push une nouvelle config au helper en live (l'user modifie un
+  // slider deadzone, ou toggle gyro, etc.). Le helper applique sans
+  // restart de la boucle HID.
+  ipcMain.handle('controller:pushBridgeConfig', async (_e, config: unknown) => {
+    return bridge.pushConfig(config)
+  })
 }

@@ -59,6 +59,42 @@ export function compareVersions(a: string, b: string): number {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.4.3',
+    date: '2026-05-21',
+    title: 'Nexus Input Phase 2 — bridge ViGEm fonctionnel + driver bundled',
+    highlights: [
+      "Helper natif C# qui crée un virtual Xbox pad + prend le HID exclusif de la DualSense/DS4 → résout le bug 2-joueurs (Lego Marvel et co)",
+      "Driver ViGEmBus bundlé dans l'installer (comme Steam) — auto-install via UAC à la 1ère activation, plus rien à faire pour l'user",
+    ],
+    changes: [
+      { kind: 'feat', text: "Helper standalone `NexusInput.exe` (.NET 9 self-contained, 69 MB) bundled via extraResources. Communique en JSON-lines stdin/stdout avec controller-bridge.service.ts côté Electron." },
+      { kind: 'feat', text: "Driver ViGEmBus (Nefarius, MIT, 6 MB) bundled dans l'installer comme Steam fait avec son driver maison. ensureViGEmInstalled() check la registry HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Services\\\\ViGEmBus → si absent, spawn l'installer via PowerShell Start-Process -Verb RunAs (= UAC prompt unique). Tous les runs suivants skip car already installed. Plus aucune install manuelle requise." },
+      { kind: 'feat', text: "Au toggle 'Activer Nexus Input' : Electron spawn le helper qui (1) connecte ViGEmBus → spawn virtual Xbox 360 pad, (2) open la manette physique en HID exclusif, (3) read raw HID 250 Hz → parse → emit sur virtual pad. Le jeu ne voit plus que UN pad XInput → fini le bug 'phantom 2nd player'." },
+      { kind: 'feat', text: "Parser HID intégré pour DualSense (USB report ID 0x01) et DualShock 4 : sticks LX/LY/RX/RY 16-bit signed, triggers analog L2/R2, face buttons + dpad combinés, bumpers + menu + L3/R3, PS button." },
+      { kind: 'feat', text: "Gestion d'erreurs UX : VIGEM_MISSING → toast avec lien install driver, HID_BUSY → toast 'Steam/DS4Windows utilise déjà la manette'. Cleanup auto au before-quit (sinon la manette reste invisible jusqu'au reboot)." },
+      { kind: 'feat', text: "ControllerConfigModal dédoublonne les manettes PS (DualSense Wireless + PS5 Controller virtuel émis par DS4Windows → Windows expose 2 pads). Steam Input merge ; on fait pareil." },
+      { kind: 'feat', text: "Remap actif au runtime : la config user (A↔B, etc.) est push au helper via `{cmd:'config'}` au start du bridge ET à chaque sauvegarde. Le helper applique le remap dans la boucle HID hot loop." },
+      { kind: 'feat', text: "Deadzones radiales sur sticks (mag du vecteur, re-scale [threshold..32767] → [0..32767] pour pas avoir de saut dur à la sortie). Seuils triggers analogiques. Toggle invert Y sur stick droit (pour les FPS old-school)." },
+      { kind: 'feat', text: "Rumble bidirectionnel : ViGEm `FeedbackReceived` event capture les vibrations du jeu Xbox virtuel → écrit Output Report HID (0x02 DualSense / 0x05 DS4) sur la manette physique. La DualSense vibre quand le jeu envoie du rumble." },
+      { kind: 'feat', text: "Gyro DualSense → stick droit : parse bytes 15-18 du report HID (int16 LE), divise par 64 pour amplitude utile, mix additif avec sensibilité X/Y du config. Permet aim-by-gyro sur n'importe quel FPS qui supporte stick droit (= 99% des jeux Xbox)." },
+      { kind: 'feat', text: "Limitations connues v0.4.3 : pas de HidGuardian (la manette physique reste visible aux apps qui scrutent le Raw Input device tree natif Windows.Gaming.Input — rare). Pas de touchpad encore. Future v0.5 = kernel filter pour exclusivité complète." },
+    ],
+  },
+  {
+    version: '0.4.2',
+    date: '2026-05-21',
+    title: 'Fix release — assets file:// + cosmetics bundlés + dedup manettes',
+    highlights: [
+      'Avatar decorations + nameplates + Steam glyphs maintenant visibles en release',
+      'Manettes PS dédoublonnées (DS4Windows + DualSense physique fusionnés)',
+    ],
+    changes: [
+      { kind: 'fix', text: "electron-builder.yml excluait `dist/cosmetics/**/*` (rationale v0.1.0 : 1.8 GB explose l'installer). Du coup en v0.4.0 release les decos animées + glyphs Steam + body manettes étaient absentes. Fix : on inclut avatar_decorations (557 MB) + nameplates (17 MB), on skip uniquement profile_effects (1.2 GB, future v0.5 streamera depuis CDN)." },
+      { kind: 'fix', text: "Electron file:// interceptor (`protocol.interceptFileProtocol`) qui rebase les paths absolus type `/cosmetics/...`, `/controller-buttons/...`, `/controller-bodies/...`, `/steam-glyphs/...` sur RENDERER_DIST. Sans ça en prod l'index.html chargé via file:// résolvait ces paths sur la racine du disque → toutes les images cassées." },
+      { kind: 'fix', text: "ControllerConfigModal détecte les manettes en doublon (DualSense Wireless Controller + PS5 Controller virtuel émis par DS4Windows → Windows expose 2 pads). Steam Input merge ; on fait pareil : prefer le hardware réel avec `Vendor: XXXX` dans l'id, drop le virtual sans IDs du même vendor." },
+    ],
+  },
+  {
     version: '0.4.0',
     date: '2026-05-21',
     title: 'Nexus Input + Scan PC profond + ProfilePage cloud-synced',

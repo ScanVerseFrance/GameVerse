@@ -846,6 +846,15 @@ export interface NexusAPI {
       userId: string,
       libraryGameId: string,
     ) => Promise<{ ok: boolean; error?: string }>
+    /** Phase 2 — démarre le helper C# qui crée un virtual Xbox pad
+     *  et prend le HID exclusif de la manette physique. */
+    startBridge: () => Promise<{ ok: boolean; error?: string }>
+    stopBridge: () => Promise<{ ok: boolean }>
+    bridgeStatus: () => Promise<{ ok: true; running: boolean }>
+    pushBridgeConfig: (config: unknown) => Promise<{ ok: boolean }>
+    onBridgeEvent: (
+      cb: (payload: Record<string, unknown>) => void,
+    ) => () => void
   }
   pcScanner: {
     hasAnySource: () => Promise<

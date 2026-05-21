@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, protocol, shell } from 'electron'
+import fs from 'node:fs'
 import path from 'node:path'
 import { initDatabase, closeDatabase } from './services/database.service'
 import { initDownloads, shutdownDownloads } from './services/download.service'
@@ -29,6 +30,7 @@ import { registerProfileIpc } from './ipc/profile.ipc'
 import { registerMusicIpc } from './ipc/music.ipc'
 import { registerPcScannerIpc } from './ipc/pc-scanner.ipc'
 import { registerControllerIpc } from './ipc/controller.ipc'
+import { initControllerBridgeShutdown } from './services/controller-bridge.service'
 import {
   initAutoUpdate,
   shutdownAutoUpdate,
@@ -248,6 +250,55 @@ void app.whenReady().then(async () => {
     return
   }
 
+  // Production file:// asset interceptor —
+  //
+  // En dev, Vite sert public/ via http://localhost:5173/ donc
+  // <img src="/cosmetics/foo.png"> résout proprement. En production
+  // Electron charge index.html via file:///.../dist/index.html ;
+  // les paths absolus type "/cosmetics/..." se résolvent alors vers
+  // file:///cosmetics/... (racine du disque, pas le dossier de
+  // l'app) → toutes les images sont cassées.
+  //
+  // Fix : on intercepte les requêtes file:// vers nos préfixes
+  // connus (steam-glyphs, controller-*, cosmetics) et on les
+  // rewrite vers RENDERER_DIST. Le reste passe tel quel pour ne
+  // pas casser les chargements de chunks JS / CSS qui sont déjà
+  // bien adressés par Vite.
+  if (!VITE_DEV_SERVER_URL) {
+    const ASSET_PREFIXES = [
+      'cosmetics',
+      'controller-buttons',
+      'controller-bodies',
+      'steam-glyphs',
+    ]
+    protocol.interceptFileProtocol('file', (request, callback) => {
+      try {
+        const u = new URL(request.url)
+        let pathname = decodeURIComponent(u.pathname)
+        // Sur Windows, pathname d'un file:// est `/C:/...`, on garde
+        // tel quel pour les chemins absolus reconnus.
+        const driveMatch = pathname.match(/^\/[A-Za-z]:[/\\]/)
+        if (driveMatch) {
+          return callback({ path: pathname.slice(1) })
+        }
+        // Si le path commence par un de nos préfixes assets connus,
+        // on le rebase sur RENDERER_DIST.
+        for (const prefix of ASSET_PREFIXES) {
+          if (
+            pathname === `/${prefix}` ||
+            pathname.startsWith(`/${prefix}/`)
+          ) {
+            return callback({ path: path.join(RENDERER_DIST, pathname) })
+          }
+        }
+        callback({ path: pathname })
+      } catch {
+        callback({ path: request.url.replace(/^file:\/\//, '') })
+      }
+    })
+  }
+  void fs // imported above for future runtime checks
+
   try {
     await initDatabase()
   } catch (err) {
@@ -298,6 +349,7 @@ void app.whenReady().then(async () => {
   registerMusicIpc()
   registerPcScannerIpc()
   registerControllerIpc()
+  initControllerBridgeShutdown()
   registerCloudIpc()
   registerCloudSaveIpc()
   registerAutoUpdateIpc()

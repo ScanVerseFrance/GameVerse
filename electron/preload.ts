@@ -352,6 +352,21 @@ const api = {
     /** Reset au défaut — drop la row, le get suivant renvoie le default. */
     deleteConfig: (userId: string, libraryGameId: string) =>
       ipcRenderer.invoke('controller:deleteConfig', userId, libraryGameId),
+    /** Phase 2 — démarrer le bridge ViGEm (virtual Xbox pad). */
+    startBridge: () => ipcRenderer.invoke('controller:startBridge'),
+    stopBridge: () => ipcRenderer.invoke('controller:stopBridge'),
+    bridgeStatus: () => ipcRenderer.invoke('controller:bridgeStatus'),
+    /** Push live config update (remap, deadzones, gyro, etc.) au
+     *  helper sans restart de la boucle HID. */
+    pushBridgeConfig: (config: unknown) =>
+      ipcRenderer.invoke('controller:pushBridgeConfig', config),
+    /** Subscribe aux events du helper (connected, error, exited, etc.) */
+    onBridgeEvent: (cb: (payload: Record<string, unknown>) => void) => {
+      const handler = (_e: unknown, payload: Record<string, unknown>) =>
+        cb(payload)
+      ipcRenderer.on('controller:bridgeEvent', handler)
+      return () => ipcRenderer.off('controller:bridgeEvent', handler)
+    },
   },
   pcScanner: {
     /** Cheap precheck — returns false if neither Steam nor any
