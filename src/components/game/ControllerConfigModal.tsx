@@ -76,6 +76,10 @@ export function ControllerConfigModal({
   const [pads, setPads] = useState<DetectedPad[]>([])
   const [view, setView] = useState<View>('main')
   const [editCategory, setEditCategory] = useState<EditCategory>('buttons')
+  // Bridge runtime state — vrai status du helper C# côté main,
+  // synced via `bridgeStatus` au mount + `onBridgeEvent` ensuite.
+  const [bridgeRunning, setBridgeRunning] = useState(false)
+  const [bridgePadName, setBridgePadName] = useState<string | null>(null)
 
   // ── Load config from DB ─────────────────────────────────────────
   useEffect(() => {
@@ -162,28 +166,47 @@ export function ControllerConfigModal({
 
   // ── Bridge events from C# helper ───────────────────────────────
   // Le helper émet "connected" (manette bridged), "error" (ViGEm absent,
-  // HID busy), "disconnected" (pad débranché), "exited" (process killed).
-  // On surface via toasts pour que l'user comprenne ce qui se passe.
+  // HID busy), "disconnected" (pad débranché), "exited" (process killed),
+  // "driverInstalled" (ViGEmBus a été auto-installé via UAC). On surface
+  // via toasts + maintient les états bridgeRunning / bridgePadName pour
+  // le badge live dans la modal.
   useEffect(() => {
     if (!open) return
+    // Sync initial status (en cas où le bridge tourne déjà parce que
+    // l'user a activé Nexus Input depuis un autre jeu).
+    void window.nexus.controller.bridgeStatus().then((res) => {
+      if (res.ok) setBridgeRunning(res.running)
+    })
     const off = window.nexus.controller.onBridgeEvent((payload) => {
       const evt = payload.event as string
       if (evt === 'connected') {
         const name = (payload.name as string) ?? 'manette'
+        setBridgeRunning(true)
+        setBridgePadName(name)
         toast.success(`Nexus Input actif sur ${name}`)
       } else if (evt === 'disconnected') {
+        setBridgeRunning(false)
+        setBridgePadName(null)
         toast.info('Manette débranchée')
+      } else if (evt === 'exited') {
+        setBridgeRunning(false)
+        setBridgePadName(null)
+      } else if (evt === 'driverInstalled') {
+        toast.info('Driver ViGEmBus installé — Nexus Input prêt')
       } else if (evt === 'error') {
         const code = payload.code as string
         const msg = (payload.msg as string) ?? 'Erreur Nexus Input'
+        setBridgeRunning(false)
         if (code === 'VIGEM_MISSING') {
           toast.error(
-            "Driver ViGEmBus introuvable. Installe-le depuis github.com/nefarius/ViGEmBus/releases puis réessaye.",
+            "Driver ViGEmBus introuvable. Installation automatique impossible — installe manuellement depuis github.com/nefarius/ViGEmBus/releases.",
           )
         } else if (code === 'HID_BUSY') {
           toast.error(
             'La manette est utilisée par une autre app (Steam / DS4Windows). Ferme-la et réessaye.',
           )
+        } else if (code === 'NO_PAD') {
+          toast.error('Aucune manette PlayStation détectée. Branche-en une et réessaye.')
         } else {
           toast.error(msg)
         }
@@ -281,6 +304,8 @@ export function ControllerConfigModal({
               config={config}
               setConfig={setConfig}
               pads={pads}
+              bridgeRunning={bridgeRunning}
+              bridgePadName={bridgePadName}
               onTogglePad={togglePad}
               onOpenPreview={() => setView('preview')}
               onOpenEdit={() => {
@@ -333,6 +358,8 @@ function MainView({
   config,
   setConfig,
   pads,
+  bridgeRunning,
+  bridgePadName,
   onTogglePad,
   onOpenPreview,
   onOpenEdit,
@@ -340,6 +367,8 @@ function MainView({
   config: ControllerConfig
   setConfig: React.Dispatch<React.SetStateAction<ControllerConfig>>
   pads: DetectedPad[]
+  bridgeRunning: boolean
+  bridgePadName: string | null
   onTogglePad: (id: string) => void
   onOpenPreview: () => void
   onOpenEdit: () => void
@@ -349,9 +378,21 @@ function MainView({
       {/* Header : toggle Nexus Input + description */}
       <section className="rounded-lg border border-glass-border bg-[var(--surface-soft)] p-4">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-semibold text-fg-primary">
-            Utilise une couche de compatibilité Nexus Input
-          </p>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <p className="text-sm font-semibold text-fg-primary">
+              Utilise une couche de compatibilité Nexus Input
+            </p>
+            {/* Live status badge — dot vert pulsé quand le helper
+                tourne + bridge la manette. Indique à l'user que le
+                virtual Xbox pad est ACTIF et que le jeu reçoit les
+                inputs via Nexus. */}
+            {bridgeRunning && (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-500/15 border border-green-500/40 text-[10px] font-bold text-green-400 uppercase tracking-wider shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                {bridgePadName ? `Actif · ${bridgePadName.split(' ')[0]}` : 'Actif'}
+              </span>
+            )}
+          </div>
           <button
             onClick={() => {
               const next = !config.enabled
