@@ -60,6 +60,10 @@ internal static class Program
     private static readonly object _emitLock = new();
     private static HidHideControlService? _hidHide;
     private static string? _cloakedInstancePath;
+    /// True quand la DualSense est en Bluetooth (Report ID 0x31, 78
+    /// bytes input). Influence le parsing input ET le format du
+    /// rumble output report.
+    private static bool _isBluetooth;
 
     // Current bridge configuration (remap + deadzones + invertY + gyro
     // + rumble). Updated via `{cmd:"config"}` from Electron — applied
@@ -191,6 +195,14 @@ internal static class Program
         // C'est ce qui résout vraiment le bug "2 joueurs".
         TryActivateHidHide(_hidDevice);
 
+        // Détecte le transport (USB vs Bluetooth) via la taille du
+        // max input report. USB DualSense = 64 octets, BT = 78 octets.
+        // On l'envoie au renderer pour info debug + on l'utilise pour
+        // le rumble (BT a un layout d'output report différent).
+        int maxReport = 64;
+        try { maxReport = _hidDevice.GetMaxInputReportLength(); } catch { }
+        _isBluetooth = maxReport >= 70;
+
         Emit("connected", new
         {
             name = _hidDevice.GetFriendlyName(),
@@ -199,6 +211,8 @@ internal static class Program
             isDualSense = DUALSENSE_PIDS.Contains((ushort)_hidDevice.ProductID),
             isDS4 = DS4_PIDS.Contains((ushort)_hidDevice.ProductID),
             hidHideActive = _cloakedInstancePath != null,
+            transport = _isBluetooth ? "bluetooth" : "usb",
+            reportSize = maxReport,
         });
 
         _cts = new CancellationTokenSource();
@@ -528,9 +542,16 @@ internal static class Program
     ///   buf[4] = left motor (large)
     /// On envoie un report de 48 bytes (full USB length) avec zéros
     /// partout sauf les bytes rumble.
+    ///
+    /// En Bluetooth, ce report n'est pas utilisable — il faut un
+    /// Report ID 0x31 avec un CRC32 calculé, layout complexe (78 bytes).
+    /// Pour v0.4.6 on skip rumble en BT plutôt que d'envoyer un
+    /// output report invalide qui ferait disconnect le HID — meilleur
+    /// trade-off vs un rumble inactif.
     private static void WriteDualSenseRumble(byte large, byte small)
     {
         if (_hidStream == null) return;
+        if (_isBluetooth) return; // Skip — BT rumble report TBD
         var buf = new byte[48];
         buf[0] = 0x02;            // Report ID
         buf[1] = 0x03;            // Flag 0 : rumble enabled + audio off mute
@@ -571,20 +592,39 @@ internal static class Program
         public short GyroDX, GyroDY;
     }
 
-    /// DualSense USB report (Report ID 0x01) :
-    ///   off+0..3 : LX, LY, RX, RY (0..255 unsigned)
-    ///   off+4..5 : LT, RT analog
-    ///   off+6    : counter
-    ///   off+7    : dpad + face buttons
-    ///   off+8    : shoulder + menu + L3/R3
-    ///   off+9    : PS button + touchpad click + mute
-    ///   off+15..16 : gyro X
-    ///   off+17..18 : gyro Y
+    /// DualSense report parser — handles BOTH USB et Bluetooth modes.
+    ///
+    /// USB mode (Report ID 0x01, 64 bytes) :
+    ///   b[0] = 0x01
+    ///   b[1..4]  = LX, LY, RX, RY (data starts at off=1)
+    ///   ...
+    ///
+    /// Bluetooth mode (Report ID 0x31, 78 bytes) :
+    ///   b[0] = 0x31
+    ///   b[1] = 1 byte de séquence/metadata BT
+    ///   b[2..5]  = LX, LY, RX, RY (data starts at off=2)
+    ///   ...
+    ///
+    /// AVANT v0.4.6 on faisait `off = b[0] == 0x01 ? 1 : 0` → en BT,
+    /// off restait à 0, donc on lisait b[0] (= 0x31, le report ID lui-
+    /// même) comme LX. Résultat : stick coincé à 0x31, et tous les
+    /// boutons à des offsets décalés → le jeu voyait le virtual pad
+    /// connecté mais AUCUN bouton ne passait. C'était EXACTEMENT le
+    /// bug "AUCUNE SAISIE" de Lego Marvel quand la DualSense est en
+    /// Bluetooth (cas typique laptop).
+    ///
+    /// Le reste du layout (offsets relatifs à `off`) est identique
+    /// entre USB et BT — Sony aligne les données.
     private static Xbox360Report ParseDualSense(byte[] b, int len)
     {
         var r = new Xbox360Report();
         if (len < 10) return r;
-        int off = b[0] == 0x01 ? 1 : 0;
+        // Detect transport via Report ID. Si on tombe sur autre chose
+        // (ancien firmware ?) on assume USB (off=1) en best-effort.
+        int off;
+        if (b[0] == 0x01) off = 1;        // USB
+        else if (b[0] == 0x31) off = 2;   // Bluetooth
+        else off = 1;                      // fallback (most likely USB)
         if (len < off + 10) return r;
 
         r.LX = NormalizeAxis(b[off + 0]);

@@ -88,6 +88,17 @@ const TAB_ITEMS = [
   { value: 'data',          label: 'Données',        icon: <Database className="w-4 h-4" /> },
 ]
 
+/**
+ * Détecte les formats d'image animés (GIF / APNG). Utilisé dans
+ * handleAvatar / handleBanner du Compte tab pour bypass le cropper :
+ * canvas.toDataURL flatten en frame statique, donc passer un GIF par
+ * le cropper le casse. Parité avec ProfilePage.handlePickAvatar.
+ */
+function isAnimatedImage(mime: string): boolean {
+  const m = (mime || '').toLowerCase()
+  return m === 'image/gif' || m === 'image/apng'
+}
+
 function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -199,12 +210,18 @@ function AccountSection() {
     setUploadError(null)
     const url = await readAsDataUrl(f)
     if (!url) return
-    // Tous les formats passent par le cropper (parité ScanVerse) —
-    // l'user veut pouvoir cadrer même les GIF. Trade-off connu :
-    // canvas.toDataURL flatten l'animation, donc un GIF anim devient
-    // un PNG/JPEG statique de la première frame. C'est le compromis
-    // explicite demandé par l'user qui préfère la cohérence d'UI à
-    // la préservation d'animation.
+    // GIF / APNG : bypass le cropper. Le cropper rend via
+    // canvas.toDataURL qui flatten en PNG/JPEG statique de la
+    // première frame → l'animation est perdue. On push direct le
+    // data URL d'origine → l'animation survit. Décision revue v0.4.6
+    // (l'user veut explicitement les avatars/bannières animés).
+    if (isAnimatedImage(f.type)) {
+      const ok = await updateProfile({ avatarPath: url })
+      toast[ok ? 'success' : 'error'](
+        ok ? 'Avatar animé mis à jour' : "Échec de la mise à jour de l'avatar",
+      )
+      return
+    }
     setCrop({ source: url, target: 'avatar' })
   }
 
@@ -221,7 +238,15 @@ function AccountSection() {
     setUploadError(null)
     const url = await readAsDataUrl(f)
     if (!url) return
-    // Idem avatar : tous formats passent par le cropper.
+    // Idem avatar : bypass cropper pour GIF / APNG sinon l'animation
+    // est perdue à la flatten canvas.
+    if (isAnimatedImage(f.type)) {
+      const ok = await updateProfile({ bannerPath: url })
+      toast[ok ? 'success' : 'error'](
+        ok ? 'Bannière animée mise à jour' : 'Échec de la mise à jour de la bannière',
+      )
+      return
+    }
     setCrop({ source: url, target: 'banner' })
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "nexus-launcher-installer",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "private": true,
   "description": "Nexus Launcher custom Setup wizard",
   "main": "main.js",

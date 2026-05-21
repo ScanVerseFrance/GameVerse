@@ -59,6 +59,32 @@ export function compareVersions(a: string, b: string): number {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.4.6',
+    date: '2026-05-21',
+    title: 'Fix Nexus Input Bluetooth + musique YT + notif manette + GIF Settings',
+    highlights: [
+      "Nexus Input parse enfin les reports DualSense en Bluetooth (Report ID 0x31, offset +2). Avant, les sticks restaient figés et AUCUN bouton ne passait au virtual pad → jeux affichaient « AUCUNE SAISIE » (Lego Marvel SH 2 réglé).",
+      "Auto-start Nexus Input au launch d'un jeu : si la config a `enabled: true`, le bridge spawn AVANT que le jeu démarre. Plus besoin de cliquer manuellement « Activer » avant chaque session.",
+      "Musique de profil YouTube : YT IFrame API refusait le handshake quand on lui passait `origin: nexus://.` (pas http(s)). On omet l'origin en release → YT skip la vérif et joue.",
+      "Notif manette : on poll `navigator.getGamepads()` au mount pendant 6 s pour catcher les pads déjà branchés au démarrage (sinon il fallait appuyer sur un bouton pour fire l'event).",
+      "Toast manette inclut la marque (PlayStation/Xbox/Nintendo) devant le modèle.",
+      "Settings → Compte bypass aussi le cropper pour GIF/APNG → bannière/avatar animés survivent à l'upload depuis n'importe où.",
+    ],
+    changes: [
+      // === Nexus Input fixes (le gros morceau) ===
+      { kind: 'fix', text: "NexusInput.exe ParseDualSense : détecte le Report ID et applique le bon offset (USB 0x01 → off=1, Bluetooth 0x31 → off=2). AVANT, en BT, le report ID était lu comme axis LX → stick coincé et tous les boutons décalés → le virtual pad XInput était connecté MAIS aucun bouton ne fire jamais. Cas typique : DualSense en pairing Bluetooth sur laptop, Lego Marvel Super Heroes 2 affiche « AUCUNE SAISIE ». Résolu." },
+      { kind: 'feat', text: "Event 'connected' inclut maintenant `transport: 'usb'|'bluetooth'` + `reportSize` → debug logs côté launcher montrent immédiatement quel mode a été détecté, et l'UI peut adapter (rumble désactivé en BT v0.4.6 car layout différent à implémenter)." },
+      { kind: 'feat', text: "Auto-start du bridge ViGEm sur `launchGame()` quand la config controller du jeu a `enabled: true`. Fire-and-forget pour ne pas bloquer le launch (~1s spawn vs plusieurs secondes de chargement du moteur). Steam-launches + exe directs traités pareil." },
+      // === Music fix ===
+      { kind: 'fix', text: "MusicContext.tsx : `playUrl()` ne passe plus le param `origin` à YT.Player quand `location.protocol` n'est pas http(s). En release le launcher charge index.html via `nexus://`, YT validation côté embed refusait notre origin → le player se mountait sans jamais émettre PLAYING. Maintenant absence d'origin = YT skip la vérif, handshake passe, la musique joue." },
+      // === Gamepad notif ===
+      { kind: 'fix', text: "useGamepadToast.ts : poll initial `navigator.getGamepads()` au mount toutes les 600 ms pendant 6 s. La Gamepad API W3C ne fire `gamepadconnected` qu'après un user gesture pad-side ; un pad déjà branché au démarrage du launcher n'apparaissait jamais en notif. Le poll initial le ramasse." },
+      { kind: 'polish', text: "Toast de connexion manette préfixé avec la marque : `🔵 PlayStation DualSense Wireless Controller connectée` au lieu de juste `🎮 DualSense …`. Dédup par id+index pour éviter double-toast (poll + event)." },
+      // === GIF fix ===
+      { kind: 'fix', text: "SettingsPage.tsx handleAvatar / handleBanner : bypass le cropper pour GIF / APNG (parité avec ProfilePage). Avant, tous les uploads depuis Settings → Compte passaient par canvas.toDataURL qui flatten l'animation. Maintenant les formats animés sont push direct au updateProfile → GIF/APNG survivent." },
+    ],
+  },
+  {
     version: '0.4.5',
     date: '2026-05-21',
     title: 'Nexus Input complet — HidHide + custom protocol + filtres',

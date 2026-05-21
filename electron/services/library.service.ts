@@ -7,6 +7,11 @@ import { app, BrowserWindow, shell } from 'electron'
 import { getDatabase } from './database.service'
 import { emitFriendLaunched, postActivity, updatePresence } from './social.service'
 import { queueStatsSync } from './stats-sync.service'
+import { getControllerConfig } from './controller-config.service'
+import {
+  startBridge as startControllerBridge,
+  isBridgeRunning as isControllerBridgeRunning,
+} from './controller-bridge.service'
 import type { AddLibraryParams, LibraryGame, LibraryStatus, UpdateLibraryParams } from '@/types/library.types'
 
 interface LibraryRow {
@@ -815,6 +820,23 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
   const game = getLibraryGame(id)
   if (!game) return { ok: false, error: 'Jeu introuvable' }
   if (running.has(id)) return { ok: false, error: 'Le jeu est déjà en cours' }
+
+  // Nexus Input auto-start — appliqué AVANT toute branche de launch
+  // (Steam OU exe direct) parce que les jeux Steam aussi bénéficient
+  // du virtual pad. Si l'user a activé Nexus Input pour ce jeu et que
+  // le bridge ne tourne pas, on le démarre en fire-and-forget. ~1 s de
+  // boot vs le moteur du jeu qui charge ses assets → le pad est prêt
+  // au moment où le jeu lit son premier état controller.
+  try {
+    const ctrlCfg = getControllerConfig(game.userId, id)
+    if (ctrlCfg.enabled && !isControllerBridgeRunning()) {
+      void startControllerBridge().catch(() => {
+        /* erreurs broadcastées via controller:bridgeEvent */
+      })
+    }
+  } catch {
+    /* swallow — best-effort */
+  }
 
   // Steam-sourced games go through the Steam client via the
   // steam://rungameid/<appid> protocol — that way Steam tracks the

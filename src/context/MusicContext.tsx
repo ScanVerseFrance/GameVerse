@@ -537,10 +537,19 @@ export function MusicProvider({ children }: { children: ReactNode }) {
             // (YT's `end` param is unreliable on the first play).
             ...(clipStart > 0 ? { start: clipStart } : {}),
             ...(clipEnd != null ? { end: clipEnd } : {}),
-            // Origin matters on some Chromium builds — without it the
-            // postMessage handshake to the iframe gets blocked. We
-            // pass the current location so the iframe trusts us.
-            origin: typeof location !== 'undefined' ? location.origin : undefined,
+            // Origin handling — la YT IFrame API valide le champ
+            // `origin` côté embed page : si ce n'est pas http(s)://
+            // (ex: `nexus://.`), YT refuse le postMessage handshake et
+            // le player ne joue jamais. En production le launcher
+            // charge index.html via le scheme custom `nexus://` → on
+            // OMIT origin dans ce cas (YT skip alors la vérif d'origine
+            // côté embed et accepte tous nos postMessage). En dev (Vite
+            // http://localhost:5173) on garde origin pour la sécurité
+            // normale.
+            ...(typeof location !== 'undefined' &&
+            /^https?:$/.test(location.protocol)
+              ? { origin: location.origin }
+              : {}),
           },
           events: {
             onReady: (e) => {
