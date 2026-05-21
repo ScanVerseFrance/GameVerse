@@ -32,7 +32,107 @@ import * as tar from 'tar'
 import YAML from 'yaml'
 import { cloudFetch, getStatus } from './cloud.service'
 import { runBackup, runRestore, ludusaviConfigDir } from './ludusavi-bootstrap.service'
+import { getDatabase } from './database.service'
 import type { LibraryGame } from '@/types/library.types'
+
+/**
+ * Custom save folder override service — pour les jeux que Ludusavi /
+ * PCGamingWiki ne référencent pas. L'user pointe vers le dossier de
+ * sauvegarde via "Configurer le dossier" dans la SavesModal, on
+ * persiste le path en SQLite, et les flows backup/restore utilisent
+ * ce path directement (skip Ludusavi).
+ */
+export function getSaveOverride(
+  userId: string,
+  libraryGameId: string,
+): { savePath: string; updatedAt: number } | null {
+  try {
+    const row = getDatabase()
+      .prepare(
+        'SELECT save_path AS savePath, updated_at AS updatedAt FROM game_save_overrides WHERE user_id = ? AND library_game_id = ?',
+      )
+      .get(userId, libraryGameId) as
+      | { savePath: string; updatedAt: number }
+      | undefined
+    return row ?? null
+  } catch {
+    return null
+  }
+}
+
+export function setSaveOverride(
+  userId: string,
+  libraryGameId: string,
+  savePath: string,
+): void {
+  const now = Date.now()
+  getDatabase()
+    .prepare(
+      `INSERT INTO game_save_overrides (user_id, library_game_id, save_path, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, library_game_id) DO UPDATE SET
+         save_path = excluded.save_path,
+         updated_at = excluded.updated_at`,
+    )
+    .run(userId, libraryGameId, savePath, now)
+}
+
+export function clearSaveOverride(
+  userId: string,
+  libraryGameId: string,
+): void {
+  try {
+    getDatabase()
+      .prepare(
+        'DELETE FROM game_save_overrides WHERE user_id = ? AND library_game_id = ?',
+      )
+      .run(userId, libraryGameId)
+  } catch {
+    /* swallow */
+  }
+}
+
+/**
+ * Walk un dossier récursivement et retourne stats agrégées
+ * (fileCount, totalBytes, latestMtime). Utilisé en remplacement de
+ * `ludusavi --preview` quand l'user a configuré un dossier custom.
+ */
+async function walkFolderStats(root: string): Promise<{
+  fileCount: number
+  totalBytes: number
+  latestMtime: number | null
+}> {
+  let fileCount = 0
+  let totalBytes = 0
+  let latestMtime: number | null = null
+  async function recurse(dir: string): Promise<void> {
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) {
+        await recurse(full)
+      } else if (e.isFile()) {
+        try {
+          const st = await fsp.stat(full)
+          fileCount += 1
+          totalBytes += st.size
+          if (latestMtime === null || st.mtimeMs > latestMtime) {
+            latestMtime = st.mtimeMs
+          }
+        } catch {
+          /* skip files we can't stat */
+        }
+      }
+    }
+  }
+  await recurse(root)
+  return { fileCount, totalBytes, latestMtime }
+}
 
 /** Where we stash per-game working folders (backup tree + tar) between
  *  Ludusavi runs and the cloud upload. Cleaned after every operation. */
@@ -121,6 +221,17 @@ interface BackupPreview {
 export async function resolveSavesFolder(
   game: LibraryGame
 ): Promise<{ ok: boolean; path?: string; error?: string }> {
+  // PRIORITY 1 — override custom (cf. previewBackup).
+  const override = getSaveOverride(game.userId, game.id)
+  if (override) {
+    try {
+      const st = await fsp.stat(override.savePath)
+      if (st.isDirectory()) return { ok: true, path: override.savePath }
+    } catch {
+      /* fallthrough sur Ludusavi */
+    }
+  }
+
   const dir = workdir(game.id)
   await fsp.mkdir(dir, { recursive: true })
   try {
@@ -144,6 +255,28 @@ export async function resolveSavesFolder(
 export async function previewBackup(
   game: LibraryGame
 ): Promise<BackupPreview> {
+  // PRIORITY 1 — override custom. Quand l'user a configuré un dossier
+  // manuellement (jeu pas dans PCGamingWiki), on walk ce dossier
+  // directement au lieu de passer par Ludusavi.
+  const override = getSaveOverride(game.userId, game.id)
+  if (override) {
+    try {
+      const st = await fsp.stat(override.savePath)
+      if (!st.isDirectory()) {
+        return { fileCount: 0, totalBytes: 0, games: [], latestMtime: null }
+      }
+      const w = await walkFolderStats(override.savePath)
+      return {
+        fileCount: w.fileCount,
+        totalBytes: w.totalBytes,
+        games: [game.title],
+        latestMtime: w.latestMtime,
+      }
+    } catch {
+      // Dossier configuré n'existe plus → fallback Ludusavi
+    }
+  }
+
   const dir = workdir(game.id)
   await fsp.mkdir(dir, { recursive: true })
   try {
@@ -269,44 +402,78 @@ export async function uploadGameSave(
   await fsp.mkdir(backupTree, { recursive: true })
 
   try {
-    // 1. Ludusavi backup (not preview — actual file copy).
-    let result: Awaited<ReturnType<typeof runBackup>>
-    try {
-      result = await runBackup(ludusaviGameName(game.title), backupTree, false)
-    } catch (e) {
-      const msg = (e as Error).message
-      // Ludusavi has no PCGamingWiki manifest entry for this game.
-      // Most cracks / repacks ship titles Ludusavi doesn't recognise
-      // (the manifest is curated by PCGamingWiki editors). Surface a
-      // dedicated soft skip reason so the toast pipeline treats it
-      // as informational rather than a red error toast, AND so the
-      // SavesModal / status row can mark the game as "Pas géré" up
-      // front instead of waiting for the user to try a manual save.
-      if (/no info for these games/i.test(msg)) {
+    // PRIORITY 1 — override custom. Si l'user a configuré un dossier
+    // manuellement, on tar directement ce dossier sans passer par
+    // Ludusavi. Le restore extrait dans le même dossier (le path est
+    // déjà connu côté DB via getSaveOverride). Pas besoin de manifest
+    // intermédiaire — le tar contient le contenu brut du dossier.
+    const override = getSaveOverride(game.userId, game.id)
+    let fileCount = 0
+    if (override) {
+      try {
+        const st = await fsp.stat(override.savePath)
+        if (!st.isDirectory()) {
+          return {
+            ok: false,
+            skipped: true,
+            skipReason: 'override_path_invalid',
+          }
+        }
+        const w = await walkFolderStats(override.savePath)
+        fileCount = w.fileCount
+        if (fileCount === 0) {
+          return { ok: false, skipped: true, skipReason: 'no_save_files' }
+        }
+        await tar.c(
+          { file: tarFile, gzip: false, cwd: override.savePath },
+          ['.']
+        )
+      } catch (e) {
         return {
           ok: false,
-          skipped: true,
-          skipReason: 'no_ludusavi_manifest',
+          error: `Lecture du dossier override échouée: ${(e as Error).message}`,
         }
       }
-      throw e
-    }
-    let fileCount = 0
-    for (const g of Object.values(result.games ?? {})) {
-      fileCount += Object.keys(g.files ?? {}).length
-    }
-    if (fileCount === 0) {
-      return { ok: false, skipped: true, skipReason: 'no_save_files' }
-    }
+    } else {
+      // PRIORITY 2 — Ludusavi (chemin standard).
+      let result: Awaited<ReturnType<typeof runBackup>>
+      try {
+        result = await runBackup(ludusaviGameName(game.title), backupTree, false)
+      } catch (e) {
+        const msg = (e as Error).message
+        // Ludusavi has no PCGamingWiki manifest entry for this game.
+        // Most cracks / repacks ship titles Ludusavi doesn't recognise
+        // (the manifest is curated by PCGamingWiki editors). Surface a
+        // dedicated soft skip reason so the toast pipeline treats it
+        // as informational rather than a red error toast, AND so the
+        // SavesModal / status row can mark the game as "Pas géré" up
+        // front instead of waiting for the user to try a manual save.
+        if (/no info for these games/i.test(msg)) {
+          return {
+            ok: false,
+            skipped: true,
+            skipReason: 'no_ludusavi_manifest',
+          }
+        }
+        throw e
+      }
+      fileCount = 0
+      for (const g of Object.values(result.games ?? {})) {
+        fileCount += Object.keys(g.files ?? {}).length
+      }
+      if (fileCount === 0) {
+        return { ok: false, skipped: true, skipReason: 'no_save_files' }
+      }
 
-    // 2. Tar the backup tree. We tar from inside backupTree so the
-    //    paths inside the archive are relative to the backup root
-    //    (matches Hydra's layout — restore can recreate the tree
-    //    in any tmp dir).
-    await tar.c(
-      { file: tarFile, gzip: false, cwd: backupTree },
-      ['.']
-    )
+      // Tar the backup tree. We tar from inside backupTree so the
+      // paths inside the archive are relative to the backup root
+      // (matches Hydra's layout — restore can recreate the tree
+      // in any tmp dir).
+      await tar.c(
+        { file: tarFile, gzip: false, cwd: backupTree },
+        ['.']
+      )
+    }
 
     // 2.5. Shrink safety check. We tarred everything Ludusavi found
     //    locally — now compare the tar's byte size to the latest cloud
@@ -684,6 +851,26 @@ export async function restoreArtifact(
       }
     }
     await new Promise<void>((resolve) => out.end(() => resolve()))
+
+    // PRIORITY 1 — override custom. Si l'user a configuré un dossier
+    // manuellement, le tar uploadé est le contenu BRUT de ce dossier
+    // (pas un backup Ludusavi). On extract direct dans override.savePath
+    // sans passer par Ludusavi restore. Le `getSaveOverride` est lu
+    // côté DB donc indépendant du tar (un override changé entre upload
+    // et restore est honoré).
+    const override = getSaveOverride(game.userId, game.id)
+    if (override) {
+      try {
+        await fsp.mkdir(override.savePath, { recursive: true })
+        await tar.x({ file: tarFile, cwd: override.savePath })
+        return { ok: true }
+      } catch (e) {
+        return {
+          ok: false,
+          error: `Restore vers ${override.savePath} échoué: ${(e as Error).message}`,
+        }
+      }
+    }
 
     // 2. Extract the tar so its contents sit at `extractTo`. The tar
     //    was created from `backupTree` (the directory Ludusavi wrote

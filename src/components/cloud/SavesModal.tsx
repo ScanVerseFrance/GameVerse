@@ -109,6 +109,15 @@ export function SavesModal({
    *  because the modal is already a focused context. */
   const [folderError, setFolderError] = useState<string | null>(null)
   const [folderBusy, setFolderBusy] = useState(false)
+  /** Override custom du dossier de sauvegarde — `null` = aucun
+   *  override, mode Ludusavi standard. Quand set, le launcher tar
+   *  directement ce dossier au lieu de passer par Ludusavi. C'est le
+   *  fix pour les jeux que PCGamingWiki ne référence pas (cas Lego
+   *  Marvel SH 2 où Ludusavi répond "no info for these games"). */
+  const [override, setOverride] = useState<{
+    savePath: string
+    updatedAt: number
+  } | null>(null)
 
   /**
    * Pre-sort metadata pinned to the natural (createdAt-desc) order
@@ -179,9 +188,10 @@ export function SavesModal({
     // about seeing both panes together. The local preview is what
     // lets us answer "did my save actually wipe?" / "which cloud
     // version matches my current disk state?" at the top of the modal.
-    const [listRes, previewRes] = await Promise.all([
+    const [listRes, previewRes, overrideRes] = await Promise.all([
       window.nexus.cloudSave.listArtifacts(libraryGameId),
       window.nexus.cloudSave.preview(libraryGameId),
+      window.nexus.cloudSave.getSaveOverride(libraryGameId),
     ])
     setLoading(false)
     if (!listRes.ok) {
@@ -189,6 +199,9 @@ export function SavesModal({
       setArtifacts([])
     } else {
       setArtifacts(listRes.artifacts ?? [])
+    }
+    if (overrideRes.ok) {
+      setOverride(overrideRes.override ?? null)
     }
     if (previewRes.ok) {
       if (previewRes.fileCount === 0) {
@@ -323,6 +336,28 @@ export function SavesModal({
     }
   }
 
+  async function handleConfigureOverride() {
+    setUploadError(null)
+    const res = await window.nexus.cloudSave.setSaveOverride(libraryGameId)
+    if (res.ok && res.savePath) {
+      setOverride({ savePath: res.savePath, updatedAt: Date.now() })
+      // Refresh la preview pour que "Local: vide" se mette à jour avec
+      // les vrais fichiers du dossier overridé.
+      await refresh()
+    } else if (res.error && res.error !== 'cancelled') {
+      setUploadError(res.error)
+      setUploadErrorKind('error')
+    }
+  }
+
+  async function handleClearOverride() {
+    const res = await window.nexus.cloudSave.clearSaveOverride(libraryGameId)
+    if (res.ok) {
+      setOverride(null)
+      await refresh()
+    }
+  }
+
   async function handleDelete(artifact: CloudArtifact) {
     setConfirm(null)
     setRowBusy((s) => ({ ...s, [artifact.id]: 'delete' }))
@@ -391,6 +426,20 @@ export function SavesModal({
             </header>
 
             <LocalStatusRow state={localState} />
+
+            {/* Override custom du dossier — toujours visible (subtle si
+                override absent, prominent si Ludusavi a échoué). Permet
+                à l'user de contourner les manques de PCGamingWiki en
+                pointant lui-même vers le dossier de sauvegarde. */}
+            <OverrideRow
+              override={override}
+              prominent={
+                !override &&
+                (uploadError?.includes('PCGamingWiki') ?? false)
+              }
+              onConfigure={() => void handleConfigureOverride()}
+              onClear={() => void handleClearOverride()}
+            />
 
             <div className="px-6 pt-4 pb-2">
               <button
@@ -838,6 +887,93 @@ function LocalStatusRow({
         )}
       />
       <div className="flex-1 min-w-0 leading-snug">{body}</div>
+    </div>
+  )
+}
+
+/**
+ * Affiche l'état de l'override custom du dossier de sauvegarde :
+ *   - Si override set → "Dossier configuré : <path>" + bouton "Retirer"
+ *     pour repasser en mode Ludusavi
+ *   - Si pas d'override + Ludusavi a échoué → CTA "Configurer le
+ *     dossier" pour le jeu non-référencé PCGamingWiki
+ *   - Sinon → rien (UI propre quand Ludusavi gère bien le jeu)
+ *
+ * C'est le fix concret pour les jeux comme Lego Marvel SH 2 que
+ * Ludusavi/PCGamingWiki ne trouve pas : l'user pointe vers son
+ * dossier de sauvegarde et le backup/restore marche normalement.
+ */
+function OverrideRow({
+  override,
+  prominent,
+  onConfigure,
+  onClear,
+}: {
+  override: { savePath: string; updatedAt: number } | null
+  /** True quand Ludusavi a échoué → on rend l'option visuellement
+   *  prominente. Sinon mode subtle pour pas polluer l'UI quand le
+   *  flow normal marche. */
+  prominent: boolean
+  onConfigure: () => void
+  onClear: () => void
+}) {
+  if (override) {
+    return (
+      <div className="mx-6 mt-3 px-3 py-2 rounded-md border bg-[var(--surface-soft)] border-glass-border text-[12px] flex items-center gap-2">
+        <FolderOpen className="w-3.5 h-3.5 shrink-0 text-fg-muted" />
+        <div className="flex-1 min-w-0 leading-snug">
+          <div className="text-fg-primary">Dossier custom configuré :</div>
+          <div
+            className="text-fg-muted truncate text-[11px] font-mono"
+            title={override.savePath}
+          >
+            {override.savePath}
+          </div>
+        </div>
+        <button
+          onClick={onClear}
+          className="text-fg-muted hover:text-error text-[11px] underline-offset-2 hover:underline shrink-0"
+          title="Repasser en mode automatique (Ludusavi / PCGamingWiki)"
+        >
+          Retirer
+        </button>
+      </div>
+    )
+  }
+  if (prominent) {
+    return (
+      <div className="mx-6 mt-3 px-3 py-2.5 rounded-md border bg-accent-primary/5 border-accent-primary/30 text-[12px] flex items-start gap-2">
+        <FolderOpen className="w-3.5 h-3.5 shrink-0 text-accent-primary mt-0.5" />
+        <div className="flex-1 min-w-0 leading-snug">
+          <div className="text-fg-primary font-medium">
+            Configurer le dossier manuellement
+          </div>
+          <div className="text-fg-muted text-[11px] mt-0.5">
+            Choisis le dossier où ce jeu écrit ses sauvegardes. Le launcher
+            va le tar et le sync au cloud, sans passer par PCGamingWiki.
+          </div>
+          <button
+            onClick={onConfigure}
+            className="mt-2 px-3 h-7 rounded-md text-[11px] font-semibold bg-accent-gradient text-white hover:shadow-glow"
+          >
+            Choisir le dossier…
+          </button>
+        </div>
+      </div>
+    )
+  }
+  // Mode subtle — toujours discoverable mais pas envahissant. Texte
+  // léger sous LocalStatusRow. Si l'user clique, c'est intentionnel.
+  return (
+    <div className="mx-6 mt-1.5 text-[11px] text-fg-muted">
+      <button
+        onClick={onConfigure}
+        className="hover:text-fg-primary underline-offset-2 hover:underline inline-flex items-center gap-1"
+        title="Configurer manuellement le dossier de sauvegarde (utile pour les jeux pas dans PCGamingWiki)"
+      >
+        <FolderOpen className="w-3 h-3" />
+        Configurer un dossier manuellement
+      </button>
     </div>
   )
 }

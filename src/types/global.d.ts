@@ -1221,6 +1221,23 @@ export interface NexusAPI {
     deleteArtifact: (
       artifactId: string
     ) => Promise<{ ok: boolean; error?: string }>
+    /** Lit l'override custom du dossier de sauvegarde (null si aucun). */
+    getSaveOverride: (libraryGameId: string) => Promise<{
+      ok: boolean
+      error?: string
+      override?: { savePath: string; updatedAt: number } | null
+    }>
+    /** Ouvre un dialog "Choisir un dossier" + persiste comme override. */
+    setSaveOverride: (libraryGameId: string) => Promise<{
+      ok: boolean
+      error?: string
+      savePath?: string
+    }>
+    /** Remet le jeu en mode Ludusavi. */
+    clearSaveOverride: (libraryGameId: string) => Promise<{
+      ok: boolean
+      error?: string
+    }>
     onEvent: (
       cb: (data: {
         libraryGameId: string

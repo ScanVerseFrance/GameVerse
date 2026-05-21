@@ -59,6 +59,26 @@ export function compareVersions(a: string, b: string): number {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.5.0',
+    date: '2026-05-21',
+    title: 'Dossier de sauvegarde custom + autoplay YT + déco lecteur',
+    highlights: [
+      "Vrai fix bug Lego Marvel : tu peux maintenant pointer manuellement vers le dossier de sauvegarde quand Ludusavi/PCGamingWiki ne référence pas le jeu. Le launcher tar ce dossier directement et l'upload/download au cloud sans passer par Ludusavi.",
+      "Musique de profil enfin AVEC SON en prod. La policy autoplay Chrome bloquait l'audio des iframes auto-lancés sans clic. Bypass via webPreferences.autoplayPolicy='no-user-gesture-required'.",
+      "Décorations du lecteur étendu de retour : profile_effects (1.2 GB d'APNG) sont bundlés dans la prod (avant exclus pour taille). Installer plus gros mais parité dev/prod totale.",
+    ],
+    changes: [
+      // === Save folder override (le gros morceau) ===
+      { kind: 'feat', text: "Nouveau : SavesModal expose un bouton « Configurer un dossier manuellement » qui ouvre un dialog natif. L'user choisit le dossier où le jeu écrit ses saves, et le launcher persiste ce path en DB (table `game_save_overrides`). Backup/restore/preview utilisent ce dossier directement au lieu de Ludusavi. Marche pour TOUS les jeux, y compris ceux pas indexés dans PCGamingWiki (Lego Marvel SH 2, indé récents, repacks avec titre custom, etc.)." },
+      { kind: 'feat', text: "Quand un override est set, la SavesModal affiche le path en pill propre avec un bouton « Retirer » pour repasser en mode Ludusavi automatique. Quand pas d'override, un lien subtle « Configurer un dossier manuellement » reste visible pour discoverabilité." },
+      { kind: 'feat', text: "Quand l'user clique « Sauvegarder maintenant » et que Ludusavi échoue avec `no_ludusavi_manifest`, l'UI promote le CTA « Configurer le dossier manuellement » en pill prominente accent. Le path le plus direct du problème à la solution." },
+      // === Autoplay fix ===
+      { kind: 'fix', text: "main.ts webPreferences ajoute `autoplayPolicy: 'no-user-gesture-required'`. Chrome bloque par défaut l'audio des iframes auto-lancés sans interaction user. Sans ça, le raw iframe YT chargeait mais ne jouait aucun son malgré le timer qui avançait dans le MiniPlayer. La policy Electron est l'équivalent du flag Chrome `--autoplay-policy=no-user-gesture-required`." },
+      // === Cosmetics bundle ===
+      { kind: 'feat', text: "profile_effects bundlés dans la prod (1.2 GB d'APNG multi-couches). Avant, on les excluait via electron-builder.yml pour économiser sur la taille de l'installer, mais sans eux le picker « Animation du lecteur » côté Personnalisation n'avait aucun aperçu animé en prod et le lecteur étendu n'avait pas sa déco derrière la cover. Parité dev/prod complète. Installer +1.2 GB mais c'est le bon trade-off." },
+    ],
+  },
+  {
     version: '0.4.9',
     date: '2026-05-21',
     title: 'Cloud saves : fallback fuzzy match + message UX clair',

@@ -113,6 +113,15 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
       webSecurity: true,
+      // Autoplay policy : Chrome bloque par défaut l'autoplay avec son
+      // tant que l'user n'a pas interagit avec la page. Pour la musique
+      // de profil (qui démarre sans clic explicite — l'user navigue
+      // sur un profil et la musique commence), on a besoin de bypass
+      // cette policy. `no-user-gesture-required` est l'équivalent
+      // Electron du flag Chrome `--autoplay-policy=no-user-gesture-required`.
+      // Sans ça, le raw iframe YT charge mais reste muet jusqu'au
+      // premier clic dans la fenêtre.
+      autoplayPolicy: 'no-user-gesture-required',
     },
   })
 

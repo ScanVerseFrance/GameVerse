@@ -517,6 +517,18 @@ const api = {
     /** Delete a single cloud artifact by id. */
     deleteArtifact: (artifactId: string) =>
       ipcRenderer.invoke('cloudSave:deleteArtifact', artifactId),
+    /** Lit l'override custom du dossier de sauvegarde (null si aucun). */
+    getSaveOverride: (libraryGameId: string) =>
+      ipcRenderer.invoke('cloudSave:getSaveOverride', libraryGameId),
+    /** Ouvre un dialog "Choisir un dossier" et persiste le path comme
+     *  override. À partir de là, backup/restore utilisent ce dossier
+     *  directement au lieu de Ludusavi. Le fix pour les jeux pas
+     *  référencés dans PCGamingWiki. */
+    setSaveOverride: (libraryGameId: string) =>
+      ipcRenderer.invoke('cloudSave:setSaveOverride', libraryGameId),
+    /** Remet le jeu en mode Ludusavi. */
+    clearSaveOverride: (libraryGameId: string) =>
+      ipcRenderer.invoke('cloudSave:clearSaveOverride', libraryGameId),
     /** Toasts emitted by the post-exit auto-upload pipeline. */
     onEvent: (
       cb: (data: {

@@ -70,7 +70,12 @@ extraResources:
       - "**/*.png"
       - "**/*.webm"
       - "**/*.json"
-      - "!profile_effects/**/*"
+      # profile_effects (1.2 GB d'APNG multi-couches) : on les bundle
+      # depuis v0.5.0 parce que sans eux le lecteur étendu n'a aucune
+      # déco animée derrière la cover, ce qui retire toute la valeur
+      # du picker "Animation du lecteur" côté Personnalisation. Le
+      # gain installer ≈ +1.2 GB mais c'est le coût acceptable pour
+      # avoir parité dev/prod sur les cosmetics.
 win:
   target:
     # `dir` = bare unpacked output, no installer. The Setup.exe is then

@@ -12,15 +12,19 @@ import { ipcMain } from 'electron'
 import { getLibraryGame } from '../services/library.service'
 import {
   checkConflict,
+  clearSaveOverride,
   deleteRemoteArtifact,
+  getSaveOverride,
   listArtifacts,
   previewBackup,
   resolveSavesFolder,
   restoreArtifact,
+  setSaveOverride,
   uploadGameSave,
 } from '../services/cloud-save.service'
-import { shell } from 'electron'
+import { dialog, shell } from 'electron'
 import { sanitizeString } from '../utils/security'
+import fs from 'node:fs'
 
 export function registerCloudSaveIpc(): void {
   ipcMain.handle('cloudSave:preview', async (_e, libraryGameId: unknown) => {
@@ -133,6 +137,81 @@ export function registerCloudSaveIpc(): void {
           ? Math.min(100, Math.floor(limit))
           : 20
       return await listArtifacts(game, lim)
+    },
+  )
+
+  // ── cloudSave:getSaveOverride ─────────────────────────────────────
+  // Lit l'override custom du dossier de sauvegarde pour ce jeu (s'il
+  // existe). Le renderer l'affiche dans la SavesModal pour qu'on
+  // sache si on est en mode override ou en mode Ludusavi.
+  ipcMain.handle(
+    'cloudSave:getSaveOverride',
+    async (_e, libraryGameId: unknown) => {
+      if (typeof libraryGameId !== 'string')
+        return { ok: false as const, error: 'libraryGameId required' }
+      const game = getLibraryGame(sanitizeString(libraryGameId, 64))
+      if (!game) return { ok: false as const, error: 'Jeu introuvable' }
+      const ov = getSaveOverride(game.userId, game.id)
+      return { ok: true as const, override: ov }
+    },
+  )
+
+  // ── cloudSave:setSaveOverride ─────────────────────────────────────
+  // Ouvre un dialog "Choisir un dossier" et persiste le path comme
+  // override pour ce jeu. À partir de là, les flows backup/restore/
+  // preview utilisent ce dossier directement au lieu de Ludusavi.
+  // C'est le fix pour les jeux pas indexés dans PCGamingWiki.
+  ipcMain.handle(
+    'cloudSave:setSaveOverride',
+    async (e, libraryGameId: unknown) => {
+      if (typeof libraryGameId !== 'string')
+        return { ok: false as const, error: 'libraryGameId required' }
+      const game = getLibraryGame(sanitizeString(libraryGameId, 64))
+      if (!game) return { ok: false as const, error: 'Jeu introuvable' }
+
+      // Ouvre un native dialog. Bloquant côté UI mais c'est OK —
+      // l'user attend explicitement.
+      const win = require('electron').BrowserWindow.fromWebContents(e.sender)
+      const result = win
+        ? await dialog.showOpenDialog(win, {
+            title: 'Choisir le dossier de sauvegarde',
+            properties: ['openDirectory'],
+          })
+        : await dialog.showOpenDialog({
+            title: 'Choisir le dossier de sauvegarde',
+            properties: ['openDirectory'],
+          })
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { ok: false as const, error: 'cancelled' }
+      }
+      const picked = result.filePaths[0]!
+      // Sanity check : le path doit exister et être un dossier.
+      try {
+        const st = fs.statSync(picked)
+        if (!st.isDirectory()) {
+          return { ok: false as const, error: "Ce chemin n'est pas un dossier" }
+        }
+      } catch {
+        return { ok: false as const, error: "Le dossier n'existe pas" }
+      }
+      setSaveOverride(game.userId, game.id, picked)
+      return { ok: true as const, savePath: picked }
+    },
+  )
+
+  // ── cloudSave:clearSaveOverride ───────────────────────────────────
+  // Remet le jeu en mode Ludusavi (utile si l'user s'est trompé de
+  // dossier ou si PCGamingWiki a ajouté l'entrée entre temps).
+  ipcMain.handle(
+    'cloudSave:clearSaveOverride',
+    async (_e, libraryGameId: unknown) => {
+      if (typeof libraryGameId !== 'string')
+        return { ok: false as const, error: 'libraryGameId required' }
+      const game = getLibraryGame(sanitizeString(libraryGameId, 64))
+      if (!game) return { ok: false as const, error: 'Jeu introuvable' }
+      clearSaveOverride(game.userId, game.id)
+      return { ok: true as const }
     },
   )
 

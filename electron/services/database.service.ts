@@ -240,6 +240,24 @@ function runMigrations(d: Database.Database) {
       );
       CREATE INDEX IF NOT EXISTS idx_controller_configs_user
         ON game_controller_configs(user_id);
+
+      -- Per-(user, game) override du dossier de sauvegarde. Utilisé
+      -- quand Ludusavi/PCGamingWiki ne référence pas le jeu (cas
+      -- typique des indé récents ou des repacks avec titre custom).
+      -- Quand un override existe, le flow cloud-save tar directement
+      -- ce dossier au lieu de passer par Ludusavi. C'est le bouton
+      -- "Configurer le dossier de sauvegarde" dans la SavesModal.
+      CREATE TABLE IF NOT EXISTS game_save_overrides (
+        user_id TEXT NOT NULL,
+        library_game_id TEXT NOT NULL,
+        save_path TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, library_game_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (library_game_id) REFERENCES library_games(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_save_overrides_user
+        ON game_save_overrides(user_id);
     `)
   } catch {
     // ignore — first-boot schema creation race
