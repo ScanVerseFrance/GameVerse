@@ -53,9 +53,15 @@ export function registerSocialIpc() {
     return settings ? { ok: true, settings } : { ok: false, error: 'Not found' }
   })
 
-  ipcMain.handle('social:listFriends', async (_e, userId: string) => {
+  ipcMain.handle('social:listFriends', async (_e, userId: string, viewerId?: string) => {
     try {
-      return { ok: true, friends: svc.listFriends(sanitizeString(userId, 64)) }
+      return {
+        ok: true,
+        friends: svc.listFriends(
+          sanitizeString(userId, 64),
+          viewerId ? sanitizeString(viewerId, 64) : undefined,
+        ),
+      }
     } catch (e) {
       return { ok: false, error: (e as Error).message, friends: [] }
     }

@@ -20,108 +20,65 @@
  * The Username styling card is the only one with all controls
  * inline (10 colours + 4 animations is small enough to fit).
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import {
-  Palette,
-  Sparkles,
-  Check,
-  Music,
-  ImageIcon,
-  Award,
-  Eye,
-  ChevronRight,
-} from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Palette } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { Toggle } from '@/components/ui/Toggle'
 import { Slider } from '@/components/ui/Slider'
 import { useAuthStore } from '@/stores/auth.store'
-import { useThemeStore } from '@/stores/theme.store'
+// useThemeStore retiré — ThemePresetGallery lit le store en interne.
 import { useSettingsStore } from '@/stores/settings.store'
 import { ProfileCustomiseDialog } from '@/components/community/ProfileCustomiseDialog'
-import { Username } from '@/components/common/Username'
 import {
-  NAMEPLATES,
-  PROFILE_EFFECTS,
-  AVATAR_DECORATIONS,
-  NONE_NAMEPLATE,
-  NONE_EFFECT,
-  NONE_DECORATION,
-} from '@/config/profileCosmetics'
-import { cn } from '@/utils/cn'
+  UsernameStylePicker,
+  ProfileEntryAnimationPicker,
+} from '@/components/community/UsernameStylePicker'
+import { BannerEffectPicker } from '@/components/community/BannerEffectPicker'
+import {
+  BackgroundColorPicker,
+  HomeBackgroundPicker,
+} from '@/components/community/HomeBackgroundPicker'
+import { AccentColorCard } from '@/components/community/AccentColorCard'
+import { ThemePresetGallery } from '@/components/community/ThemePresetGallery'
+import { AvatarDecorationPicker } from '@/components/community/AvatarDecorationPicker'
+import { ProfileMusicPicker } from '@/components/community/ProfileMusicPicker'
+import { BioCard } from '@/components/community/BioCard'
+import { toast } from '@/stores/inAppToast.store'
+// AVATAR_DECORATIONS / NONE_DECORATION / cn retirés —
+// AvatarDecorationPicker fait sa propre résolution catalogue.
 
-const USERNAME_COLOR_SWATCHES: Array<{ value: string | null; label: string }> = [
-  { value: null, label: 'Défaut' },
-  { value: '#88c057', label: 'Vert' },
-  { value: '#8b5cf6', label: 'Violet' },
-  { value: '#3b82f6', label: 'Bleu' },
-  { value: '#06b6d4', label: 'Cyan' },
-  { value: '#22c55e', label: 'Émeraude' },
-  { value: '#f59e0b', label: 'Orange' },
-  { value: '#ef4444', label: 'Rouge' },
-  { value: '#ec4899', label: 'Rose' },
-  { value: '#eab308', label: 'Or' },
-]
+// Local pseudo-style swatch + animation arrays retired in v0.3.4 —
+// the full ScanVerse-style picker (UsernameStylePicker) owns this
+// surface now and pulls its catalogue from
+// src/config/usernameCustomisations.ts.
 
-const USERNAME_ANIMATIONS: Array<{
-  value: 'none' | 'shimmer' | 'rainbow' | 'pulse'
-  label: string
-}> = [
-  { value: 'none', label: 'Aucune' },
-  { value: 'shimmer', label: 'Shimmer' },
-  { value: 'rainbow', label: 'Arc-en-ciel' },
-  { value: 'pulse', label: 'Pulsation' },
-]
-
-/**
- * Pick the first N items from a catalogue minus a "none" item we'll
- * always render as the first card. Pad with the user's current pick
- * if it's outside the top N so they can always see what's active.
- */
-function takeQuickPicks<T extends { id: string }>(
-  list: T[],
-  currentId: string | null,
-  noneItem: T,
-  count: number,
-): T[] {
-  const top = list.slice(0, count)
-  if (currentId && currentId !== noneItem.id && !top.some((t) => t.id === currentId)) {
-    const found = list.find((t) => t.id === currentId)
-    if (found) return [noneItem, found, ...top.slice(0, count - 2)]
-  }
-  return [noneItem, ...top]
-}
+// takeQuickPicks retiré en v0.3.4-g — chaque picker fait sa propre
+// sélection top-N en interne maintenant.
 
 export function PersonalisationSection() {
   const user = useAuthStore((s) => s.user)
-  const updateProfile = useAuthStore((s) => s.updateProfile)
+  const refreshUser = useAuthStore((s) => s.refreshUser)
   const animationsEnabled = useSettingsStore((s) => s.animationsEnabled)
   const setAnimationsEnabled = useSettingsStore((s) => s.setAnimationsEnabled)
   const blurStrengthPx = useSettingsStore((s) => s.blurStrengthPx)
   const setBlurStrengthPx = useSettingsStore((s) => s.setBlurStrengthPx)
 
-  const builtins = useThemeStore((s) => s.builtins)
-  const activeThemeId = useThemeStore((s) => s.activeThemeId)
-  const setActiveTheme = useThemeStore((s) => s.setActive)
+  // v0.3.4-f : thèmes lus par ThemePresetGallery directement.
+  // Plus de useThemeStore ici.
 
   // Profile cosmetics — single source of truth for what the user has
   // currently selected. We refetch when the modal closes after a save.
+  // (Musique de profil n'est PAS dans ce state : le ProfileMusicPicker
+  //  gère son propre cycle de vie persisté.)
   const [cosmetics, setCosmetics] = useState<{
     plaqueId: string | null
     profileEffectId: string | null
     avatarDecorationId: string | null
-    profileMusicUrl: string | null
   }>({
     plaqueId: null,
     profileEffectId: null,
     avatarDecorationId: null,
-    profileMusicUrl: null,
   })
-  const [musicDraft, setMusicDraft] = useState('')
-  const [musicSaving, setMusicSaving] = useState(false)
-  const [musicSaved, setMusicSaved] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const refreshCosmetics = useCallback(() => {
@@ -132,9 +89,7 @@ export function PersonalisationSection() {
           plaqueId: res.cosmetics.plaqueId ?? null,
           profileEffectId: res.cosmetics.profileEffectId ?? null,
           avatarDecorationId: res.cosmetics.avatarDecorationId ?? null,
-          profileMusicUrl: res.cosmetics.profileMusicUrl ?? null,
         })
-        setMusicDraft(res.cosmetics.profileMusicUrl ?? '')
       }
     })
   }, [user?.id])
@@ -142,61 +97,45 @@ export function PersonalisationSection() {
     refreshCosmetics()
   }, [refreshCosmetics])
 
-  const activeTheme = useMemo(
-    () => builtins.find((t) => t.id === activeThemeId) ?? builtins[0]!,
-    [builtins, activeThemeId],
-  )
+  // `activeTheme` retiré — la card AccentColorCard fait sa
+  // propre résolution (lit le thème actif + applique les colors).
 
-  // Quick-pick lists for each cosmetic. 4-6 items per card; the
-  // "Tout voir" button opens the full grid via ProfileCustomiseDialog.
-  const plaqueQuickPicks = useMemo(
-    () => takeQuickPicks(NAMEPLATES, cosmetics.plaqueId, NONE_NAMEPLATE, 5),
-    [cosmetics.plaqueId],
-  )
-  const effectQuickPicks = useMemo(
-    () => takeQuickPicks(PROFILE_EFFECTS, cosmetics.profileEffectId, NONE_EFFECT, 5),
-    [cosmetics.profileEffectId],
-  )
-  const decorationQuickPicks = useMemo(
-    () => takeQuickPicks(AVATAR_DECORATIONS, cosmetics.avatarDecorationId, NONE_DECORATION, 5),
-    [cosmetics.avatarDecorationId],
-  )
+  // decorationQuickPicks retiré — AvatarDecorationPicker fait sa
+  // propre sélection top-5 + Aucune.
 
   async function patchCosmetic(patch: Partial<typeof cosmetics>): Promise<void> {
     if (!user?.id) return
     // Optimistically update so the selection visibly snaps without
     // waiting for the server round-trip.
     setCosmetics((c) => ({ ...c, ...patch }))
-    await window.nexus.profile.updateCosmetics(user.id, patch)
-  }
-
-  async function saveMusic(): Promise<void> {
-    if (!user?.id) return
-    setMusicSaving(true)
-    const url = musicDraft.trim() || null
-    const res = await window.nexus.profile.updateCosmetics(user.id, {
-      profileMusicUrl: url,
-    })
-    setMusicSaving(false)
+    const res = await window.nexus.profile.updateCosmetics(user.id, patch)
     if (res?.ok) {
-      setCosmetics((c) => ({ ...c, profileMusicUrl: url }))
-      setMusicSaved(true)
-      setTimeout(() => setMusicSaved(false), 2000)
+      // Refresh auth store user — sans ça les surfaces qui lisent
+      // `useAuthStore.user.avatarDecorationId` (ex. TopNav avatar
+      // overlay) restent stale jusqu'au prochain restart.
+      // updateCosmetics ne passe pas par updateProfile donc l'auth
+      // store ne sait pas que les champs ont changé.
+      void refreshUser()
+      // Libellé adapté selon la clé patched — évite "Cosmétique mis
+      // à jour" générique. Si plusieurs clés, fallback au générique.
+      const keys = Object.keys(patch)
+      const label =
+        keys.length === 1 && keys[0] === 'avatarDecorationId'
+          ? "Décoration d'avatar mise à jour"
+          : keys.length === 1 && keys[0] === 'plaqueId'
+            ? 'Plaque mise à jour'
+            : keys.length === 1 && keys[0] === 'profileEffectId'
+              ? 'Effet de profil mis à jour'
+              : 'Cosmétique mis à jour'
+      toast.success(label)
+    } else {
+      toast.error('Échec de la mise à jour du cosmétique')
     }
   }
 
-  async function patchUsernameStyle(patch: {
-    usernameColor?: string | null
-    usernameAnimation?: 'none' | 'shimmer' | 'rainbow' | 'pulse'
-  }): Promise<void> {
-    // ProfilePatch.usernameColor is `string` (no null) — the API
-    // expects an empty string to reset to default. Coerce here so
-    // the swatch grid can pass `null` for the "Défaut" pick.
-    await updateProfile({
-      ...(patch.usernameColor !== undefined && { usernameColor: patch.usernameColor ?? '' }),
-      ...(patch.usernameAnimation !== undefined && { usernameAnimation: patch.usernameAnimation }),
-    })
-  }
+  // Local patchUsernameStyle helper retired in v0.3.4 — the full
+  // UsernameStylePicker component handles its own PATCH lifecycle
+  // via useAuthStore.updateProfile.
 
   if (!user) return null
 
@@ -208,224 +147,75 @@ export function PersonalisationSection() {
         description="Thème, cosmétiques de profil, style du pseudo"
       />
 
-      {/* ── 1. Préréglages de thème ─────────────────────────── */}
-      <Card padding="md">
-        <CardHeader title="Préréglages de thème" subtitle="Bundle complet : accent + fond. Clique pour appliquer en un clic." />
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4">
-          {builtins.map((theme) => {
-            const isActive = theme.id === activeThemeId
-            return (
-              <button
-                key={theme.id}
-                onClick={() => setActiveTheme(theme.id)}
-                title={theme.name}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-semibold text-left transition-all active:scale-95',
-                  isActive
-                    ? 'bg-accent-primary/15 border border-accent-primary/50 text-fg-primary'
-                    : 'bg-[var(--surface-soft)] border border-glass-border text-fg-muted hover:border-accent-primary/30 hover:text-fg-primary',
-                )}
-              >
-                <div className="flex gap-1 shrink-0">
-                  <span
-                    className="w-4 h-4 rounded-full border border-white/10"
-                    style={{ background: theme.colors.accentPrimary }}
-                  />
-                  <span
-                    className="w-4 h-4 rounded-full border border-white/10 -ml-2"
-                    style={{ background: theme.colors.accentSecondary }}
-                  />
-                </div>
-                <span className="truncate">{theme.name}</span>
-                {isActive && <Check className="w-3.5 h-3.5 ml-auto text-accent-primary shrink-0" />}
-              </button>
-            )
-          })}
-        </div>
-      </Card>
+      {/* ── 0. Bio de profil (port ScanVerse) ─────────────────────
+          Champ textarea avec compteur 0/500 + bouton Enregistrer
+          désactivé tant qu'il n'y a pas de changement. Vit en tête
+          de la Personnalisation parce que c'est l'élément le plus
+          souvent édité après installation, et la page profil le
+          montre directement sous le pseudo. */}
+      <BioCard />
 
-      {/* ── 2. Couleur d'accentuation ───────────────────────── */}
-      <Card padding="md">
-        <CardHeader title="Couleur d'accentuation" subtitle={`Thème actif : ${activeTheme.name}. Édite tout dans l'éditeur de thèmes.`} />
-        <div className="grid grid-cols-2 gap-3 mt-4">
-          <ColorSwatchTile label="Primaire" value={activeTheme.colors.accentPrimary} />
-          <ColorSwatchTile label="Secondaire" value={activeTheme.colors.accentSecondary} />
-        </div>
-        <Link to="/themes" className="block mt-3">
-          <Button variant="outline" leftIcon={<Palette className="w-4 h-4" />} className="w-full sm:w-auto">
-            Ouvrir l'éditeur de thèmes
-          </Button>
-        </Link>
-      </Card>
+      {/* ── 1. Préréglages de thème — 1×1 ScanVerse :
+            6 presets prominents (Personnalisé/Sakura/Océan/Forêt/
+            Crépuscule/Minuit) avec emoji + 2 dots, et "Voir tous"
+            pour les 8+ builtins additionnels. */}
+      <ThemePresetGallery />
 
-      {/* ── 3. Plaque (nameplate) ──────────────────────────── */}
-      <CosmeticPickerCard
-        title="Plaque (nameplate)"
-        subtitle="Carte vidéo qui encadre ton pseudo sur la page profil."
-        icon={<Award className="w-4 h-4 text-violet-400" />}
-        items={plaqueQuickPicks}
-        currentId={cosmetics.plaqueId}
-        noneId={NONE_NAMEPLATE.id}
-        renderPreview={(n) =>
-          n.id === NONE_NAMEPLATE.id ? null : (
-            <video
-              src={n.file}
-              autoPlay
-              loop
-              muted
-              playsInline
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-          )
-        }
-        onSelect={(id) => patchCosmetic({ plaqueId: id === NONE_NAMEPLATE.id ? null : id })}
-        onSeeAll={() => setPickerOpen(true)}
-      />
+      {/* ── 2. Couleur d'accentuation — replica 1×1 ScanVerse
+            (PRIMAIRE + SECONDAIRE + Accent animé toggle + APERÇU
+            ANIMÉ avec bouton/badge/dégradé/texte). */}
+      <AccentColorCard />
 
-      {/* ── 4. Effet de profil ─────────────────────────────── */}
-      <CosmeticPickerCard
-        title="Effet de profil"
-        subtitle="Overlay multi-couches qui flotte au-dessus de ta carte profil."
-        icon={<Sparkles className="w-4 h-4 text-cyan-400" />}
-        items={effectQuickPicks}
-        currentId={cosmetics.profileEffectId}
-        noneId={NONE_EFFECT.id}
-        renderPreview={(e) =>
-          e.id === NONE_EFFECT.id || !e.parts.length ? null : (
-            <div className="absolute inset-0">
-              {e.parts.slice(0, 3).map((p) => (
-                <img
-                  key={p.index}
-                  src={p.file}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-cover opacity-90"
-                />
-              ))}
-            </div>
-          )
-        }
-        onSelect={(id) => patchCosmetic({ profileEffectId: id === NONE_EFFECT.id ? null : id })}
-        onSeeAll={() => setPickerOpen(true)}
-      />
+      {/* v0.3.4 — sections 3 (Plaque) + 4 (Effet de profil) retired
+          per user feedback ("retire plaque et effet de profil dans
+          parametre personnalisation"). Catalogue stays available for
+          legacy saved values; the picker UI just no longer surfaces
+          them. */}
 
-      {/* ── 5. Décoration d'avatar ─────────────────────────── */}
-      <CosmeticPickerCard
-        title="Décoration d'avatar"
-        subtitle="Anneau animé qui entoure ta photo de profil."
-        icon={<ImageIcon className="w-4 h-4 text-amber-400" />}
-        items={decorationQuickPicks}
+      {/* ── 4-bis. Effet de bannière (port ScanVerse) ──────────
+          Particules qui flottent au-dessus de la bannière du
+          profil. Catalogue : src/config/bannerEffects.ts. */}
+      <BannerEffectPicker />
+
+      {/* ── 5. Décoration d'avatar — 1×1 ScanVerse
+            6 tiles horizontaux (Aucune + 5 premières du catalogue)
+            avec rendu de la décoration réelle + "Tout voir →" en
+            dessous. Plus de "+" plate de l'ancien picker. */}
+      <AvatarDecorationPicker
         currentId={cosmetics.avatarDecorationId}
-        noneId={NONE_DECORATION.id}
-        renderPreview={(d) =>
-          d.id === NONE_DECORATION.id ? null : (
-            <img
-              src={d.file}
-              alt=""
-              className="absolute inset-0 w-full h-full object-contain p-2"
-            />
-          )
-        }
-        onSelect={(id) => patchCosmetic({ avatarDecorationId: id === NONE_DECORATION.id ? null : id })}
+        onSelect={(id) => patchCosmetic({ avatarDecorationId: id })}
         onSeeAll={() => setPickerOpen(true)}
       />
 
-      {/* ── 6. Musique de profil ───────────────────────────── */}
-      <Card padding="md">
-        <CardHeader
-          title="Musique de profil"
-          subtitle="URL YouTube. Joue en boucle quand un visiteur ouvre ton profil."
-          icon={<Music className="w-4 h-4 text-emerald-400" />}
-        />
-        <div className="flex flex-col sm:flex-row gap-2 mt-4">
-          <Input
-            value={musicDraft}
-            onChange={(e) => setMusicDraft(e.target.value)}
-            placeholder="https://youtu.be/dQw4w9WgXcQ"
-            className="flex-1"
-          />
-          <Button
-            onClick={() => void saveMusic()}
-            loading={musicSaving}
-            leftIcon={musicSaved ? <Check className="w-4 h-4" /> : undefined}
-          >
-            {musicSaved ? 'Enregistré' : 'Enregistrer'}
-          </Button>
-        </div>
-        {cosmetics.profileMusicUrl && (
-          <p className="text-xs text-fg-muted mt-2">
-            Actif : <span className="font-mono text-fg-secondary truncate">{cosmetics.profileMusicUrl}</span>
-          </p>
-        )}
-      </Card>
+      {/* ── 6. Musique de profil — port 1×1 ScanVerse :
+            URL YouTube → analyse oEmbed → preview track card +
+            slider de découpe 5 min + "Écouter sur le lecteur".
+            Persisté dans profile_music_{url,start,end}. */}
+      <ProfileMusicPicker />
 
       {/* ── 7. Style du pseudo ─────────────────────────────── */}
-      <Card padding="md">
-        <CardHeader
-          title="Style du pseudo"
-          subtitle="Couleur + animation appliquées partout où ton pseudo s'affiche."
-          icon={<Eye className="w-4 h-4 text-fuchsia-400" />}
-        />
-        {/* Live preview */}
-        <div className="mt-4 p-6 rounded-md bg-[var(--surface-soft)] border border-glass-border flex items-center justify-center">
-          <span className="text-3xl font-bold">
-            <Username user={user} />
-          </span>
-        </div>
+      {/* Full parity with ScanVerse — uses the UsernameStylePicker
+          component which mirrors UsernameCustomisationPickers.jsx:
+          live preview card, font tiles in their own face, animation
+          tiles with mini previews, swatch row + custom picker, and
+          the "Couleur animée" toggle with secondary picker.
+          Old inline swatch+animation cards retired (v0.3.4 user
+          feedback: "y a pas la previsualisation, et y a toujours pas
+          les couleurs animé"). */}
+      <UsernameStylePicker />
 
-        {/* Couleur grid */}
-        <p className="text-[10px] font-mono uppercase tracking-wider text-fg-muted mt-4 mb-2">
-          Couleur
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          {USERNAME_COLOR_SWATCHES.map((swatch) => {
-            const active =
-              (user.usernameColor ?? null) === swatch.value || (swatch.value === null && !user.usernameColor)
-            return (
-              <button
-                key={swatch.label}
-                onClick={() => void patchUsernameStyle({ usernameColor: swatch.value })}
-                title={swatch.label}
-                className={cn(
-                  'w-9 h-9 rounded-full transition-transform hover:scale-110 active:scale-95',
-                  swatch.value === null && 'bg-gradient-to-br from-white/20 to-white/5 border border-white/20',
-                )}
-                style={
-                  swatch.value
-                    ? {
-                        background: swatch.value,
-                        boxShadow: active ? `0 0 0 3px var(--bg-primary), 0 0 0 5px ${swatch.value}` : 'none',
-                      }
-                    : { boxShadow: active ? `0 0 0 3px var(--bg-primary), 0 0 0 5px rgba(255,255,255,0.4)` : 'none' }
-                }
-              />
-            )
-          })}
-        </div>
+      {/* ── 8. Animation d'entrée du profil ─────────────────────────
+          Direct port of ScanVerse's PROFILE_ENTRY_ANIMATIONS picker.
+          Plays once when a viewer lands on /community/profile/:id.
+          User explicitly requested this card during the ScanVerse
+          settings audit. */}
+      <ProfileEntryAnimationPicker />
 
-        {/* Animation row */}
-        <p className="text-[10px] font-mono uppercase tracking-wider text-fg-muted mt-5 mb-2">
-          Animation
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {USERNAME_ANIMATIONS.map((anim) => {
-            const active = (user.usernameAnimation ?? 'none') === anim.value
-            return (
-              <button
-                key={anim.value}
-                onClick={() => void patchUsernameStyle({ usernameAnimation: anim.value })}
-                className={cn(
-                  'px-3 py-2 rounded-md text-xs font-semibold transition-colors',
-                  active
-                    ? 'bg-accent-primary/15 border border-accent-primary/50 text-fg-primary'
-                    : 'bg-[var(--surface-soft)] border border-glass-border text-fg-muted hover:border-accent-primary/30 hover:text-fg-primary',
-                )}
-              >
-                {anim.label}
-              </button>
-            )
-          })}
-        </div>
-      </Card>
+      {/* ── 9. Couleur de fond + Sync accent (parité ScanVerse) ─── */}
+      <BackgroundColorPicker />
+
+      {/* ── 10. Fond animé de la page d'accueil (parité ScanVerse) ─ */}
+      <HomeBackgroundPicker />
 
       {/* ── 8. Animations & flou (interface) ───────────────── */}
       <Card padding="md">
@@ -462,7 +252,11 @@ export function PersonalisationSection() {
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         userId={user.id}
-        initial={cosmetics}
+        // profileMusicUrl is owned by <ProfileMusicPicker /> now —
+        // the dialog only consumes the cosmetics tabs (plaque, effect,
+        // decoration). Pass null here so the music tab inside the
+        // dialog stays a no-op rather than fighting with the picker.
+        initial={{ ...cosmetics, profileMusicUrl: null }}
         onSaved={refreshCosmetics}
       />
     </div>
@@ -513,93 +307,10 @@ function CardHeader({
   )
 }
 
-function ColorSwatchTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="p-3 rounded-md bg-[var(--surface-soft)] border border-glass-border flex items-center gap-3">
-      <span
-        className="w-10 h-10 rounded-full border border-white/15 shadow-inner shrink-0"
-        style={{ background: value }}
-      />
-      <div className="min-w-0">
-        <p className="text-[10px] font-mono uppercase tracking-wider text-fg-muted">{label}</p>
-        <p className="text-xs font-mono uppercase truncate" style={{ color: value }}>
-          {value}
-        </p>
-      </div>
-    </div>
-  )
-}
+// v0.3.4 — ColorSwatchTile retiré : remplacé par AccentColorCard
+// qui fait sa propre présentation des couleurs PRIMAIRE/SECONDAIRE
+// avec preview animé.
 
-/**
- * Generic compact picker card used for plaque / effect / decoration.
- * Renders an inline 6-tile horizontal grid + a "Tout voir" button.
- * The renderPreview prop lets each cosmetic family paint its own
- * preview (video for nameplate, layered PNGs for effect, etc.).
- */
-function CosmeticPickerCard<T extends { id: string; name: string }>({
-  title,
-  subtitle,
-  icon,
-  items,
-  currentId,
-  noneId,
-  renderPreview,
-  onSelect,
-  onSeeAll,
-}: {
-  title: string
-  subtitle: string
-  icon: React.ReactNode
-  items: T[]
-  currentId: string | null
-  noneId: string
-  renderPreview: (item: T) => React.ReactNode
-  onSelect: (id: string) => void
-  onSeeAll: () => void
-}) {
-  return (
-    <Card padding="md">
-      <CardHeader title={title} subtitle={subtitle} icon={icon} />
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-4">
-        {items.map((item) => {
-          const isCurrent = (currentId ?? noneId) === item.id || (currentId === null && item.id === noneId)
-          return (
-            <button
-              key={item.id}
-              onClick={() => onSelect(item.id)}
-              title={item.name}
-              className={cn(
-                'aspect-square rounded-md overflow-hidden relative bg-[var(--surface-soft)] border transition-all',
-                isCurrent
-                  ? 'border-accent-primary ring-2 ring-accent-primary/40'
-                  : 'border-glass-border hover:border-accent-primary/40',
-              )}
-            >
-              {item.id === noneId ? (
-                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-fg-muted uppercase tracking-widest">
-                  Aucun
-                </div>
-              ) : (
-                renderPreview(item)
-              )}
-              {isCurrent && (
-                <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-accent-primary text-white flex items-center justify-center">
-                  <Check className="w-2.5 h-2.5" />
-                </div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 px-1.5 py-1 bg-gradient-to-t from-black/85 to-transparent">
-                <p className="text-[10px] text-white truncate font-medium">{item.name}</p>
-              </div>
-            </button>
-          )
-        })}
-      </div>
-      <button
-        onClick={onSeeAll}
-        className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-accent-primary hover:underline"
-      >
-        Tout voir <ChevronRight className="w-3.5 h-3.5" />
-      </button>
-    </Card>
-  )
-}
+// CosmeticPickerCard retiré en v0.3.4-g : remplacé par
+// AvatarDecorationPicker dédié (port 1×1 ScanVerse avec rendu
+// réel des décorations + Tout voir →).

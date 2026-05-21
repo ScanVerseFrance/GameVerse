@@ -11,6 +11,26 @@ export interface PublicProfile {
   profileEffectId: string | null
   avatarDecorationId: string | null
   profileMusicUrl: string | null
+  /** Clip range (in seconds) the user has chosen for their profile
+   *  music. The MiniPlayer / ExtendedPlayer respect these via the
+   *  start/end params of playUrl. */
+  profileMusicStart: number | null
+  profileMusicEnd: number | null
+  /** Relative path to an uploaded audio file under
+   *  userData/profile-audio/. When set, playback uses an HTML
+   *  <audio> instead of the YT iframe. */
+  profileMusicAudioPath: string | null
+  /** Independent plaque + effect IDs scoped to the music HUD
+   *  (separate from plaqueId / profileEffectId used on the profile
+   *  card). Rendered as background in MiniPlayer + ExtendedPlayer. */
+  profileMusicPlaqueId: string | null
+  profileMusicEffectId: string | null
+  /** Page-mount entry animation id (PROFILE_ENTRY_ANIMATIONS). null
+   *  or 'none' = no animation. v0.3.4 — ScanVerse parity. */
+  profileEntryAnimation: string | null
+  /** Banner FX id (BANNER_EFFECTS) — particles above the banner.
+   *  null = no FX. v0.3.4 — ScanVerse parity. */
+  bannerEffect: string | null
   bio: string | null
   isGuest: boolean
   /** Account creation timestamp (ms epoch) — used by the profile meta
@@ -110,6 +130,33 @@ export interface ProfileStats {
      *  label on the RecentGameCard. */
     isRunning: boolean
   } | null
+}
+
+/**
+ * Mini-profil d'un ami avec extras requis par le FriendsTab (cartes
+ * horizontales ScanVerse-style) :
+ *   - commonFriendsCount : nombre d'amis en commun avec le VIEWER (pas
+ *                          le propriétaire du profil affiché).
+ *   - commonFriends      : top 5 mini-avatars de ces amis communs,
+ *                          pour la avatar-stack inline.
+ *   - recentGame         : la dernière session de jeu de cet ami, pour
+ *                          la mini-cover "A RÉCEMMENT JOUÉ" en bas de
+ *                          carte (null quand l'ami n'a rien lancé OU
+ *                          quand il a coché Hide play activity).
+ *
+ * `PublicProfile` reste la baseline — on l'étend pour ne pas casser
+ * les autres usages (recherche, getProfile, etc.) qui n'ont pas besoin
+ * de ces extras coûteux (N+1 queries dans listFriends).
+ */
+export interface FriendListItem extends PublicProfile {
+  commonFriendsCount: number
+  commonFriends: Array<{
+    id: string
+    username: string
+    displayName: string | null
+    avatarPath: string | null
+  }>
+  recentGame: ProfileStats['recentGame']
 }
 
 export type ActivityKind =

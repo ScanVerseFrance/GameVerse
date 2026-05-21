@@ -1,5 +1,6 @@
 import type { AuthResult, LoginPayload, ProfilePatch, RecoveryCodeResult, RegisterPayload } from './api.types'
 import type { Theme } from './theme.types'
+import type { ControllerConfig } from './controller.types'
 import type {
   CatalogQuery,
   CatalogResponse,
@@ -35,6 +36,7 @@ import type {
   ActivityItem,
   ActivityScope,
   ChatMessage,
+  FriendListItem,
   PresenceStatus,
   PrivacySettings,
   ProfileStats,
@@ -432,7 +434,10 @@ export interface NexusAPI {
       userId: string,
       patch: Partial<PrivacySettings>
     ) => Promise<{ ok: true; settings: PrivacySettings } | { ok: false; error: string }>
-    listFriends: (userId: string) => Promise<{ ok: boolean; error?: string; friends: PublicProfile[] }>
+    listFriends: (
+      userId: string,
+      viewerId?: string,
+    ) => Promise<{ ok: boolean; error?: string; friends: FriendListItem[] }>
     isFriend: (userId: string, otherId: string) => Promise<{ ok: boolean; friend: boolean }>
     updatePresence: (
       userId: string,
@@ -608,6 +613,9 @@ export interface NexusAPI {
     lookupForJsonGame: (
       gameId: string
     ) => Promise<{ ok: true; artwork: GameArtwork } | { ok: false; error: string }>
+    lookupByAppid: (
+      appid: number
+    ) => Promise<{ ok: true; artwork: GameArtwork } | { ok: false; error: string }>
   }
   comments: {
     list: (
@@ -642,6 +650,9 @@ export interface NexusAPI {
         profileMusicUrl: string | null
         profileMusicStart: number | null
         profileMusicEnd: number | null
+        profileMusicAudioPath: string | null
+        profileMusicPlaqueId: string | null
+        profileMusicEffectId: string | null
       }
     }>
     updateCosmetics: (
@@ -653,6 +664,9 @@ export interface NexusAPI {
         profileMusicUrl: string | null
         profileMusicStart: number | null
         profileMusicEnd: number | null
+        profileMusicAudioPath: string | null
+        profileMusicPlaqueId: string | null
+        profileMusicEffectId: string | null
       }>
     ) => Promise<{
       ok: boolean
@@ -664,6 +678,9 @@ export interface NexusAPI {
         profileMusicUrl: string | null
         profileMusicStart: number | null
         profileMusicEnd: number | null
+        profileMusicAudioPath: string | null
+        profileMusicPlaqueId: string | null
+        profileMusicEffectId: string | null
       }
     }>
     listTopGames: (userId: string) => Promise<{
@@ -751,14 +768,96 @@ export interface NexusAPI {
         }
       | { ok: false; error: string }
     >
+    /** Profile-achievements board — 15-entry catalogue with
+     *  per-entry progress + unlock state. See
+     *  src/config/profileAchievements.ts for the catalogue and
+     *  electron/services/profile-achievements.service.ts for the
+     *  metric SQL. */
+    achievements: (userId: string) => Promise<
+      | {
+          ok: true
+          achievements: Array<{
+            id: string
+            name: string
+            description: string
+            iconName: string
+            tier: 'bronze' | 'silver' | 'gold'
+            target: number
+            metric: string | null
+            progress: number
+            unlocked: boolean
+            communityPct: number | null
+          }>
+        }
+      | { ok: false; error: string }
+    >
+  }
+  music: {
+    /** Fetch YouTube oEmbed metadata for a user-pasted URL. */
+    analyzeYouTube: (url: string) => Promise<
+      | {
+          ok: true
+          meta: {
+            videoId: string
+            title: string
+            author: string | null
+            thumbnail: string
+          }
+        }
+      | { ok: false; error: string }
+    >
+    /** Persist a user-uploaded audio blob (≤5 MB). The returned
+     *  relativePath should be saved to profile_music_audio_path
+     *  via profile.updateCosmetics. */
+    uploadAudio: (
+      userId: string,
+      mimeType: string,
+      data: Uint8Array,
+    ) => Promise<
+      | { ok: true; relativePath: string }
+      | { ok: false; error: string }
+    >
+    /** Read a previously uploaded audio file as raw bytes. The
+     *  renderer wraps them in a Blob for the <audio> element. */
+    loadAudio: (
+      relativePath: string,
+    ) => Promise<
+      | { ok: true; bytes: Uint8Array }
+      | { ok: false; error: string }
+    >
+  }
+  controller: {
+    getConfig: (
+      userId: string,
+      libraryGameId: string,
+    ) => Promise<
+      | { ok: true; config: ControllerConfig }
+      | { ok: false; error: string }
+    >
+    setConfig: (
+      userId: string,
+      libraryGameId: string,
+      config: ControllerConfig,
+    ) => Promise<
+      | { ok: true; config: ControllerConfig }
+      | { ok: false; error: string }
+    >
+    deleteConfig: (
+      userId: string,
+      libraryGameId: string,
+    ) => Promise<{ ok: boolean; error?: string }>
   }
   pcScanner: {
     hasAnySource: () => Promise<
       { ok: true; hasSource: boolean } | { ok: false; error: string }
     >
-    scan: (extraRoots?: string[]) => Promise<
+    scan: (
+      extraRoots?: string[],
+      opts?: { deep?: boolean },
+    ) => Promise<
       | {
           ok: true
+          cancelled?: boolean
           result: {
             steam: {
               steamRoot: string | null
@@ -780,12 +879,15 @@ export interface NexusAPI {
                 sizeBytes: number | null
                 executablePath: string | null
                 scanRoot: string
+                steamAppid?: number
               }>
             }
           }
         }
       | { ok: false; error: string }
     >
+    cancel: () => Promise<{ ok: true }>
+    onProgress: (cb: (currentPath: string) => void) => () => void
     importSelected: (payload: {
       userId: string
       steamGames: Array<{
@@ -803,6 +905,7 @@ export interface NexusAPI {
         executablePath: string | null
         sizeBytes: number | null
         moveToNexusFolder: boolean
+        steamAppid?: number
       }>
     }) => Promise<
       | {
@@ -919,6 +1022,33 @@ export interface NexusAPI {
       | { ok: false; error: string }
     >
     removeFriend: (friendId: string) => Promise<{ ok: boolean; error?: string }>
+    friendsOf: (userId: string) => Promise<{
+      ok: boolean
+      error?: string
+      friends: Array<{
+        id: string
+        username: string
+        displayName: string | null
+        avatarPath: string | null
+        bannerPath: string | null
+        bio: string | null
+      }>
+    }>
+    mutualFriends: (friendIds: string[]) => Promise<{
+      ok: boolean
+      error?: string
+      results: Array<{
+        id: string
+        commonFriendsCount: number
+        commonFriends: Array<{
+          id: string
+          username: string
+          displayName: string | null
+          avatarPath: string | null
+        }>
+        friendCount: number
+      }>
+    }>
     listFriendRequests: () => Promise<
       | { ok: true; incoming: CloudFriendRequest[]; outgoing: CloudFriendRequest[] }
       | { ok: false; error: string; incoming: []; outgoing: [] }

@@ -383,6 +383,12 @@ export interface CrackedGameCandidate {
   executablePath: string | null
   /** Source root we scanned — useful for the UI "Scanned in: …". */
   scanRoot: string
+  /** Steam appid the title resolved to via the deep-scan catalogue
+   *  filter. Always set in the new deep-scan path; absent for the
+   *  legacy `scanCrackedGames` quick path. Used by importSelected
+   *  to set `library_games.steam_appid` so the imported row gets
+   *  Steam cover art + achievements automatically. */
+  steamAppid?: number
 }
 
 /**
@@ -391,6 +397,10 @@ export interface CrackedGameCandidate {
  * skipped (no permission required). User-provided extra roots can
  * be passed via the `extraRoots` parameter — used by the renderer
  * when the user picks "Add another folder" in the wizard.
+ *
+ * Kept for the "quick scan" fallback when deep scan is disabled.
+ * The default behaviour now is `scanCrackedGamesDeep()` which walks
+ * EVERY fixed drive — see `enumerateFixedDriveRoots()`.
  */
 function defaultCrackRoots(): string[] {
   const roots: string[] = []
@@ -414,8 +424,392 @@ function defaultCrackRoots(): string[] {
 }
 
 /**
+ * Enumerate fixed (non-removable) drive letters on Windows so the
+ * deep scan can walk every disk. We rely on PowerShell rather than
+ * `wmic` because Microsoft is gradually deprecating wmic — it's
+ * already missing on stripped Windows 11 SKUs.
+ *
+ * On non-Windows we return common Unix roots: `$HOME` plus a couple
+ * of mount points where users sometimes drop external drives.
+ *
+ * Returns paths like ["C:/", "D:/", "E:/"]. Errors fall back to
+ * `["C:/"]` so the scan always has at least one root.
+ */
+async function enumerateFixedDriveRoots(): Promise<string[]> {
+  if (process.platform !== 'win32') {
+    const home = process.env.HOME ?? '/'
+    return [home]
+  }
+  try {
+    // Get-PSDrive filters out CDs and mapped network drives via
+    // Used > 0 (mounted) and not Network. We want fixed local
+    // disks the user owns — anything DriveType=Removable
+    // (USB sticks) gets walked too, that's fine.
+    const { stdout } = await execFileP('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3 OR DriveType=2' | Select-Object -ExpandProperty DeviceID",
+    ])
+    const drives = stdout
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => /^[A-Z]:$/.test(s))
+      .map((s) => `${s}/`)
+    if (drives.length > 0) return drives
+  } catch {
+    /* PowerShell missing or policy denied — fall through to default */
+  }
+  return ['C:/']
+}
+
+/**
+ * Folder-name patterns that should NEVER be walked during the deep
+ * scan. These are system / OS / metadata directories that contain
+ * gigabytes of files Nexus has no business reading and zero chance
+ * of containing a game install.
+ *
+ * Distinct from HELPER_FOLDER_RE which catches game-adjacent helper
+ * trees (Redist/, VCRedist/) once we're inside a candidate folder.
+ * SYSTEM_SKIP_RE catches the OS-level stuff at any depth.
+ *
+ * Tested as `.test(folderName)` (just the leaf, not the full path),
+ * case-insensitive.
+ */
+const SYSTEM_SKIP_RE =
+  /^(\$.+|windows|winsxs|system volume information|recovery|boot|perflogs|programdata|appdata|nexus-launcher|users\\(default|public|all users)|node_modules|\.git|\.svn|\.hg|\.vscode|\.vs|\.idea|\.cache|onedrive|onedrivetemp|\$winreagent|\$sysreset|windowsapps|windows\.old)$/i
+
+/**
+ * Recursive walker that surfaces every folder on disk that looks
+ * like a game install. Walks `dir` depth-first, applying:
+ *   1. SYSTEM_SKIP_RE / HELPER_FOLDER_RE skips → these subtrees are
+ *      never opened (saves minutes of useless I/O on system disks).
+ *   2. `excludePrefixes` skips → drops paths inside the launcher's
+ *      own managed games dir so we never re-import what Nexus
+ *      already installed (Geometry Dash etc.).
+ *   3. Per-folder "is this a game install?" check via the existing
+ *      `findGameExeRecursive` heuristic. We accept anything that
+ *      finds an exe (even a low-score one) — the Steam catalogue
+ *      filter downstream (`scanCrackedGamesDeep`) drops anything
+ *      that's not a real game, so being permissive here just
+ *      surfaces MORE real games (folders with weird names like
+ *      "rockborn-rune" that wouldn't pass the strict 50 threshold).
+ *      Once flagged, we DON'T recurse inside (avoids reporting
+ *      `Engine/Binaries/Win64/` as a separate game).
+ *   4. Otherwise we recurse one level deeper, capped at maxDepth.
+ *
+ * Progress callback fires per top-level subdir (throttled by the
+ * caller if needed) so the wizard can show "Scanning C:/Users/…".
+ */
+async function walkForGames(
+  dir: string,
+  depth: number,
+  maxDepth: number,
+  out: CrackedGameCandidate[],
+  seenPaths: Set<string>,
+  driveRoot: string,
+  excludePrefixes: string[],
+  onProgress?: (currentPath: string) => void,
+  signal?: { cancelled: boolean },
+): Promise<void> {
+  if (signal?.cancelled) return
+  if (depth > maxDepth) return
+  let entries: import('node:fs').Dirent[]
+  try {
+    entries = await fsp.readdir(dir, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const e of entries) {
+    if (signal?.cancelled) return
+    if (!e.isDirectory()) continue
+    if (SYSTEM_SKIP_RE.test(e.name)) continue
+    if (HELPER_FOLDER_RE.test(e.name)) continue
+    const fullPath = path.join(dir, e.name)
+    const norm = path.normalize(fullPath).toLowerCase()
+    if (seenPaths.has(norm)) continue
+    // Skip anything under Nexus's own managed games folder — those
+    // are games the user already imported through us, surfacing
+    // them again would be confusing + create duplicate rows.
+    if (excludePrefixes.some((p) => norm.startsWith(p))) continue
+    onProgress?.(fullPath)
+    const stemSlug = e.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 6)
+    // Look for a game-like exe up to 3 levels deep. Trois interpretations
+    // du résultat :
+    //
+    //   - score ≥ 50 → l'exe matche bien le nom du dossier (stem
+    //     correlation), c'est probablement le binaire principal du jeu.
+    //     On reporte ce dossier comme un candidate, et on NE recurse
+    //     PAS dedans.
+    //
+    //   - score < 50 MAIS le nom du dossier ressemble à un REPACK
+    //     (`Foo.Bar.Baz.v1.2.3`, `Game-Name-2024`, etc.) → on accepte
+    //     quand même. Les repacks utilisent souvent des acronymes
+    //     pour le binaire (`DDSS.exe` pour "Dale and Dawson Stationery
+    //     Supplies") qui ne matchent jamais le stem du dossier. Si le
+    //     dossier a au moins UN exe non-helper, on lui fait confiance
+    //     — le filtre Steam derrière coupe les faux positifs.
+    //
+    //   - score < 50 et nom générique → on continue à descendre.
+    //     C'est le cas des conteneurs comme `C:/Apps`, `C:/Dev`,
+    //     `C:/Program Files` qui ont des exe partout mais ne sont
+    //     pas eux-mêmes des jeux.
+    const found = await findGameExeRecursive(fullPath, stemSlug, 0, 3)
+    const looksLikeRepack = REPACK_NAME_RE.test(e.name)
+    if (found && (found.score >= 50 || looksLikeRepack)) {
+      seenPaths.add(norm)
+      let sizeBytes: number | null = null
+      try {
+        const s = await collectShallowSize(fullPath, 2)
+        sizeBytes = s > 0 ? s : null
+      } catch {
+        /* size optional */
+      }
+      out.push({
+        folderName: e.name,
+        title: cleanCrackedTitle(e.name),
+        installPath: fullPath,
+        sizeBytes,
+        executablePath: found.exePath,
+        scanRoot: driveRoot,
+      })
+      // Don't recurse — this whole subtree IS the game.
+      continue
+    }
+    // Not (confidently) a game folder → walk deeper.
+    await walkForGames(
+      fullPath,
+      depth + 1,
+      maxDepth,
+      out,
+      seenPaths,
+      driveRoot,
+      excludePrefixes,
+      onProgress,
+      signal,
+    )
+  }
+}
+
+/**
+ * Deep variant of `scanCrackedGames` — walks every fixed disk on
+ * the machine instead of the short hard-coded "known roots" list.
+ * Slower (can take a minute on a full 4 TB drive) but catches the
+ * cracks that users drop into random locations like
+ * `D:/Stuff/MyGame` or `C:/Users/Foo/Downloads/SomeGame`.
+ *
+ * Skip lists keep system / OS / metadata trees out of the walk so
+ * the scan time stays bounded to "actual user content" volumes.
+ *
+ * After the disk walk we cross-reference each candidate against
+ * Steam's catalogue (via `resolveTitlesBulkAsync`) to filter out
+ * non-games (WinRAR, WSL, Discord, dev tools, etc.) that happen
+ * to live in folders with .exe files. Only candidates that match
+ * a real Steam appid are kept — this is what the user wants since
+ * the launcher can only LAUNCH games that are on Steam (everything
+ * else is just .exe noise).
+ */
+export async function scanCrackedGamesDeep(
+  extraRoots: string[] = [],
+  onProgress?: (currentPath: string) => void,
+  signal?: { cancelled: boolean },
+): Promise<{ rootsScanned: string[]; games: CrackedGameCandidate[] }> {
+  const drives = await enumerateFixedDriveRoots()
+  const roots = [...drives, ...extraRoots]
+  const existing: string[] = []
+  for (const r of roots) {
+    try {
+      const st = await fsp.stat(r)
+      if (st.isDirectory()) existing.push(r)
+    } catch {
+      /* drive missing — skip */
+    }
+  }
+  // Exclude prefixes — paths we never want to surface even if they
+  // contain game-looking folders. Three sources :
+  //   1. Le dossier Nexus géré (`userData/games`) — refus de
+  //      re-importer ce qu'on a installé soi-même.
+  //   2. Steam's `steamapps/common` — géré séparément par le scan
+  //      Steam (avec appid + playtime sync corrects).
+  //   3. Tous les `install_path` déjà présents dans library_games
+  //      (toutes users confondus) — couvre les cas où l'user a
+  //      déplacé un jeu Nexus hors du dossier par défaut, ou a un
+  //      jeu importé via une autre source. Sans ça, "Geometry Dash
+  //      AnkerGames" reapparaît à chaque scan même après import.
+  const excludePrefixes: string[] = []
+  try {
+    // Utilise la même logique que `nexusGamesRoot()` (user setting →
+    // fallback userData/games) pour garder l'exclusion synchrone
+    // avec la destination du move.
+    const nexusRoot = path.normalize(nexusGamesRoot()).toLowerCase()
+    excludePrefixes.push(nexusRoot)
+  } catch {
+    /* userData unavailable — best-effort */
+  }
+  try {
+    const steamRoot = await findSteamInstallRoot()
+    if (steamRoot) {
+      excludePrefixes.push(
+        path.normalize(path.join(steamRoot, 'steamapps', 'common')).toLowerCase(),
+      )
+    }
+  } catch {
+    /* steam not installed — fine */
+  }
+  try {
+    const { getDatabase } = await import('./database.service')
+    const rows = getDatabase()
+      .prepare(
+        "SELECT DISTINCT install_path FROM library_games WHERE install_path IS NOT NULL AND install_path != ''",
+      )
+      .all() as Array<{ install_path: string }>
+    for (const r of rows) {
+      try {
+        excludePrefixes.push(path.normalize(r.install_path).toLowerCase())
+      } catch {
+        /* malformed path — skip */
+      }
+    }
+  } catch {
+    /* DB unavailable — best-effort */
+  }
+  const raw: CrackedGameCandidate[] = []
+  const seenPaths = new Set<string>()
+  for (const root of existing) {
+    if (signal?.cancelled) break
+    // Depth bumped to 7 — covers cases like D:/Games/Collection/2024/MyGame
+    // and C:/Users/Foo/Documents/Downloads/Repacks/Game where the actual
+    // install lives well past depth 5.
+    await walkForGames(root, 0, 7, raw, seenPaths, root, excludePrefixes, onProgress, signal)
+  }
+  // eslint-disable-next-line no-console
+  console.log('[pc-scanner.deep] walk done', {
+    rawCount: raw.length,
+    sample: raw.slice(0, 10).map((c) => c.title),
+    drivesScanned: existing,
+    excludePrefixes,
+  })
+  if (signal?.cancelled) {
+    return { rootsScanned: existing, games: raw }
+  }
+  // ── Steam catalogue filter ────────────────────────────────────
+  // Hit SearchApps for every candidate title and keep only the ones
+  // that resolve. The progress message switches to "Vérification
+  // Steam…" so the user knows we're not stuck. `resolveTitlesBulkAsync`
+  // throttles internally (6 in-flight), so this caps at a few
+  // hundred req max even for huge raw lists.
+  //
+  // Two passes : on essaye d'abord le titre complet nettoyé. Pour
+  // ceux qui ratent, on retente avec une version TRUNCATED (premiers
+  // 3 mots significatifs), ce qui rattrape les uploaders/groupes
+  // qu'on n'a pas dans cleanCrackedTitle (ex. "MyGame WhateverScene"
+  // → 2nd pass "MyGame Whatever" → 3rd pass "MyGame" matche enfin).
+  onProgress?.('Vérification Steam…')
+  const { resolveTitlesBulkAsync } = await import('./steam-apps.service')
+  const titles = raw.map((c) => c.title)
+  const resolved = await resolveTitlesBulkAsync(titles)
+  // Pass 2 — pour chaque titre raté, on tente une version réduite.
+  // FIX : mapping shortTitle → ARRAY d'originaux (pas un seul) car
+  // plusieurs candidates peuvent avoir le même préfixe (ex. deux
+  // versions d'un même jeu). L'ancienne version perdait toutes les
+  // occurrences sauf la première.
+  const unresolved = raw.filter((c) => !resolved.has(c.title))
+  const shortened = new Map<string, string[]>() // shortTitle → all originals
+  for (const c of unresolved) {
+    const words = c.title.split(/\s+/).filter((w) => w.length > 0)
+    if (words.length < 2) continue
+    const shortTitle = words.slice(0, Math.min(3, words.length)).join(' ')
+    if (shortTitle.length < 3) continue
+    const arr = shortened.get(shortTitle) ?? []
+    arr.push(c.title)
+    shortened.set(shortTitle, arr)
+  }
+  if (shortened.size > 0) {
+    const shortResolved = await resolveTitlesBulkAsync([...shortened.keys()])
+    for (const [shortTitle, originalTitles] of shortened) {
+      const appid = shortResolved.get(shortTitle)
+      if (appid != null) {
+        for (const t of originalTitles) resolved.set(t, appid)
+      }
+    }
+  }
+  // Pass 3 — dernier essai avec les 2 premiers mots (couvre "Game
+  // Name SomeRandomUploader" → "Game Name").
+  const stillUnresolved = raw.filter((c) => !resolved.has(c.title))
+  const twoWords = new Map<string, string[]>()
+  for (const c of stillUnresolved) {
+    const words = c.title.split(/\s+/).filter((w) => w.length > 0)
+    if (words.length < 2) continue
+    const shortTitle = words.slice(0, 2).join(' ')
+    if (shortTitle.length < 4) continue
+    const arr = twoWords.get(shortTitle) ?? []
+    arr.push(c.title)
+    twoWords.set(shortTitle, arr)
+  }
+  if (twoWords.size > 0) {
+    const twoResolved = await resolveTitlesBulkAsync([...twoWords.keys()])
+    for (const [shortTitle, originalTitles] of twoWords) {
+      const appid = twoResolved.get(shortTitle)
+      if (appid != null) {
+        for (const t of originalTitles) resolved.set(t, appid)
+      }
+    }
+  }
+  // Dedupe by appid : si "Soundpad" et "Soundpad.v4.0.3" mappent
+  // tous les deux au même app, on ne garde que celui avec la plus
+  // grosse taille on disk (proxy raisonnable pour "version la plus
+  // complète"). Sans ça l'user voyait 2 cartes identiques.
+  const byAppid = new Map<number, CrackedGameCandidate>()
+  const filtered: CrackedGameCandidate[] = []
+  for (const c of raw) {
+    const appid = resolved.get(c.title)
+    if (appid == null) continue
+    const candidate: CrackedGameCandidate = { ...c, steamAppid: appid }
+    const prev = byAppid.get(appid)
+    if (!prev) {
+      byAppid.set(appid, candidate)
+    } else if ((candidate.sizeBytes ?? 0) > (prev.sizeBytes ?? 0)) {
+      // Plus gros = on remplace l'ancien.
+      byAppid.set(appid, candidate)
+    }
+  }
+  for (const c of byAppid.values()) filtered.push(c)
+  filtered.sort((a, b) => a.title.localeCompare(b.title, 'fr'))
+  // Liste les titres ratés par TOUTES les passes Steam pour qu'on
+  // puisse spot un crack manquant et étendre cleanCrackedTitle ou
+  // adjuster le walker en conséquence. Limité à 50 pour pas spam.
+  const finalUnresolved = raw
+    .filter((c) => !resolved.has(c.title))
+    .map((c) => c.title)
+  // eslint-disable-next-line no-console
+  console.log('[pc-scanner.deep] filter done', {
+    rawCount: raw.length,
+    pass1Resolved: resolved.size,
+    pass2Tried: shortened.size,
+    finalAfterDedupe: filtered.length,
+    finalTitles: filtered.map((c) => c.title),
+    excludePrefixCount: excludePrefixes.length,
+    unresolvedSample: finalUnresolved.slice(0, 50),
+  })
+  return { rootsScanned: existing, games: filtered }
+}
+
+/**
  * Repacker suffix scrubber. We pull out the same tag set we already
  * dedupe by in source-dedupe.ts so the wizard's titles read clean.
+ *
+ * Pattern set extended in v0.3+ to catch the modern uploader/scene
+ * groups that polluted the deep-scan results :
+ *   - "AnkerGames", "AnadiusD", "Online-Fix.me", "GOGUnlocked" : sites
+ *     qui collent leur nom au folder, ce qui empêchait Steam SearchApps
+ *     de matcher (ex. "Geometry Dash AnkerGames" → fail).
+ *   - "RUNE", "FLT", "TENOKE", "RUNE", "P2P", "Razor1911", "FAIRLIGHT" :
+ *     scene groups historiques manquants de l'ancienne liste.
+ *   - Suffixes "Win64" / "x64" / "_Windows" qui restent collés à
+ *     certains exécutables Unity.
  */
 function cleanCrackedTitle(folderName: string): string {
   let t = folderName
@@ -423,22 +817,142 @@ function cleanCrackedTitle(folderName: string): string {
   // " (DODI Repack)", " - PLAZA", " v1.2.3-CODEX", etc.
   t = t.replace(/[._-]+steamrip(?:\.com)?$/i, '')
   t = t.replace(/[._-]+fitgirl[\s_-]*repack$/i, '')
-  t = t.replace(/[\s_-]*\[?(fitgirl|dodi|repack|codex|plaza|empress|cpy|skidrow|prophet|reloaded|hoodlum|gog|elamigos)[\s_-]*repack?\]?$/i, '')
+  t = t.replace(/[._\s-]+online[\s_-]*fix(?:\.me)?$/i, '')
+  t = t.replace(/[._\s-]+gogunlocked$/i, '')
+  // Groupe RE étendu : scene + uploaders modernes. Le pattern
+  // matche aussi bien " - AnkerGames" que " AnkerGames" en fin.
+  t = t.replace(
+    /[\s_-]*\[?(fitgirl|dodi|repack|codex|plaza|empress|cpy|skidrow|prophet|reloaded|hoodlum|gog|elamigos|ankergames|anadius|anadiusd|tenoke|rune|flt|p2p|razor1911|fairlight|online-fix|onlinefix|hi2u|tinyiso|deviance|skidrow|ali213|3dm)[\s_-]*repack?\]?$/i,
+    '',
+  )
   t = t.replace(/[\s_-]*v\d+(?:\.\d+)+[a-z0-9-]*$/i, '')
+  // Suffixes binaires ("Game.Win64" → "Game", "Game_x64" → "Game")
+  t = t.replace(/[\s._-]+(win64|win32|x64|x86|windows)$/i, '')
   t = t.replace(/[._-]+/g, ' ')
   return t.trim()
 }
 
 /**
- * Walks `root` one level deep and returns every subfolder that
- * contains at least one non-helper .exe at the top level. Each
- * candidate is annotated with its best-guess exe + total size.
+ * Folder names that should NEVER be reported as a game even if
+ * they contain a .exe. Most repacks ship a Redist/ tree alongside
+ * the actual game folder; without this list the wizard would
+ * surface "VCRedist 2015-2019" as a candidate.
+ */
+const HELPER_FOLDER_RE =
+  /^(_?commonredist|redist|vcredist|directx|dotnet|net[\s_-]?framework|c\+\+|microsoft|setup|installer|patch|update|tools?|dependencies?|prerequisites?|extras?)/i
+
+/**
+ * Exe filenames that should be DISQUALIFIED as the game's primary
+ * launcher. Pirate releases pad their folders with helper exes
+ * (unins000.exe, vc_redist.x64.exe, dxsetup.exe, …) so we filter
+ * those out when picking the "best" exe.
+ */
+const HELPER_EXE_RE =
+  /^(crash|unins|setup|dxsetup|vc_?redist|directx|dotnet|net[\s_-]?framework|launcher|patch|redist|crashreporter|update|installer)/i
+
+/**
+ * Folder names that look like a "repack" — strong signal that the
+ * directory is a cracked / repacked game install even when the inner
+ * .exe stem doesn't match. Pattern set covers :
  *
- * We DON'T recurse into nested folders — repack installers
- * generally lay games out as `root/Game Name/game.exe`, deeper
- * scans pick up modding subfolders and shareware bundles that
- * pollute the wizard. The user can always add the deeper folder
- * manually via "Add another folder" later.
+ *   - Multi-segment dotted/dashed/underscored names with 3+ parts
+ *     (`Dale.and.Dawson.Stationery.Supplies`, `Game-Name-Extra`)
+ *   - Version suffixes (`v1.2.3`, `v2.0`, `_v1`)
+ *   - Build / year tags in brackets (`[FitGirl Repack]`, `(2024)`)
+ *
+ * Used by the deep walker to flag low-score `findGameExeRecursive`
+ * results as candidates anyway — the Steam catalogue filter then
+ * culls anything that doesn't actually exist on Steam. Without this,
+ * `Dale.and.Dawson.Stationery.Supplies.v1.5.2` containing `DDSS.exe`
+ * was discarded because the exe stem ("ddss") didn't correlate with
+ * the folder slug ("daleda"), so the score never crossed 50.
+ */
+const REPACK_NAME_RE =
+  /(?:[._-][a-z0-9]+){3,}|v\d+(?:\.\d+)+|[._-]v\d+\b|\[(fitgirl|dodi|repack|codex|plaza|empress|cpy|skidrow|prophet|reloaded|hoodlum|gog|elamigos|ankergames|anadius|tenoke|rune|flt|p2p|razor1911|fairlight|online-fix|onlinefix|hi2u|tinyiso|deviance|ali213|3dm)/i
+
+/**
+ * Walk a candidate game folder up to MAX_DEPTH levels deep to find
+ * the most likely launcher .exe. Pirate / Unreal / Unity releases
+ * commonly put the binary at one of these depths:
+ *   - depth 0  → `<root>/<game>/game.exe`           (simplest)
+ *   - depth 1  → `<root>/<game>/<Game>/game.exe`    (common Unity)
+ *   - depth 2  → `<root>/<game>/Engine/Binaries/Win64/game.exe`
+ *                                                    (Unreal default)
+ *
+ * We prefer shallower exes when the name matches the game folder
+ * (matches the game stem), and we fully skip HELPER_FOLDER_RE
+ * subdirectories so we never recurse into a `_CommonRedist` tree.
+ *
+ * Returns the highest-scored candidate `.exe` absolute path, or
+ * null when nothing plausible is found.
+ */
+async function findGameExeRecursive(
+  rootDir: string,
+  stemSlug: string,
+  depth = 0,
+  maxDepth = 3,
+): Promise<{ exePath: string; score: number } | null> {
+  let entries: { name: string; isDir: boolean; isFile: boolean }[]
+  try {
+    const dirents = await fsp.readdir(rootDir, { withFileTypes: true })
+    entries = dirents.map((d) => ({
+      name: d.name,
+      isDir: d.isDirectory(),
+      isFile: d.isFile(),
+    }))
+  } catch {
+    return null
+  }
+  // Collect candidate exes at THIS level, scored against the stem.
+  let best: { exePath: string; score: number } | null = null
+  for (const e of entries) {
+    if (!e.isFile) continue
+    const lower = e.name.toLowerCase()
+    if (!lower.endsWith('.exe')) continue
+    if (HELPER_EXE_RE.test(e.name)) continue
+    const stem = lower.replace(/\.exe$/, '').replace(/[^a-z0-9]/g, '')
+    // Scoring rubric:
+    //   +100  exact stem match
+    //   +50   stem includes the game-folder slug (first 6 chars)
+    //   +20   shallow depth bonus (closer to root wins ties)
+    //   -10   per depth past 1 (deep exes are usually engine guts)
+    let score = 0
+    if (stemSlug && stem === stemSlug) score += 100
+    else if (stemSlug && stem.includes(stemSlug)) score += 50
+    score += Math.max(0, 20 - depth * 10)
+    if (!best || score > best.score) {
+      best = { exePath: path.join(rootDir, e.name), score }
+    }
+  }
+  // Recurse into subdirs (skip helper folders).
+  if (depth < maxDepth) {
+    for (const e of entries) {
+      if (!e.isDir) continue
+      if (HELPER_FOLDER_RE.test(e.name)) continue
+      const nested = await findGameExeRecursive(
+        path.join(rootDir, e.name),
+        stemSlug,
+        depth + 1,
+        maxDepth,
+      )
+      if (nested && (!best || nested.score > best.score)) best = nested
+    }
+  }
+  return best
+}
+
+/**
+ * Walks `root` one level deep and returns every subfolder that
+ * looks like a game install (has at least one viable .exe found
+ * recursively, ignoring helper trees). Each candidate is annotated
+ * with its best-guess exe + total size.
+ *
+ * The recursive exe lookup means pirate releases using deeper
+ * layouts — Unreal Engine games at
+ * `<game>/Engine/Binaries/Win64/game.exe`, Unity at `<game>/<Game>/Game.exe`,
+ * and most "GameName/Build/xxxx/" patterns — get picked up. Without
+ * recursion the v0.3.3 scanner missed roughly half of every repack
+ * collection in the wild.
  */
 async function scanRoot(root: string): Promise<CrackedGameCandidate[]> {
   let topLevel: string[]
@@ -449,38 +963,20 @@ async function scanRoot(root: string): Promise<CrackedGameCandidate[]> {
     return []
   }
   const out: CrackedGameCandidate[] = []
-  const helperRe = /^(crash|unins|setup|dxsetup|vcredist|directx|launcher|patch|redist|crashreporter|update)/i
   for (const dir of topLevel) {
+    if (HELPER_FOLDER_RE.test(dir)) continue
     const installPath = path.join(root, dir)
-    let exes: string[]
-    try {
-      const inner = await fsp.readdir(installPath, { withFileTypes: true })
-      exes = inner.filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.exe')).map((e) => e.name)
-    } catch {
-      continue
-    }
-    if (exes.length === 0) continue
-    // Pick the best exe: prefer something that looks like the
-    // folder name, fall back to first non-helper, then first exe.
     const stemSlug = dir.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 6)
-    const stemMatch = exes.find((e) =>
-      e.toLowerCase().replace(/\.exe$/i, '').replace(/[^a-z0-9]/g, '').includes(stemSlug),
-    )
-    const nonHelper = exes.find((e) => !helperRe.test(e))
-    const pick = stemMatch ?? nonHelper ?? exes[0]
-    if (!pick) continue
-    // Coarse size estimate — sum the top-level file sizes (cheap)
-    // and skip recursing into the whole tree. The wizard shows this
-    // as "≈ 4 GB" so an order-of-magnitude estimate is fine.
+    const found = await findGameExeRecursive(installPath, stemSlug)
+    if (!found) continue
+    // Coarse size estimate — sum every .exe + every .pak / .bin /
+    // common asset extension at the top 2 levels. Avoids a full-tree
+    // walk (slow for 60 GB repacks) while still giving an order-of-
+    // magnitude useful number for the wizard.
     let sizeBytes: number | null = null
     try {
-      const stats = await Promise.all(
-        exes.map((n) => fsp.stat(path.join(installPath, n)).catch(() => null)),
-      )
-      const sum = stats.reduce((s, st) => s + (st?.size ?? 0), 0)
-      // Add the install dir's own size as reported by Windows (cheap
-      // shallow estimate, undercounts but it's a UI hint, not exact).
-      sizeBytes = sum > 0 ? sum : null
+      const stats = await collectShallowSize(installPath, 2)
+      sizeBytes = stats > 0 ? stats : null
     } catch {
       /* size hint optional */
     }
@@ -489,11 +985,45 @@ async function scanRoot(root: string): Promise<CrackedGameCandidate[]> {
       title: cleanCrackedTitle(dir),
       installPath,
       sizeBytes,
-      executablePath: path.join(installPath, pick),
+      executablePath: found.exePath,
       scanRoot: root,
     })
   }
   return out
+}
+
+/**
+ * Sum file sizes inside `root`, capped at `maxDepth` levels of
+ * recursion. Cheap relative to a full walker because we don't open
+ * the asset files — just stat them. Used by scanRoot for the UI
+ * "≈ 4 GB" hint on each candidate row.
+ */
+async function collectShallowSize(root: string, maxDepth: number): Promise<number> {
+  let total = 0
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (depth > maxDepth) return
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (e.isFile()) {
+        try {
+          const st = await fsp.stat(path.join(dir, e.name))
+          total += st.size
+        } catch {
+          /* skip */
+        }
+      } else if (e.isDirectory()) {
+        if (HELPER_FOLDER_RE.test(e.name)) continue
+        await walk(path.join(dir, e.name), depth + 1)
+      }
+    }
+  }
+  await walk(root, 0)
+  return total
 }
 
 export async function scanCrackedGames(
@@ -536,6 +1066,24 @@ export async function scanCrackedGames(
  * because `app.getPath` isn't ready at module load.
  */
 function nexusGamesRoot(): string {
+  // 1. User setting (Téléchargements → "Dossier d'installation par
+  //    défaut") — c'est là que l'user attend que ses jeux atterrissent
+  //    quand il a explicitement changé le path dans les Settings.
+  //    Stocké dans download-settings.json sous `defaultTargetFolder`.
+  try {
+    const dlSettingsRaw = fs.readFileSync(
+      path.join(app.getPath('userData'), 'download-settings.json'),
+      'utf-8',
+    )
+    const dl = JSON.parse(dlSettingsRaw) as { defaultTargetFolder?: string }
+    if (dl.defaultTargetFolder && dl.defaultTargetFolder.trim()) {
+      return dl.defaultTargetFolder
+    }
+  } catch {
+    /* Pas de settings → fallback */
+  }
+  // 2. Fallback historique : `<userData>/games`. Anciens installs qui
+  //    n'ont jamais ouvert la page Téléchargements.
   return path.join(app.getPath('userData'), 'games')
 }
 
@@ -574,19 +1122,54 @@ export async function moveCrackedGame(
     }
     // Same-drive rename is atomic + fast. Cross-drive falls back to
     // copy+remove. `fs.rename` throws EXDEV on cross-volume moves;
-    // we catch that and switch strategies.
+    // it ALSO throws EPERM/EBUSY/EACCES sur Windows quand un
+    // sous-fichier est locké par l'explorateur, l'antivirus, un
+    // process qui scanne, ou même nested folder structures (cas
+    // observé : `Game/Game/exe` produit EPERM sur rename sans
+    // raison apparente). Pour tous ces cas on retombe sur cp+rm
+    // qui marche presque toujours — c'est plus lent mais robuste.
+    const FALLBACK_CODES = new Set(['EXDEV', 'EPERM', 'EBUSY', 'EACCES'])
     try {
       await fsp.rename(src, dest)
     } catch (e: unknown) {
       const code = (e as NodeJS.ErrnoException).code
-      if (code !== 'EXDEV') throw e
-      await fsp.cp(src, dest, { recursive: true })
+      if (!code || !FALLBACK_CODES.has(code)) throw e
+      try {
+        await fsp.cp(src, dest, { recursive: true })
+      } catch (cpErr: unknown) {
+        // Si même la copie échoue, on a un vrai problème de droits
+        // → message user-friendly explicite plutôt que le code brut.
+        const cpCode = (cpErr as NodeJS.ErrnoException).code
+        if (cpCode === 'EPERM' || cpCode === 'EACCES') {
+          return {
+            ok: false,
+            error:
+              "Impossible de déplacer : un fichier du dossier est ouvert (Explorateur, antivirus, jeu lancé). Ferme tout puis réessaye.",
+          }
+        }
+        throw cpErr
+      }
       // Only delete the source AFTER the copy lands so an interruption
-      // mid-copy leaves the original intact.
-      await fsp.rm(src, { recursive: true, force: true })
+      // mid-copy leaves the original intact. force:true ignore les
+      // permissions, maxRetries gère les EBUSY transitoires (antivirus
+      // qui finit de scanner un fichier juste après notre copy).
+      try {
+        await fsp.rm(src, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 })
+      } catch {
+        /* Source survives — pas fatal, la copie a réussi. L'user
+         * peut nettoyer manuellement le source folder s'il veut. */
+      }
     }
     return { ok: true, newInstallPath: dest }
   } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code
+    if (code === 'EPERM' || code === 'EACCES') {
+      return {
+        ok: false,
+        error:
+          "Permission refusée. Ferme l'Explorateur sur ce dossier (ou lance Nexus en admin) puis réessaye.",
+      }
+    }
     return { ok: false, error: (e as Error).message }
   }
 }
@@ -659,10 +1242,27 @@ export interface ScanResult {
   }
 }
 
-export async function runFullScan(extraCrackRoots: string[] = []): Promise<ScanResult> {
+export async function runFullScan(
+  extraCrackRoots: string[] = [],
+  opts?: {
+    /** When true (default), walks every fixed drive — slower but
+     *  catches cracks dropped anywhere. When false, falls back to
+     *  the legacy short list of known roots (fast precheck mode). */
+    deep?: boolean
+    /** Called as the walker descends, with the current path being
+     *  examined. Throttle if you wire it to the UI — fires often. */
+    onProgress?: (currentPath: string) => void
+    /** Mutable cancel flag — checked between folders so the
+     *  scanner stops cleanly when the user closes the wizard. */
+    signal?: { cancelled: boolean }
+  },
+): Promise<ScanResult> {
+  const deep = opts?.deep !== false
   const [steam, cracked] = await Promise.all([
     scanSteamGames(),
-    scanCrackedGames(extraCrackRoots),
+    deep
+      ? scanCrackedGamesDeep(extraCrackRoots, opts?.onProgress, opts?.signal)
+      : scanCrackedGames(extraCrackRoots),
   ])
   return { steam, cracked }
 }

@@ -38,11 +38,41 @@ function getInstallState(game: LibraryGame, setupDetected: boolean): InstallStat
 /** Map a library entry back to its in-app detail route. Same convention as
  * DownloadCard.detailHref — `sourceGameId` is prefixed with the source kind
  * ("json:") at add time so we can route without sniffing the slug. Returns
- * null when the library entry was added manually (no source link). */
+ * null when the library entry was added manually (no source link).
+ *
+ * Three routing cases:
+ *   • JSON catalogue game        → /json-game/<id>
+ *   • Steam-imported library row → /steam-game/<appid>          ← v0.3.4
+ *   • Real addon (Hydra, etc.)   → /game/<addonId>/<id>
+ *
+ * The Steam case used to fall through to /game/steam/... which then
+ * tried to resolve "steam" as a real addon, failed with
+ * "Addon not available", and stranded the user on an error screen
+ * (Samy's SoundPad import). Route to SteamGamePage directly using
+ * the persisted `steamAppId` column, OR extract the trailing digits
+ * of the sourceGameId for legacy rows where steamAppId is null.
+ */
 function detailHref(game: LibraryGame): string | null {
   const sgid = game.sourceGameId
   if (sgid && sgid.startsWith('json:')) {
     return `/json-game/${encodeURIComponent(sgid.slice('json:'.length))}`
+  }
+  // Steam appid — route to the Steam detail page d'abord. Couvre :
+  //   - sourceAddonId === 'steam' (jeu importé direct de Steam)
+  //   - sourceAddonId === 'local-scan' + steamAppId set (PC scanner
+  //     a matché le titre dans le catalogue Steam et écrit l'appid).
+  // Sans le 2ème cas, les cracks scannés tombaient sur
+  //   /game/local-scan/local:foo → "Addon not available" (local-scan
+  //   n'est pas un vrai addon enregistré).
+  if (game.sourceAddonId === 'steam' || game.steamAppId) {
+    const appid =
+      (game.steamAppId && game.steamAppId > 0 ? game.steamAppId : null) ??
+      (() => {
+        if (!sgid) return null
+        const m = sgid.match(/(\d{1,12})$/)
+        return m ? Number.parseInt(m[1], 10) : null
+      })()
+    if (appid) return `/steam-game/${appid}`
   }
   if (game.sourceAddonId && sgid) {
     return `/game/${encodeURIComponent(game.sourceAddonId)}/${encodeURIComponent(sgid)}`

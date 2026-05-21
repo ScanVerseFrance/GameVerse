@@ -27,6 +27,22 @@ export function registerArtworkIpc() {
     }
   })
 
+  // Bypass le SGDB + name search — utilisé quand le caller a déjà
+  // l'appid (filtre catalogue Steam du PC scanner, JSON source qui
+  // déclare l'appid). Rapide et garanti pour les jeux dont le titre
+  // ne matche pas Steam's search.
+  ipcMain.handle('artwork:lookupByAppid', async (_e, appid: number) => {
+    try {
+      if (typeof appid !== 'number' || !Number.isFinite(appid) || appid <= 0) {
+        return { ok: false, error: 'appid invalide' }
+      }
+      const data = await artwork.lookupArtworkByAppid(Math.floor(appid))
+      return { ok: true, artwork: data }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
   ipcMain.handle('comments:list', async (_e, gameKind: string, gameExternalId: string) => {
     try {
       return {

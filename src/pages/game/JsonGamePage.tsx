@@ -43,6 +43,8 @@ import { useLibraryStore } from '@/stores/library.store'
 import { parseGameTitle } from '@/utils/title-parse'
 import { parseSizeString } from '@/utils/parse-size'
 import { DownloadConfirmDialog } from '@/components/downloads/DownloadConfirmDialog'
+import { SteamLogo } from '@/components/library/PcScanWizard'
+import { ControllerConfigModal } from '@/components/game/ControllerConfigModal'
 import { UninstallConfirmDialog } from '@/components/library/UninstallConfirmDialog'
 import { ExtractDialog } from '@/components/library/ExtractDialog'
 import { StopGameConfirmDialog } from '@/components/library/StopGameConfirmDialog'
@@ -109,7 +111,8 @@ export default function JsonGamePage() {
   const getGame = useJsonSourceStore((s) => s.getGame)
   const copyMagnet = useJsonSourceStore((s) => s.copyMagnet)
   const forJsonGame = useArtworkStore((s) => s.forJsonGame)
-  const artworkCached = useArtworkStore((s) => (gameId ? s.cache[`json:${gameId}`] : undefined))
+  const forAppid = useArtworkStore((s) => s.forAppid)
+  const artworkByJsonId = useArtworkStore((s) => (gameId ? s.cache[`json:${gameId}`] : undefined))
 
   const user = useAuthStore((s) => s.user)
   const commentsKey = `${GAME_KIND}:${gameId ?? ''}`
@@ -140,22 +143,81 @@ export default function JsonGamePage() {
   const detectExeLibrary = useLibraryStore((s) => s.detectExe)
   const detectSetupLibrary = useLibraryStore((s) => s.detectSetup)
   const launchSetupLibrary = useLibraryStore((s) => s.launchSetup)
+  const [game, setGame] = useState<JsonSourceSearchHit | null>(null)
+  // Appid-keyed artwork — fallback quand le name-search a renvoyé
+  // vide (jeux dont le titre ne matche pas Steam's search). Active
+  // un useEffect plus bas qui call forAppid quand l'appid est connu.
+  const appidForArt = game?.steamAppid && game.steamAppid > 0 ? game.steamAppid : null
+  const artworkByAppid = useArtworkStore((s) =>
+    appidForArt ? s.cache[`appid:${appidForArt}`] : undefined,
+  )
+  // MERGE — chaque source a ses trous :
+  //   - name-based (SGDB) : trouve souvent un cover custom + screenshots
+  //     bien rangés, MAIS pas de description (SGDB n'expose pas ce champ)
+  //   - by-appid (Steam appdetails direct) : description FR, genres,
+  //     dev/publisher, release date, MAIS le cover est le banal Steam
+  // On prend byJsonId comme base (cover/screenshots SGDB qualité), puis
+  // on complète les champs nulls avec byAppid. Sans ce merge, les jeux
+  // matchés SGDB (= majorité) n'avaient jamais de description.
+  const artworkCached = useMemo(() => {
+    const base = artworkByJsonId ?? null
+    const fill = artworkByAppid ?? null
+    if (!base && !fill) return null
+    if (!base) return fill
+    if (!fill) return base
+    return {
+      ...base,
+      description: base.description ?? fill.description,
+      developer: base.developer ?? fill.developer,
+      publisher: base.publisher ?? fill.publisher,
+      releaseDate: base.releaseDate ?? fill.releaseDate,
+      genres:
+        base.genres && base.genres.length > 0 ? base.genres : fill.genres,
+      screenshots:
+        base.screenshots && base.screenshots.length > 0
+          ? base.screenshots
+          : fill.screenshots,
+      videos:
+        base.videos && base.videos.length > 0 ? base.videos : fill.videos,
+      // Cover/hero/header : on garde ceux de base (SGDB) s'ils existent,
+      // sinon fallback Steam canonique.
+      coverUrl: base.coverUrl ?? fill.coverUrl,
+      heroUrl: base.heroUrl ?? fill.heroUrl,
+      headerUrl: base.headerUrl ?? fill.headerUrl,
+      logoUrl: base.logoUrl ?? fill.logoUrl,
+    }
+  }, [artworkByJsonId, artworkByAppid])
   // Library entry for this game (may exist without being installed — Steam-
   // style: "in library" is independent from "installed on disk").
-  const libraryGame = useMemo(
-    () =>
-      gameId
-        ? libraryGames.find((g) => g.sourceGameId === `json:${gameId}`) ?? null
-        : null,
-    [libraryGames, gameId]
-  )
+  //
+  // Lookup strategy (priorité décroissante) :
+  //   1. sourceGameId === `json:${gameId}` → variante exacte importée
+  //      via download depuis CE source JSON spécifique.
+  //   2. Same `steamAppId` qu'un autre row → couvre les jeux scannés
+  //      depuis le disque (`sourceGameId: 'local:...'`) ou importés
+  //      depuis Steam (`sourceGameId: 'steam:...'`) qui mappent au
+  //      même appid. Sans ça, ouvrir Dale and Dawson via AnkerGames
+  //      affichait "Télécharger" alors que la version PC-scannée
+  //      EST déjà installée.
+  const libraryGame = useMemo(() => {
+    if (!gameId) return null
+    const byJsonId = libraryGames.find(
+      (g) => g.sourceGameId === `json:${gameId}`,
+    )
+    if (byJsonId) return byJsonId
+    // game.steamAppid (lowercase d, JSON catalogue convention) vs
+    // libraryGame.steamAppId (uppercase D, library row convention).
+    const appid = game?.steamAppid ?? null
+    if (appid && appid > 0) {
+      return libraryGames.find((g) => g.steamAppId === appid) ?? null
+    }
+    return null
+  }, [libraryGames, gameId, game])
   const isInLibrary = libraryGame != null
   const isInstalled = libraryGame?.installPath != null
   // Kept as an alias so the existing handlers downstream don't need a
   // sweeping rename; semantically it's "the library row for this game".
   const installedGame = libraryGame
-
-  const [game, setGame] = useState<JsonSourceSearchHit | null>(null)
   const [loading, setLoading] = useState(true)
   // Nexus community stats — total downloads + average rating across
   // ALL variants of this appid (every imported source shipping the
@@ -225,6 +287,9 @@ export default function JsonGamePage() {
    *  a freshly-uploaded version shows up without the user having to
    *  reopen it. */
   const [savesModalOpen, setSavesModalOpen] = useState(false)
+  /** Steam Input replica — modal pour configurer le mapping manette
+   *  par jeu. Ouvert via le bouton "Manette". */
+  const [controllerConfigOpen, setControllerConfigOpen] = useState(false)
   const [savesRefreshNonce, setSavesRefreshNonce] = useState(0)
   // Achievements (Hydra-style) — fetched from Steam Web API when a Steam
   // appid is known AND the user configured their key. Needs a separate
@@ -337,6 +402,15 @@ export default function JsonGamePage() {
     if (!gameId) return
     void forJsonGame(gameId)
   }, [gameId, forJsonGame])
+
+  // Lookup direct par appid en parallèle — couvre les titres qui
+  // ratent le name search Steam (ex. "Dale & Dawson Stationery
+  // Supplies" via AnkerGames). Le store dedup donc no-op si déjà
+  // fetché. Sans ça, ces pages n'avaient ni description, ni
+  // screenshots, ni release date.
+  useEffect(() => {
+    if (appidForArt) void forAppid(appidForArt)
+  }, [appidForArt, forAppid])
 
   // Backfill the library row's cover_url / hero_url once the artwork
   // resolves. Games added BEFORE the artwork lookup completed end up
@@ -945,6 +1019,21 @@ export default function JsonGamePage() {
                 <FileJson className="w-3.5 h-3.5 text-accent-primary" />
                 {parsedTitle.repacker ?? game.sourceName}
               </span>
+              {/* Badge Steam — affiché quand on a un appid résolu
+                  (filtre catalogue PC scanner OU JSON source qui
+                  déclare l'appid). Signal visuel : "ce jeu est suivi
+                  sur Steam, donc cover/meta/achievements canoniques". */}
+              {steamAppId && (
+                <a
+                  href={`https://store.steampowered.com/app/${steamAppId}/`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider bg-[#1b2838] text-[#66c0f4] border border-[#66c0f4]/40 hover:bg-[#243f5d] transition-colors"
+                  title="Voir sur Steam Store"
+                >
+                  <SteamLogo className="w-2.5 h-2.5" /> Steam
+                </a>
+              )}
               {game.fileSize && (
                 <span className="inline-flex items-center gap-1.5">
                   <HardDrive className="w-3.5 h-3.5" /> {game.fileSize}
@@ -1110,6 +1199,21 @@ export default function JsonGamePage() {
                 title="Déplacer le jeu vers un autre disque (rename si même volume, sinon copie + delete)"
               >
                 Déplacer
+              </Button>
+            )}
+            {/* Configurateur manette style Steam Input — ouvre un
+                modal par-jeu pour mapper boutons, sticks, gyro etc.
+                Affiché dès que le jeu est dans la library (pas besoin
+                d'être installé : on peut pré-configurer avant). */}
+            {isInLibrary && installedGame && (
+              <Button
+                size="sm"
+                variant="ghost"
+                leftIcon={<Gamepad2 className="w-3.5 h-3.5" />}
+                onClick={() => setControllerConfigOpen(true)}
+                title="Configurer la manette (style Steam Input)"
+              >
+                Manette
               </Button>
             )}
             {isInstalled && (
@@ -1877,6 +1981,18 @@ export default function JsonGamePage() {
           libraryGameId={installedGame.id}
           refreshNonce={savesRefreshNonce}
           onClose={() => setSavesModalOpen(false)}
+        />
+      )}
+
+      {/* Configurateur manette "Steam Input"-style — modal lazy.
+          Monté seulement quand installedGame est résolu (il faut un
+          libraryGameId pour clé le profil). */}
+      {installedGame && (
+        <ControllerConfigModal
+          open={controllerConfigOpen}
+          libraryGameId={installedGame.id}
+          gameTitle={installedGame.title}
+          onClose={() => setControllerConfigOpen(false)}
         />
       )}
 

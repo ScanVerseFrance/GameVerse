@@ -4,14 +4,10 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { useAuthStore } from '@/stores/auth.store'
 import {
-  NAMEPLATES,
-  PROFILE_EFFECTS,
   AVATAR_DECORATIONS,
   NONE_NAMEPLATE,
   NONE_EFFECT,
   NONE_DECORATION,
-  findNameplate,
-  findEffect,
   findDecoration,
 } from '@/config/profileCosmetics'
 
@@ -41,11 +37,14 @@ interface ProfileCustomiseDialogProps {
   decorationsOnly?: boolean
 }
 
-type Tab = 'plaque' | 'effect' | 'decoration' | 'music'
+// v0.3.4 — Plaque + Effet de profil sections retired per user feedback
+// ("retire plaque et effet de profil"). The catalogue stays exported
+// from @/config/profileCosmetics so any legacy saved value still
+// resolves on the profile page, but the picker UI no longer surfaces
+// them.
+type Tab = 'decoration' | 'music'
 
 const TABS: Array<{ value: Tab; label: string; count: number }> = [
-  { value: 'plaque', label: 'Plaques', count: NAMEPLATES.length },
-  { value: 'effect', label: 'Effets', count: PROFILE_EFFECTS.length },
   { value: 'decoration', label: 'Décorations', count: AVATAR_DECORATIONS.length },
   { value: 'music', label: 'Musique', count: 0 },
 ]
@@ -59,12 +58,16 @@ export function ProfileCustomiseDialog({
   decorationsOnly = false,
 }: ProfileCustomiseDialogProps) {
   const me = useAuthStore((s) => s.user)
-  // In decorationsOnly mode the tab bar is hidden and we lock the
-  // active tab to 'decoration' — bypassing the user being able to
-  // toggle elsewhere.
-  const [tab, setTab] = useState<Tab>(decorationsOnly ? 'decoration' : 'plaque')
-  const [plaqueId, setPlaqueId] = useState(initial.plaqueId ?? NONE_NAMEPLATE.id)
-  const [effectId, setEffectId] = useState(initial.profileEffectId ?? NONE_EFFECT.id)
+  // Default to the decoration tab — it's the only "browse" surface
+  // left after we retired Plaque + Effet. Music is keyed off the
+  // explicit tab bar entry.
+  const [tab, setTab] = useState<Tab>('decoration')
+  // Plaque/Effect are no longer editable from the picker, but we
+  // still read the initial values + send them back unchanged on
+  // save so a legacy saved cosmetic isn't wiped just by opening
+  // the dialog.
+  const [plaqueId] = useState(initial.plaqueId ?? NONE_NAMEPLATE.id)
+  const [effectId] = useState(initial.profileEffectId ?? NONE_EFFECT.id)
   const [decorationId, setDecorationId] = useState(initial.avatarDecorationId ?? NONE_DECORATION.id)
   const [musicUrl, setMusicUrl] = useState(initial.profileMusicUrl ?? '')
   const [query, setQuery] = useState('')
@@ -77,15 +80,13 @@ export function ProfileCustomiseDialog({
 
   useEffect(() => {
     if (!open) return
-    setPlaqueId(initial.plaqueId ?? NONE_NAMEPLATE.id)
-    setEffectId(initial.profileEffectId ?? NONE_EFFECT.id)
     setDecorationId(initial.avatarDecorationId ?? NONE_DECORATION.id)
     setMusicUrl(initial.profileMusicUrl ?? '')
     setError(null)
     setQuery('')
-    // Re-pin the locked tab every time the dialog opens — covers the
-    // case where the same instance is reused for both modes.
-    setTab(decorationsOnly ? 'decoration' : 'plaque')
+    // Always land on the decoration tab — it's the picker landing
+    // surface in both decorationsOnly and the regular flow.
+    setTab('decoration')
   }, [open, initial, decorationsOnly])
 
   // Reset the search box whenever the user switches tabs so the previous
@@ -93,18 +94,6 @@ export function ProfileCustomiseDialog({
   useEffect(() => {
     setQuery('')
   }, [tab])
-
-  const filteredPlaques = useMemo(() => {
-    if (!query.trim()) return [NONE_NAMEPLATE, ...NAMEPLATES]
-    const q = query.toLowerCase()
-    return [NONE_NAMEPLATE, ...NAMEPLATES.filter((n) => n.name.toLowerCase().includes(q))]
-  }, [query])
-
-  const filteredEffects = useMemo(() => {
-    if (!query.trim()) return [NONE_EFFECT, ...PROFILE_EFFECTS]
-    const q = query.toLowerCase()
-    return [NONE_EFFECT, ...PROFILE_EFFECTS.filter((e) => e.name.toLowerCase().includes(q))]
-  }, [query])
 
   const filteredDecorations = useMemo(() => {
     if (!query.trim()) return [NONE_DECORATION, ...AVATAR_DECORATIONS]
@@ -198,32 +187,6 @@ export function ProfileCustomiseDialog({
 
         {/* Tab content — scrollable list because we have 600+ items */}
         <div className="max-h-[55vh] overflow-y-auto -mx-2 px-2">
-          {tab === 'plaque' && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {filteredPlaques.map((n) => (
-                <NameplateTile
-                  key={n.id}
-                  nameplate={n}
-                  selected={plaqueId === n.id}
-                  onSelect={() => setPlaqueId(n.id)}
-                />
-              ))}
-            </div>
-          )}
-
-          {tab === 'effect' && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {filteredEffects.map((e) => (
-                <EffectTile
-                  key={e.id}
-                  effect={e}
-                  selected={effectId === e.id}
-                  onSelect={() => setEffectId(e.id)}
-                />
-              ))}
-            </div>
-          )}
-
           {tab === 'decoration' && (
             <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-4">
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3 min-w-0">
@@ -263,7 +226,14 @@ export function ProfileCustomiseDialog({
                           maxHeight: 'none',
                           willChange: 'transform',
                         }}
-                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[125%] h-[125%] object-contain pointer-events-none select-none"
+                        // 115% — même taille que sur le profil
+                        // (ProfilePage.tsx), pour que la preview reflète
+                        // fidèlement ce que l'user verra. 125 % Discord
+                        // canonique faisait dépasser certaines déco
+                        // (Mushroom, Air bubble) bien au-delà du cercle
+                        // avatar dans la preview, donnant l'impression
+                        // d'une décoration disproportionnée.
+                        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[115%] h-[115%] object-contain pointer-events-none select-none"
                       />
                     )}
                   </div>
@@ -325,96 +295,6 @@ function SelectedBadge() {
     <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-accent-primary flex items-center justify-center shadow-glow">
       <Check className="w-3 h-3 text-white" />
     </div>
-  )
-}
-
-function NameplateTile({
-  nameplate,
-  selected,
-  onSelect,
-}: {
-  nameplate: ReturnType<typeof findNameplate>
-  selected: boolean
-  onSelect: () => void
-}) {
-  return (
-    <button
-      onClick={onSelect}
-      className={`group relative rounded-lg overflow-hidden border transition-all aspect-[4/3] ${
-        selected
-          ? 'border-accent-primary/60 ring-2 ring-accent-primary/30'
-          : 'border-glass-border hover:border-fg-muted/40'
-      }`}
-      title={nameplate.name}
-    >
-      {nameplate.file ? (
-        <>
-          {/* Webm loops silently as the preview. */}
-          <video
-            src={nameplate.file}
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="metadata"
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-          {nameplate.gradientCss && (
-            <div
-              aria-hidden
-              className="absolute inset-0"
-              style={{ background: nameplate.gradientCss }}
-            />
-          )}
-        </>
-      ) : (
-        <div className="absolute inset-0 bg-bg-tertiary flex items-center justify-center text-fg-muted text-xs">
-          Sans plaque
-        </div>
-      )}
-      <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/90 to-transparent">
-        <p className="text-[11px] font-medium text-white truncate">{nameplate.name}</p>
-      </div>
-      {selected && <SelectedBadge />}
-    </button>
-  )
-}
-
-function EffectTile({
-  effect,
-  selected,
-  onSelect,
-}: {
-  effect: ReturnType<typeof findEffect>
-  selected: boolean
-  onSelect: () => void
-}) {
-  return (
-    <button
-      onClick={onSelect}
-      className={`group relative rounded-lg overflow-hidden border transition-all aspect-[4/3] ${
-        selected
-          ? 'border-accent-primary/60 ring-2 ring-accent-primary/30'
-          : 'border-glass-border hover:border-fg-muted/40'
-      }`}
-      title={effect.name}
-    >
-      <div className="absolute inset-0 bg-gradient-to-br from-bg-secondary to-bg-tertiary" />
-      {/* Stack each part on top of the next so the layered preview matches
-          the way the effect will be rendered on the actual profile page. */}
-      {effect.parts.map((p) => (
-        <img
-          key={p.index}
-          src={p.file}
-          alt=""
-          className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-        />
-      ))}
-      <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/90 to-transparent">
-        <p className="text-[11px] font-medium text-white truncate">{effect.name}</p>
-      </div>
-      {selected && <SelectedBadge />}
-    </button>
   )
 }
 

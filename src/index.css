@@ -571,3 +571,268 @@ body.no-animations *::after {
 @keyframes deco-gold-shimmer {
   50% { box-shadow: 0 0 0 3px #fef08a, 0 0 28px rgba(253, 224, 71, 0.95); }
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Profile entry animations
+   Applied ONCE to the profile hero container when /community/profile/:id
+   mounts. IDs match PROFILE_ENTRY_ANIMATIONS in
+   src/config/usernameCustomisations.ts. All animations use
+   `fill-mode: both` so the end state holds after the keyframes
+   finish (otherwise the profile would snap back to opacity:0).
+   Respects prefers-reduced-motion via the existing global rule
+   at the bottom of this file.
+   ───────────────────────────────────────────────────────────────── */
+.sv-entry--fade     { animation: sv-entry-fade     0.7s ease-out both; }
+.sv-entry--slide-up { animation: sv-entry-slide-up 0.75s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.sv-entry--zoom     { animation: sv-entry-zoom     0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.sv-entry--blur     { animation: sv-entry-blur     0.9s ease-out both; }
+.sv-entry--wipe     { animation: sv-entry-wipe     0.9s cubic-bezier(0.5, 0, 0.25, 1) both; }
+
+@keyframes sv-entry-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes sv-entry-slide-up {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes sv-entry-zoom {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes sv-entry-blur {
+  from { opacity: 0; filter: blur(14px); }
+  to   { opacity: 1; filter: blur(0); }
+}
+@keyframes sv-entry-wipe {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sv-entry--fade,
+  .sv-entry--slide-up,
+  .sv-entry--zoom,
+  .sv-entry--blur,
+  .sv-entry--wipe { animation: none !important; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Effets de bannière — réplique 1×1 du système ScanVerse
+   (inspecté en live sur scanverse.online via Chrome MCP).
+
+   ScanVerse utilise UN SEUL container `.banner-fx` + des spans
+   `.banner-fx__particle`. Chaque particule porte un style INLINE
+   contrôlant left/font-size/color/text-shadow/animation-duration/
+   animation-delay aléatoire — le composant React génère ces
+   valeurs (voir BannerEffectsOverlay.tsx).
+
+   Deux keyframes seulement :
+     • banner-fall    : chute principale (pétales, neige, étoiles, gold)
+     • banner-twinkle : scintillement sur place (étincelles)
+
+   Les "Rayons" sont un overlay conic-gradient — pas de particules.
+   ───────────────────────────────────────────────────────────────── */
+.banner-fx {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+.banner-fx__particle {
+  position: absolute;
+  will-change: top, transform, opacity;
+  animation: banner-fall linear infinite;
+}
+.banner-fx__particle--twinkle {
+  /* Étincelles scintillent sur place, ne tombent pas */
+  animation: banner-twinkle ease-in-out infinite;
+}
+
+@keyframes banner-fall {
+  0%   { top: -15%; transform: translate(0)    rotate(0deg);   opacity: 0; }
+  10%  {                                                       opacity: 1; }
+  50%  {            transform: translate(20px) rotate(180deg);             }
+  90%  {                                                       opacity: 1; }
+  100% { top: 115%; transform: translate(-10px) rotate(360deg); opacity: 0; }
+}
+
+@keyframes banner-twinkle {
+  0%, 100% { opacity: 0.2; transform: scale(0.8); }
+  50%      { opacity: 1;   transform: scale(1.2); }
+}
+
+/* Rayons — overlay conic-gradient en rotation lente. Pas de
+   particules, donc une div seule sans le pattern fall. */
+.banner-fx__rays {
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    transparent 0deg,
+    rgba(253, 230, 138, 0.20) 30deg,
+    transparent 60deg,
+    transparent 180deg,
+    rgba(168, 85, 247, 0.16) 210deg,
+    transparent 240deg,
+    transparent 360deg
+  );
+  mix-blend-mode: screen;
+  animation: banner-rays-spin 24s linear infinite;
+}
+@keyframes banner-rays-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-fx__particle,
+  .banner-fx__particle--twinkle,
+  .banner-fx__rays { animation: none !important; opacity: 0.4; }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Fonds animés de la page d'accueil (Découvrir)
+   Replicé depuis ScanVerse "Fond animé de la page d'accueil".
+   Chaque variant est une `.home-bg .home-bg--<id>` qui dessine une
+   overlay full-bleed. Pointer-events: none pour ne pas voler les
+   clics. Intensité tamisée (opacity 0.4–0.6) pour rester en
+   ambiance.
+   ───────────────────────────────────────────────────────────────── */
+.home-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/* Rayons lumineux — conic-gradient en rotation lente */
+.home-bg--rays {
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    transparent 0deg,
+    var(--bg-accent, rgba(168,85,247,0.18)) 25deg,
+    transparent 60deg,
+    transparent 180deg,
+    var(--bg-accent-2, rgba(236,72,153,0.16)) 210deg,
+    transparent 245deg,
+    transparent 360deg
+  );
+  opacity: 0.45;
+  animation: home-rays-spin 40s linear infinite;
+}
+@keyframes home-rays-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Vagues de lignes — bandes diagonales qui défilent */
+.home-bg--waves {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0px,
+      transparent 60px,
+      var(--bg-accent, rgba(168,85,247,0.14)) 60px,
+      var(--bg-accent, rgba(168,85,247,0.14)) 62px
+    );
+  background-size: 400px 400px;
+  opacity: 0.5;
+  animation: home-waves-pan 18s linear infinite;
+}
+@keyframes home-waves-pan {
+  from { background-position: 0 0; }
+  to   { background-position: 400px 400px; }
+}
+
+/* Éther liquide — blob radial qui flotte + scale */
+.home-bg--ether {
+  background:
+    radial-gradient(circle at 20% 30%, var(--bg-accent, rgba(168,85,247,0.32)), transparent 45%),
+    radial-gradient(circle at 80% 70%, var(--bg-accent-2, rgba(236,72,153,0.28)), transparent 50%);
+  filter: blur(40px);
+  opacity: 0.7;
+  animation: home-ether-float 22s ease-in-out infinite alternate;
+}
+@keyframes home-ether-float {
+  0%   { transform: translate(0, 0)      scale(1);   }
+  100% { transform: translate(60px, 30px) scale(1.15); }
+}
+
+/* Voile sombre — gradient noir vignette qui pulse */
+.home-bg--veil {
+  background:
+    radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.75) 90%);
+  opacity: 0.7;
+  animation: home-veil-pulse 8s ease-in-out infinite;
+}
+@keyframes home-veil-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.8; }
+}
+
+/* Lignes flottantes — multiple horizontal scanlines drifting up */
+.home-bg--flow::before,
+.home-bg--flow::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 200%;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 80px,
+      var(--bg-accent, rgba(168,85,247,0.18)) 80px,
+      var(--bg-accent, rgba(168,85,247,0.18)) 82px
+    );
+  opacity: 0.55;
+  animation: home-flow-up 16s linear infinite;
+}
+.home-bg--flow::after {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 120px,
+      var(--bg-accent-2, rgba(236,72,153,0.14)) 120px,
+      var(--bg-accent-2, rgba(236,72,153,0.14)) 122px
+    );
+  animation-duration: 22s;
+  animation-direction: reverse;
+}
+@keyframes home-flow-up {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-50%); }
+}
+
+/* Courbes colorées — sin-wave SVG-style gradients */
+.home-bg--curves {
+  background:
+    radial-gradient(ellipse 60% 20% at 30% 20%, var(--bg-accent, rgba(168,85,247,0.32)), transparent 70%),
+    radial-gradient(ellipse 50% 25% at 70% 60%, var(--bg-accent-2, rgba(236,72,153,0.28)), transparent 70%),
+    radial-gradient(ellipse 40% 30% at 50% 90%, rgba(99,102,241,0.22), transparent 70%);
+  filter: blur(28px);
+  opacity: 0.7;
+  animation: home-curves-shift 26s ease-in-out infinite alternate;
+}
+@keyframes home-curves-shift {
+  0%   { transform: translate(-30px, 0)   scale(1);    }
+  100% { transform: translate(40px, -20px) scale(1.1);  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-bg--rays,
+  .home-bg--waves,
+  .home-bg--ether,
+  .home-bg--veil,
+  .home-bg--flow::before,
+  .home-bg--flow::after,
+  .home-bg--curves { animation: none !important; }
+}

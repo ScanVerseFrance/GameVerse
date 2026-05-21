@@ -2,13 +2,16 @@ import { create } from 'zustand'
 import type { GameArtwork } from '@/types/artwork.types'
 
 interface ArtworkState {
-  /** key = gameId for JSON games (prefixed with "json:") or arbitrary title (prefixed with "title:") */
+  /** key = gameId for JSON games (prefixed with "json:"),
+   *  arbitrary title (prefixed with "title:"),
+   *  or Steam appid (prefixed with "appid:"). */
   cache: Record<string, GameArtwork | null>
   /** Tracks which lookups are inflight so the same one isn't fired twice */
   inflight: Record<string, Promise<GameArtwork | null>>
 
   forJsonGame: (gameId: string) => Promise<GameArtwork | null>
   forTitle: (title: string) => Promise<GameArtwork | null>
+  forAppid: (appid: number) => Promise<GameArtwork | null>
   peek: (key: string) => GameArtwork | null | undefined
 }
 
@@ -51,6 +54,29 @@ export const useArtworkStore = create<ArtworkState>((set, get) => ({
 
     const p = (async () => {
       const res = await window.nexus.artwork.lookup(title)
+      set((s) => {
+        const nextInflight = { ...s.inflight }
+        delete nextInflight[key]
+        if (res.ok) {
+          return { cache: { ...s.cache, [key]: res.artwork }, inflight: nextInflight }
+        }
+        return { inflight: nextInflight }
+      })
+      return res.ok ? res.artwork : null
+    })()
+    set((s) => ({ inflight: { ...s.inflight, [key]: p } }))
+    return p
+  },
+
+  forAppid: async (appid) => {
+    const key = `appid:${appid}`
+    const cached = get().cache[key]
+    if (cached !== undefined) return cached
+    const existing = get().inflight[key]
+    if (existing) return existing
+
+    const p = (async () => {
+      const res = await window.nexus.artwork.lookupByAppid(appid)
       set((s) => {
         const nextInflight = { ...s.inflight }
         delete nextInflight[key]

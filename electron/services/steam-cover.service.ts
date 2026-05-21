@@ -30,8 +30,17 @@ import { lookupSGDBCoverByAppid } from './steamgriddb.service'
 // is_multi_player for the Trending filter. Full appdetails returns
 // more data per call but Steam's per-IP rate limit lets us through
 // at our 4-concurrent throttle.
+// `l=french&cc=fr` forces the storefront API to return French
+// metadata wherever the publisher has uploaded a French build.
+// We hit this endpoint for cover-resolution + category sniffing,
+// but the same response also feeds `name` into the catalogue —
+// without the locale param Steam was falling through to whatever
+// geographic guess it makes for our VPS (Hong-Kong region → CN
+// payload), so titles like "Subnautica 2" landed in SQLite with
+// their Chinese names. Centralising the param here fixes every
+// caller in this file. (v0.3.4 — user-reported.)
 const APPDETAILS_URL =
-  'https://store.steampowered.com/api/appdetails?appids='
+  'https://store.steampowered.com/api/appdetails?l=french&cc=fr&appids='
 const FETCH_TIMEOUT_MS = 6_000
 /** Steam rate-limits storefront API at ~200 req per 5 min per IP.
  *  We stay well below that with 4 concurrent + 250ms inter-request

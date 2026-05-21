@@ -6,6 +6,7 @@ import crypto from 'node:crypto'
 import { app, BrowserWindow, shell } from 'electron'
 import { getDatabase } from './database.service'
 import { emitFriendLaunched, postActivity, updatePresence } from './social.service'
+import { queueStatsSync } from './stats-sync.service'
 import type { AddLibraryParams, LibraryGame, LibraryStatus, UpdateLibraryParams } from '@/types/library.types'
 
 interface LibraryRow {
@@ -183,6 +184,26 @@ async function autoUploadAfterExit(
   try {
     const game = getLibraryGame(libraryGameId)
     if (!game) return
+    // Skip Steam-sourced games. Steam itself handles save sync via
+    // Steam Cloud (and the user can't really opt out at the
+    // launcher level — Steam writes saves to its own per-app
+    // location which Ludusavi doesn't map cleanly). Double-syncing
+    // a Steam game's saves would either:
+    //   - Conflict with Steam Cloud (last-writer-wins races)
+    //   - Burn cloud quota on data Steam already backs up
+    //   - Trigger our "no manifest" toast on every quit since
+    //     Steam shipped many games without PCGamingWiki entries
+    // Easiest fix: don't even try.
+    if (game.sourceAddonId === 'steam') {
+      emit('library:cloudSave', {
+        libraryGameId,
+        kind: 'upload',
+        ok: false,
+        skipped: true,
+        skipReason: 'steam_managed',
+      })
+      return
+    }
     const { uploadGameSave } = await import('./cloud-save.service')
     const res = await uploadGameSave(game, {
       label: `Auto · ${new Date().toLocaleString('fr-FR')}`,
@@ -540,6 +561,11 @@ export function addLibraryGame(params: AddLibraryParams): LibraryGame {
     coverUrl: params.coverUrl ?? null,
   })
 
+  // Cross-user profile sync — push the freshly bumped library
+  // count to the cloud so any friend's profile page renders the
+  // new total. Debounced; the actual PATCH happens 2s later.
+  queueStatsSync(params.userId)
+
   return getLibraryGame(id)!
 }
 
@@ -654,6 +680,12 @@ export function updateLibraryGame(id: string, patch: UpdateLibraryParams): Libra
     })
   }
 
+  // Cross-user profile sync — completed count / cover changes flow
+  // up so a friend's view of this profile stays in step with what
+  // the owner sees locally. Debounced (2s), batched with any other
+  // mutation that fires in the same tick.
+  queueStatsSync(before.userId)
+
   return getLibraryGame(id)
 }
 
@@ -750,7 +782,14 @@ export function removeLibraryGame(id: string): boolean {
     }
     running.delete(id)
   }
+  // Snag user_id before the delete so we can still push the
+  // refreshed (smaller) library count to the cloud after the
+  // row is gone.
+  const owner = getDatabase()
+    .prepare('SELECT user_id FROM library_games WHERE id = ?')
+    .get(id) as { user_id: string } | undefined
   getDatabase().prepare('DELETE FROM library_games WHERE id = ?').run(id)
+  if (owner) queueStatsSync(owner.user_id)
   return true
 }
 
@@ -996,6 +1035,10 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
       // 'library:cloudSave' channel so the renderer can surface
       // progress / errors / "Save cloud à jour" notifications.
       void autoUploadAfterExit(id, seconds)
+      // Cross-user profile sync — last-played AND total playtime
+      // changed; refresh the cloud snapshot so friends see the
+      // updated "X h Y min" + "A récemment joué" hero card.
+      queueStatsSync(game.userId)
     })
 
     child.on('error', () => {

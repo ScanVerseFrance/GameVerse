@@ -63,6 +63,17 @@ function runMigrations(d: Database.Database) {
    *  sweep (see Username.tsx + index.css .username-bi). */
   ensureColumn('users', 'username_color_2', 'TEXT')
   ensureColumn('users', 'username_animation', 'TEXT')
+  // v0.3.4 — font catalogue id (Syne / Inter / Bebas Neue / Press
+  // Start 2P / etc.). null = default Syne. Validated against
+  // USERNAME_FONTS in src/config/usernameCustomisations.ts.
+  ensureColumn('users', 'username_font', 'TEXT')
+  // v0.3.4 — entry animation played once when a viewer lands on
+  // the profile page. PROFILE_ENTRY_ANIMATIONS in
+  // src/config/usernameCustomisations.ts. null = no animation.
+  ensureColumn('users', 'profile_entry_animation', 'TEXT')
+  // v0.3.4 — banner FX (petals/snow/sparkles/stars/rays/gold).
+  // Catalogue dans src/config/bannerEffects.ts. null = aucun.
+  ensureColumn('users', 'banner_effect', 'TEXT')
   // Profile customisation — ComicScan-inspired. Plaque/nameplate background
   // for the username card, profile effect overlay (CSS preset key), and
   // avatar decoration ring. All optional, null = vanilla look.
@@ -80,6 +91,17 @@ function runMigrations(d: Database.Database) {
   ensureColumn('users', 'profile_music_url', 'TEXT')
   ensureColumn('users', 'profile_music_start', 'INTEGER')
   ensureColumn('users', 'profile_music_end', 'INTEGER')
+  // Music-tab extras — ScanVerse parity. profile_music_audio_path
+  // points to a user-uploaded mp3/wav stored under
+  // userData/profile-audio/ (max 5 MB, enforced by music.service).
+  // When set, playback uses an HTML <audio> element instead of the
+  // YT iframe. profile_music_{plaque,effect}_id are an INDEPENDENT
+  // copy of plaque_id / profile_effect_id, scoped to the expanded
+  // music HUD — users can pick a different vibe than their default
+  // profile cosmetic.
+  ensureColumn('users', 'profile_music_audio_path', 'TEXT')
+  ensureColumn('users', 'profile_music_plaque_id', 'TEXT')
+  ensureColumn('users', 'profile_music_effect_id', 'TEXT')
 
   // ScanVerse-style privacy settings — the renderer reads these and the
   // social.service uses them to compute `canViewX` flags on PublicProfile.
@@ -119,6 +141,22 @@ function runMigrations(d: Database.Database) {
    *  by the friends list to decay stale 'online' rows back to offline
    *  after PRESENCE_DECAY_MS in social.service. */
   ensureColumn('users', 'last_active_at', 'INTEGER')
+  // v0.3.4 — aggregated stats mirrored from the cloud for non-self
+  // users (friends list, profile lookups). The owner's row keeps
+  // these in sync with their LOCAL library_games via
+  // electron/services/stats-sync.service. For a friend, these are
+  // populated whenever cloud:listFriends returns their stats.
+  // Without these columns the Profile page reads from library_games
+  // → finds zero rows for non-self users → renders "0 jeux" even
+  // when the friend has hundreds of games. Defaults are 0 so a
+  // partial migration still renders a meaningful page.
+  ensureColumn('users', 'remote_library_count', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn('users', 'remote_total_playtime_seconds', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn('users', 'remote_completed_count', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn('users', 'remote_review_count', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn('users', 'remote_last_played_title', 'TEXT')
+  ensureColumn('users', 'remote_last_played_cover_url', 'TEXT')
+  ensureColumn('users', 'remote_last_played_at', 'INTEGER')
 
   // v0.3.1: comments became reviews — 0-5 star rating column added
   // to game_comments. Existing rows backfill to 0 ("no rating
@@ -173,6 +211,38 @@ function runMigrations(d: Database.Database) {
     `)
   } catch {
     // ignore
+  }
+
+  // Per-game controller configuration (Steam Input replica). One row
+  // per (user, library_game) pair. The `config_json` blob holds the
+  // entire profile so we can iterate the schema without column
+  // migrations every release :
+  //   {
+  //     enabled: boolean,           // bypass enabled = on bridge le pad
+  //     targetType: 'xbox360' | 'ds4', // virtual pad émis vers le jeu
+  //     selectedControllers: string[], // ids des manettes physiques bridgées
+  //     remap: Record<string, string>, // ex. { "A": "B", "L1": "LB" }
+  //     deadzones: { lx?: number, ly?: number, rx?: number, ry?: number },
+  //     triggers: { lt?: number, rt?: number },
+  //     gyro: { enabled: boolean, sensitivity: number },
+  //     updatedAt: number,
+  //   }
+  try {
+    d.exec(`
+      CREATE TABLE IF NOT EXISTS game_controller_configs (
+        user_id TEXT NOT NULL,
+        library_game_id TEXT NOT NULL,
+        config_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, library_game_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (library_game_id) REFERENCES library_games(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_controller_configs_user
+        ON game_controller_configs(user_id);
+    `)
+  } catch {
+    // ignore — first-boot schema creation race
   }
 
   // Per-user play sessions ledger — populated on game launch/exit. The

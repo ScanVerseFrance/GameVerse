@@ -182,7 +182,8 @@ const api = {
     getPrivacy: (userId: string) => ipcRenderer.invoke('social:getPrivacy', userId),
     updatePrivacy: (userId: string, patch: unknown) =>
       ipcRenderer.invoke('social:updatePrivacy', userId, patch),
-    listFriends: (userId: string) => ipcRenderer.invoke('social:listFriends', userId),
+    listFriends: (userId: string, viewerId?: string) =>
+      ipcRenderer.invoke('social:listFriends', userId, viewerId),
     isFriend: (userId: string, otherId: string) => ipcRenderer.invoke('social:isFriend', userId, otherId),
     updatePresence: (userId: string, status: string) =>
       ipcRenderer.invoke('social:updatePresence', userId, status),
@@ -279,6 +280,7 @@ const api = {
   artwork: {
     lookup: (query: string) => ipcRenderer.invoke('artwork:lookup', query),
     lookupForJsonGame: (gameId: string) => ipcRenderer.invoke('artwork:lookupForJsonGame', gameId),
+    lookupByAppid: (appid: number) => ipcRenderer.invoke('artwork:lookupByAppid', appid),
   },
   comments: {
     list: (gameKind: string, gameExternalId: string) =>
@@ -316,6 +318,40 @@ const api = {
      *  in one round-trip. See electron/services/profile.service.ts
      *  getGameStats for the full shape. */
     gameStats: (userId: string) => ipcRenderer.invoke('profile:gameStats', userId),
+    /** Profile-achievements board — 15-entry catalogue + per-entry
+     *  progress/unlock state. See
+     *  electron/services/profile-achievements.service.ts. */
+    achievements: (userId: string) =>
+      ipcRenderer.invoke('profile:achievements', userId),
+  },
+  music: {
+    /** Fetch YouTube oEmbed metadata (title, author, thumbnail) for a
+     *  user-pasted URL. Powers the "Analyser" button in Settings →
+     *  Personnalisation → Musique de profil. No audio download — the
+     *  picker uses the metadata for the preview card; playback is
+     *  delegated to MusicContext's hidden YT IFrame Player. */
+    analyzeYouTube: (url: string) =>
+      ipcRenderer.invoke('music:analyzeYouTube', url),
+    /** Persist a user-uploaded audio blob (≤5 Mo). Returns the
+     *  relative path stored in profile_music_audio_path. */
+    uploadAudio: (userId: string, mimeType: string, data: Uint8Array) =>
+      ipcRenderer.invoke('music:uploadAudio', userId, mimeType, data),
+    /** Read a stored audio blob back as raw bytes — the picker wraps
+     *  them in a Blob + URL.createObjectURL for the <audio> element. */
+    loadAudio: (relativePath: string) =>
+      ipcRenderer.invoke('music:loadAudio', relativePath),
+  },
+  controller: {
+    /** Récupère la config "Steam Input"-style pour (user, game).
+     *  Retourne TOUJOURS un objet (default si pas de row). */
+    getConfig: (userId: string, libraryGameId: string) =>
+      ipcRenderer.invoke('controller:getConfig', userId, libraryGameId),
+    /** Upsert config — passer la config COMPLÈTE, pas un patch. */
+    setConfig: (userId: string, libraryGameId: string, config: unknown) =>
+      ipcRenderer.invoke('controller:setConfig', userId, libraryGameId, config),
+    /** Reset au défaut — drop la row, le get suivant renvoie le default. */
+    deleteConfig: (userId: string, libraryGameId: string) =>
+      ipcRenderer.invoke('controller:deleteConfig', userId, libraryGameId),
   },
   pcScanner: {
     /** Cheap precheck — returns false if neither Steam nor any
@@ -323,9 +359,23 @@ const api = {
      *  wizard at all when there's nothing to find. */
     hasAnySource: () => ipcRenderer.invoke('pcScanner:hasAnySource'),
     /** Full scan: Steam library + crack roots. `extraRoots` lets
-     *  the wizard add user-picked folders to the scan. */
-    scan: (extraRoots?: string[]) =>
-      ipcRenderer.invoke('pcScanner:scan', extraRoots ?? []),
+     *  the wizard add user-picked folders. `opts.deep` (default true)
+     *  walks every fixed drive; pass `false` for the fast legacy
+     *  "known-folders only" mode. */
+    scan: (extraRoots?: string[], opts?: { deep?: boolean }) =>
+      ipcRenderer.invoke('pcScanner:scan', extraRoots ?? [], opts ?? {}),
+    /** Cancel the in-flight deep scan. The walker stops cleanly at
+     *  the next folder boundary; whatever was found so far is still
+     *  returned via the `scan` resolution (with cancelled=true). */
+    cancel: () => ipcRenderer.invoke('pcScanner:cancel'),
+    /** Subscribe to scan progress events. Returns an unsubscribe
+     *  function — call it on unmount or when the scan finishes. */
+    onProgress: (cb: (currentPath: string) => void) => {
+      const listener = (_e: unknown, payload: { currentPath: string }) =>
+        cb(payload.currentPath)
+      ipcRenderer.on('pcScanner:progress', listener)
+      return () => ipcRenderer.off('pcScanner:progress', listener)
+    },
     /** Commit the wizard selection: imports Steam games (no move),
      *  optionally moves crack folders to the Nexus games dir, then
      *  upserts library_games rows. */
@@ -382,6 +432,9 @@ const api = {
       ipcRenderer.invoke('cloud:addFriend', username),
     removeFriend: (friendId: string) =>
       ipcRenderer.invoke('cloud:removeFriend', friendId),
+    mutualFriends: (friendIds: string[]) =>
+      ipcRenderer.invoke('cloud:mutualFriends', friendIds),
+    friendsOf: (userId: string) => ipcRenderer.invoke('cloud:friendsOf', userId),
     listFriendRequests: () => ipcRenderer.invoke('cloud:listFriendRequests'),
     sendFriendRequest: (username: string, message?: string) =>
       ipcRenderer.invoke('cloud:sendFriendRequest', username, message),

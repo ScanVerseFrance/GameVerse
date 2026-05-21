@@ -6,6 +6,7 @@ import type {
   ActivityItem,
   ActivityScope,
   ChatMessage,
+  FriendListItem,
   PresenceStatus,
   PresenceVisibility,
   PrivacySettings,
@@ -38,6 +39,13 @@ interface UserRow {
   profile_effect_id: string | null
   avatar_decoration_id: string | null
   profile_music_url: string | null
+  profile_music_start?: number | null
+  profile_music_end?: number | null
+  profile_music_audio_path?: string | null
+  profile_music_plaque_id?: string | null
+  profile_music_effect_id?: string | null
+  profile_entry_animation?: string | null
+  banner_effect?: string | null
   bio: string | null
   is_guest: number
   created_at?: number | null
@@ -139,14 +147,36 @@ interface MessageRow {
 const VALID_ANIMATIONS = new Set(['none', 'shimmer', 'rainbow', 'pulse'])
 
 /** Cheap friend-check — used by `rowToPublic` to gate canViewX flags.
- *  Symmetric reads: a friendship row exists in BOTH directions so we
- *  only need to check one. */
+ *
+ *  IMPORTANT : on interroge l'edge sortante du VIEWER (= viewer →
+ *  profile), pas l'inverse. Pourquoi : le launcher ne sync que les
+ *  amis sortants du current user en DB locale, donc l'edge
+ *  (profile, viewer) n'existe PAS sur la machine du viewer pour un
+ *  ami cloud-syncé. L'ancienne version inversait les args et
+ *  retournait toujours false → tous les viewers étaient classés
+ *  "stranger" pour les amis cloud, ce qui :
+ *    - cachait la presence si l'ami avait visibility='friends'
+ *    - bloquait les sections "friends-only" sur le profil (library,
+ *      playtime, etc.)
+ *
+ *  Vérifie aussi l'edge inverse — si pour une raison X les deux
+ *  directions existent localement, on accepte ; ça couvre le rare
+ *  cas où on consulte un user qu'on a en cloud ET dont la machine
+ *  a pushé son edge vers la nôtre (multi-account même launcher,
+ *  ou cloud:listFriends qui aurait inséré les deux). */
 function isViewerFriendOf(profileUserId: string, viewerId: string | null): boolean {
   if (!viewerId || viewerId === profileUserId) return false
   try {
     const row = getDatabase()
-      .prepare('SELECT 1 FROM friends WHERE user_id = ? AND friend_id = ? LIMIT 1')
-      .get(profileUserId, viewerId) as { 1?: number } | undefined
+      .prepare(
+        `SELECT 1 FROM friends
+          WHERE (user_id = ? AND friend_id = ?)
+             OR (user_id = ? AND friend_id = ?)
+          LIMIT 1`,
+      )
+      .get(viewerId, profileUserId, profileUserId, viewerId) as
+      | { 1?: number }
+      | undefined
     return !!row
   } catch {
     return false
@@ -200,6 +230,13 @@ function rowToPublic(row: UserRow, viewerId: string | null = null): PublicProfil
     profileEffectId: row.profile_effect_id,
     avatarDecorationId: row.avatar_decoration_id,
     profileMusicUrl: row.profile_music_url,
+    profileMusicStart: row.profile_music_start ?? null,
+    profileMusicEnd: row.profile_music_end ?? null,
+    profileMusicAudioPath: row.profile_music_audio_path ?? null,
+    profileMusicPlaqueId: row.profile_music_plaque_id ?? null,
+    profileMusicEffectId: row.profile_music_effect_id ?? null,
+    profileEntryAnimation: row.profile_entry_animation ?? null,
+    bannerEffect: row.banner_effect ?? null,
     bio: row.bio,
     isGuest: row.is_guest === 1,
     createdAt: typeof row.created_at === 'number' ? row.created_at : null,
@@ -224,6 +261,9 @@ function rowToPublic(row: UserRow, viewerId: string | null = null): PublicProfil
 
 const USER_PUBLIC_COLS = `id, username, display_name, avatar_path, banner_path, username_color,
   username_animation, plaque_id, profile_effect_id, avatar_decoration_id, profile_music_url,
+  profile_music_start, profile_music_end, profile_music_audio_path,
+  profile_music_plaque_id, profile_music_effect_id,
+  profile_entry_animation, banner_effect,
   bio, is_guest, created_at, updated_at,
   is_profile_public, is_library_public, is_playtime_public, is_favorites_public,
   is_reviews_public, is_heatmap_public, is_achievements_public, is_friends_public,
@@ -282,6 +322,19 @@ export function upsertCloudFriend(friend: {
   bannerPath?: string | null
   bio?: string | null
   createdAt?: string | null
+  /** Aggregated stats pushed by the friend's launcher. When
+   *  present, they're mirrored into the remote_* columns and used
+   *  by `getProfile` to drive the Profile page's "X jeux" badge
+   *  for non-self viewers. */
+  stats?: {
+    libraryCount?: number | null
+    totalPlaytimeSeconds?: number | null
+    completedCount?: number | null
+    reviewCount?: number | null
+    lastPlayedTitle?: string | null
+    lastPlayedCoverUrl?: string | null
+    lastPlayedAt?: string | null
+  } | null
 }): void {
   if (!friend || typeof friend !== 'object' || !friend.id) return
   const db = getDatabase()
@@ -295,6 +348,17 @@ export function upsertCloudFriend(friend: {
   const createdAt = friend.createdAt
     ? new Date(friend.createdAt).getTime() || now
     : now
+  // Normalise stats — accept whichever subset the cloud sent and
+  // fall back to 0 / null for the rest so the column types are
+  // never NULL on numerics (the schema declares NOT NULL DEFAULT 0).
+  const s = friend.stats ?? {}
+  const libCount = typeof s.libraryCount === 'number' ? s.libraryCount : 0
+  const playtime = typeof s.totalPlaytimeSeconds === 'number' ? s.totalPlaytimeSeconds : 0
+  const completed = typeof s.completedCount === 'number' ? s.completedCount : 0
+  const reviews = typeof s.reviewCount === 'number' ? s.reviewCount : 0
+  const lastTitle = s.lastPlayedTitle ?? null
+  const lastCover = s.lastPlayedCoverUrl ?? null
+  const lastAt = s.lastPlayedAt ? new Date(s.lastPlayedAt).getTime() || null : null
   try {
     // INSERT OR REPLACE preserves the FK semantics (library_games,
     // friends, messages etc. all reference users.id with ON DELETE
@@ -302,16 +366,44 @@ export function upsertCloudFriend(friend: {
     // would cascade-nuke them). Use UPSERT via ON CONFLICT instead
     // so existing local rows survive the friend refresh.
     db.prepare(
-      `INSERT INTO users (id, username, display_name, avatar_path, banner_path, bio, is_guest, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+      `INSERT INTO users (
+         id, username, display_name, avatar_path, banner_path, bio, is_guest,
+         created_at, updated_at,
+         remote_library_count, remote_total_playtime_seconds, remote_completed_count,
+         remote_review_count, remote_last_played_title, remote_last_played_cover_url,
+         remote_last_played_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          username = excluded.username,
          display_name = excluded.display_name,
          avatar_path = excluded.avatar_path,
          banner_path = excluded.banner_path,
          bio = excluded.bio,
-         updated_at = excluded.updated_at`,
-    ).run(id, username, displayName, avatarPath, bannerPath, bio, createdAt, now)
+         updated_at = excluded.updated_at,
+         remote_library_count = excluded.remote_library_count,
+         remote_total_playtime_seconds = excluded.remote_total_playtime_seconds,
+         remote_completed_count = excluded.remote_completed_count,
+         remote_review_count = excluded.remote_review_count,
+         remote_last_played_title = excluded.remote_last_played_title,
+         remote_last_played_cover_url = excluded.remote_last_played_cover_url,
+         remote_last_played_at = excluded.remote_last_played_at`,
+    ).run(
+      id,
+      username,
+      displayName,
+      avatarPath,
+      bannerPath,
+      bio,
+      createdAt,
+      now,
+      libCount,
+      playtime,
+      completed,
+      reviews,
+      lastTitle,
+      lastCover,
+      lastAt,
+    )
   } catch {
     // Swallow — a malformed friend row should not abort the entire
     // friends list refresh. We log via console for diagnostics; the
@@ -325,12 +417,52 @@ export function getProfile(
   viewerId: string | null = null
 ): { profile: PublicProfile; stats: ProfileStats } | null {
   const db = getDatabase()
-  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined
+  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as
+    | (UserRow & {
+        remote_library_count?: number | null
+        remote_total_playtime_seconds?: number | null
+        remote_completed_count?: number | null
+        remote_review_count?: number | null
+        remote_last_played_title?: string | null
+        remote_last_played_cover_url?: string | null
+        remote_last_played_at?: number | null
+      })
+    | undefined
   if (!row) return null
-  const libraryCount = (db.prepare('SELECT COUNT(*) AS c FROM library_games WHERE user_id = ?').get(userId) as { c: number }).c
-  const totalPlaytime = (db.prepare('SELECT COALESCE(SUM(total_playtime_seconds), 0) AS s FROM library_games WHERE user_id = ?').get(userId) as { s: number }).s
-  const completedCount = (db.prepare("SELECT COUNT(*) AS c FROM library_games WHERE user_id = ? AND status = 'completed'").get(userId) as { c: number }).c
-  const reviewCount = (db.prepare('SELECT COUNT(*) AS c FROM reviews WHERE user_id = ?').get(userId) as { c: number }).c
+  // Local counts — accurate for the launcher OWNER (rows live in
+  // the local SQLite) and ~always 0 for a friend whose library
+  // never landed locally.
+  const localLibraryCount = (db.prepare('SELECT COUNT(*) AS c FROM library_games WHERE user_id = ?').get(userId) as { c: number }).c
+  const localTotalPlaytime = (db.prepare('SELECT COALESCE(SUM(total_playtime_seconds), 0) AS s FROM library_games WHERE user_id = ?').get(userId) as { s: number }).s
+  const localCompletedCount = (db.prepare("SELECT COUNT(*) AS c FROM library_games WHERE user_id = ? AND status = 'completed'").get(userId) as { c: number }).c
+  const localReviewCount = (db.prepare('SELECT COUNT(*) AS c FROM reviews WHERE user_id = ?').get(userId) as { c: number }).c
+  // For NON-self profiles we fall through to the remote_* columns
+  // populated by upsertCloudFriend (cloud:listFriends payload).
+  // Logic: use the local count when it's > 0 (the viewer happens
+  // to also own a copy of this user's rows, e.g. they share a
+  // launcher install), otherwise take whatever the cloud said.
+  // For the OWNER we always use local — it's the source of truth.
+  const isSelfView = !!viewerId && viewerId === row.id
+  const libraryCount = isSelfView
+    ? localLibraryCount
+    : localLibraryCount > 0
+      ? localLibraryCount
+      : (row.remote_library_count ?? 0)
+  const totalPlaytime = isSelfView
+    ? localTotalPlaytime
+    : localTotalPlaytime > 0
+      ? localTotalPlaytime
+      : (row.remote_total_playtime_seconds ?? 0)
+  const completedCount = isSelfView
+    ? localCompletedCount
+    : localCompletedCount > 0
+      ? localCompletedCount
+      : (row.remote_completed_count ?? 0)
+  const reviewCount = isSelfView
+    ? localReviewCount
+    : localReviewCount > 0
+      ? localReviewCount
+      : (row.remote_review_count ?? 0)
   const avgRow = db
     .prepare('SELECT AVG(rating) AS avg FROM reviews WHERE user_id = ?')
     .get(userId) as { avg: number | null }
@@ -355,6 +487,29 @@ export function getProfile(
         total_playtime_seconds: number
       }
     | undefined
+  // If no local recent row but the cloud reported one (cross-user
+  // view), synthesise a recentGame off the remote_* columns. The
+  // libraryGameId is faked here because the viewer can't navigate
+  // into the friend's library — the card is informational.
+  const recentGame = recentRow
+    ? {
+        libraryGameId: recentRow.id,
+        title: recentRow.title,
+        coverUrl: recentRow.cover_url,
+        lastPlayedAt: recentRow.last_played_at,
+        totalPlaytimeSeconds: recentRow.total_playtime_seconds,
+        isRunning: isGameRunning(recentRow.id),
+      }
+    : !isSelfView && row.remote_last_played_title && row.remote_last_played_at
+      ? {
+          libraryGameId: `remote:${row.id}`,
+          title: row.remote_last_played_title,
+          coverUrl: row.remote_last_played_cover_url ?? null,
+          lastPlayedAt: row.remote_last_played_at,
+          totalPlaytimeSeconds: row.remote_total_playtime_seconds ?? 0,
+          isRunning: false,
+        }
+      : null
   return {
     profile: rowToPublic(row, viewerId),
     stats: {
@@ -365,19 +520,7 @@ export function getProfile(
       avgRating: avgRow.avg != null ? Number(avgRow.avg) : null,
       friendCount,
       lastActiveAt: row.updated_at,
-      recentGame: recentRow
-        ? {
-            libraryGameId: recentRow.id,
-            title: recentRow.title,
-            coverUrl: recentRow.cover_url,
-            lastPlayedAt: recentRow.last_played_at,
-            totalPlaytimeSeconds: recentRow.total_playtime_seconds,
-            // Pull the live running flag from the library service —
-            // it's an in-memory `Map<id, ChildProcess>`, NOT a DB
-            // column, so a stale row doesn't ghost-report as live.
-            isRunning: isGameRunning(recentRow.id),
-          }
-        : null,
+      recentGame,
     },
   }
 }
@@ -455,18 +598,160 @@ export function updatePrivacySettings(
   return getPrivacySettings(userId)
 }
 
-export function listFriends(userId: string): PublicProfile[] {
-  const rows = getDatabase()
+/**
+ * Liste les amis d'un user, avec extras requis par le FriendsTab du
+ * profil (cartes ScanVerse-style) :
+ *   - commonFriendsCount + commonFriends[0..4]
+ *     Computés par rapport au `viewerId` (le user qui consulte) et
+ *     non par rapport à `userId` (le propriétaire du profil). Ça
+ *     répond à la question "combien d'amis ai-je en commun avec cet
+ *     ami de la personne dont je consulte le profil". Quand
+ *     `viewerId` est absent (ou égal à `userId`), on renvoie 0 / []
+ *     pour ne pas exposer de méta inutile.
+ *
+ *     ⚠️ LIMITATION pour les amis cloud-syncés : le sync cloud ne
+ *     pousse QUE les edges sortants (`me → friend`), pas les edges
+ *     entrants (`friend → other`). Du coup la sous-requête
+ *     `SELECT friend_id FROM friends WHERE user_id = X` renvoie ∅
+ *     pour un X cloud-syncé et le count tombe à 0 même si X et un
+ *     autre de mes amis sont effectivement liés. Pour fixer ça
+ *     proprement il faudrait soit (a) propager les common-friends
+ *     côté serveur dans la payload `/v1/friends`, soit (b) sync
+ *     l'edge list complète de chaque ami. Aucun des deux n'est
+ *     possible sans changement cloud.
+ *
+ *   - recentGame : dernière library_games par last_played_at. Pour
+ *     les amis cloud-syncés sans library_games local, fallback sur
+ *     les colonnes `remote_last_played_*` (poussées par leur
+ *     launcher via `upsertCloudFriend`). Skippé quand
+ *     hide_play_activity = 1.
+ *
+ * Le COST est O(N) requêtes additionnelles (3 par ami : common count,
+ * common stack top-5, recent game). Acceptable jusqu'à ~200 amis ;
+ * au-delà il faudrait un JOIN GROUP BY mais on n'est pas près de ce
+ * volume sur un launcher mono-user.
+ */
+export function listFriends(userId: string, viewerId?: string): FriendListItem[] {
+  const db = getDatabase()
+  const rows = db
     .prepare(`
       SELECT u.id, u.username, u.display_name, u.avatar_path, u.banner_path, u.username_color,
              u.username_animation, u.plaque_id, u.profile_effect_id, u.avatar_decoration_id,
-             u.profile_music_url, u.bio, u.is_guest, u.updated_at
+             u.profile_music_url, u.profile_music_start, u.profile_music_end,
+             u.profile_music_audio_path, u.profile_music_plaque_id, u.profile_music_effect_id,
+             u.bio, u.is_guest, u.updated_at, u.hide_play_activity,
+             u.presence_status, u.last_active_at, u.presence_visibility,
+             u.remote_last_played_title, u.remote_last_played_cover_url,
+             u.remote_last_played_at, u.remote_total_playtime_seconds
       FROM friends f JOIN users u ON u.id = f.friend_id
       WHERE f.user_id = ?
       ORDER BY u.updated_at DESC
     `)
-    .all(userId) as UserRow[]
-  return rows.map((r) => rowToPublic(r))
+    .all(userId) as Array<
+      UserRow & {
+        hide_play_activity?: number | null
+        remote_last_played_title?: string | null
+        remote_last_played_cover_url?: string | null
+        remote_last_played_at?: number | null
+        remote_total_playtime_seconds?: number | null
+      }
+    >
+
+  // Prepared statements réutilisés à chaque itération — gains
+  // sensibles vs prepare() à chaque ami.
+  const countCommon = db.prepare(
+    `SELECT COUNT(*) AS c
+       FROM friends f1
+      WHERE f1.user_id = ?
+        AND f1.friend_id != ?
+        AND f1.friend_id IN (SELECT friend_id FROM friends WHERE user_id = ?)`,
+  )
+  const listCommon = db.prepare(
+    `SELECT u.id, u.username, u.display_name, u.avatar_path
+       FROM friends f1
+       JOIN users u ON u.id = f1.friend_id
+      WHERE f1.user_id = ?
+        AND f1.friend_id != ?
+        AND f1.friend_id IN (SELECT friend_id FROM friends WHERE user_id = ?)
+      ORDER BY u.updated_at DESC
+      LIMIT 5`,
+  )
+  const getRecent = db.prepare(
+    `SELECT id, title, cover_url, last_played_at, total_playtime_seconds
+       FROM library_games
+      WHERE user_id = ? AND last_played_at IS NOT NULL
+      ORDER BY last_played_at DESC
+      LIMIT 1`,
+  )
+
+  return rows.map((r) => {
+    // viewerId pour le rowToPublic → résout proprement les flags
+    // canViewPlaytime/etc. en relatif au viewer (pas au owner).
+    const base = rowToPublic(r, viewerId)
+    // Pas de viewerId, ou le viewer regarde sa propre liste : pas
+    // d'intersection à calculer.
+    const hasViewer = viewerId && viewerId !== r.id
+    const commonFriendsCount = hasViewer
+      ? (countCommon.get(viewerId, r.id, r.id) as { c: number }).c
+      : 0
+    const commonFriends = hasViewer
+      ? (listCommon.all(viewerId, r.id, r.id) as Array<{
+          id: string
+          username: string
+          display_name: string | null
+          avatar_path: string | null
+        }>).map((u) => ({
+          id: u.id,
+          username: u.username,
+          displayName: u.display_name,
+          avatarPath: u.avatar_path,
+        }))
+      : []
+    // hide_play_activity = colonne owner-set qui masque le recent
+    // game sur TOUS les viewers (pas un gate per-friend). Quand le
+    // bit est on, recentGame = null direct.
+    let recentGame: ProfileStats['recentGame'] = null
+    if (!r.hide_play_activity) {
+      const localRow = getRecent.get(r.id) as
+        | {
+            id: string
+            title: string
+            cover_url: string | null
+            last_played_at: number
+            total_playtime_seconds: number
+          }
+        | undefined
+      if (localRow) {
+        recentGame = {
+          libraryGameId: localRow.id,
+          title: localRow.title,
+          coverUrl: localRow.cover_url,
+          lastPlayedAt: localRow.last_played_at,
+          totalPlaytimeSeconds: localRow.total_playtime_seconds,
+          isRunning: isGameRunning(localRow.id),
+        }
+      } else if (r.remote_last_played_title && r.remote_last_played_at) {
+        // Fallback cloud — l'ami a poussé son "last played" dans la
+        // colonne remote_* via son propre launcher (cf.
+        // upsertCloudFriend). Le libraryGameId est synthétique car
+        // le jeu vit dans LEUR library, pas la nôtre.
+        recentGame = {
+          libraryGameId: `remote:${r.id}`,
+          title: r.remote_last_played_title,
+          coverUrl: r.remote_last_played_cover_url ?? null,
+          lastPlayedAt: r.remote_last_played_at,
+          totalPlaytimeSeconds: r.remote_total_playtime_seconds ?? 0,
+          isRunning: false,
+        }
+      }
+    }
+    return {
+      ...base,
+      commonFriendsCount,
+      commonFriends,
+      recentGame,
+    }
+  })
 }
 
 export function addFriend(

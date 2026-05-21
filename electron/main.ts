@@ -26,7 +26,9 @@ import { initCloud, shutdownCloud } from './services/cloud.service'
 import { registerCloudIpc } from './ipc/cloud.ipc'
 import { registerCloudSaveIpc } from './ipc/cloud-save.ipc'
 import { registerProfileIpc } from './ipc/profile.ipc'
+import { registerMusicIpc } from './ipc/music.ipc'
 import { registerPcScannerIpc } from './ipc/pc-scanner.ipc'
+import { registerControllerIpc } from './ipc/controller.ipc'
 import {
   initAutoUpdate,
   shutdownAutoUpdate,
@@ -293,7 +295,9 @@ void app.whenReady().then(async () => {
   registerArtworkIpc()
   registerAchievementsIpc()
   registerProfileIpc()
+  registerMusicIpc()
   registerPcScannerIpc()
+  registerControllerIpc()
   registerCloudIpc()
   registerCloudSaveIpc()
   registerAutoUpdateIpc()

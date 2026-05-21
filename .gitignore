@@ -40,3 +40,7 @@ build/installer-icon.ico
 # that occasionally appear after a Bash subprocess crashes.
 Hydra Source Code/
 *.stackdump
+# Raw asset scraping staging dir — copied to public/ at integration
+# time, the served version lives there. Keeping `assets/` out of git
+# avoids duplicating ~3 MB of PNGs.
+/assets/

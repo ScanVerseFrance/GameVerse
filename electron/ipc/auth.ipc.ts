@@ -29,6 +29,21 @@ interface UserRow {
   username_color: string | null
   username_color_2: string | null
   username_animation: string | null
+  /** Font catalogue id (Syne / Inter / Bebas Neue / etc.). null
+   *  = default Syne. Added in v0.3.4. */
+  username_font: string | null
+  /** Entry animation id played once on profile mount. Added in
+   *  v0.3.4. null = no animation. */
+  profile_entry_animation: string | null
+  /** Banner FX catalogue id (BANNER_EFFECTS in
+   *  src/config/bannerEffects.ts). Adds particles above the profile
+   *  banner (petals/snow/sparkles/stars/rays/gold). null = none. */
+  banner_effect: string | null
+  /** Cosmetic catalogue id de la décoration d'avatar — exposée ici
+   *  (en plus de profile.service.getCosmetics) pour que les surfaces
+   *  ambiantes (TopNav avatar, Sidebar, etc.) puissent afficher
+   *  l'overlay déco sans devoir faire un round-trip cosmetics. */
+  avatar_decoration_id: string | null
   is_guest: number
   created_at: number
   updated_at: number
@@ -51,6 +66,10 @@ interface PublicUser {
     | 'glitch'
     | 'neon'
     | null
+  usernameFont: string | null
+  profileEntryAnimation: string | null
+  bannerEffect: string | null
+  avatarDecorationId: string | null
   bio: string | null
   isGuest: boolean
 }
@@ -90,10 +109,58 @@ function toPublic(row: UserRow): PublicUser {
     usernameColor: row.username_color,
     usernameColor2: row.username_color_2,
     usernameAnimation: normalizeUsernameAnimation(row.username_animation),
+    usernameFont: row.username_font,
+    profileEntryAnimation: row.profile_entry_animation,
+    bannerEffect: row.banner_effect,
+    avatarDecorationId: row.avatar_decoration_id,
     bio: row.bio,
     isGuest: row.is_guest === 1,
   }
 }
+
+// Allowed entry-animation ids. Mirror of
+// PROFILE_ENTRY_ANIMATIONS in src/config/usernameCustomisations.ts —
+// duplicated here to avoid pulling the renderer-side module into
+// the main-process bundle.
+const VALID_ENTRY_ANIMATIONS = new Set([
+  'none',
+  'fade',
+  'slide-up',
+  'zoom',
+  'blur',
+  'wipe',
+])
+
+// Effets de bannière acceptés — mirror de BANNER_EFFECTS dans
+// src/config/bannerEffects.ts. Dupliqué côté main pour éviter de
+// puller le module renderer dans le bundle electron.
+const VALID_BANNER_EFFECTS = new Set([
+  'none',
+  'petals',
+  'snow',
+  'sparkles',
+  'stars',
+  'rays',
+  'gold',
+])
+
+// Catalogue ids accepted by `username_font`. Keep this set in sync
+// with USERNAME_FONTS in src/config/usernameCustomisations.ts —
+// duplicating the list avoids a renderer-side import in the main
+// process bundle.
+const VALID_USERNAME_FONTS = new Set([
+  'default',
+  'inter',
+  'space-grotesk',
+  'bebas-neue',
+  'pacifico',
+  'permanent-marker',
+  'press-start',
+  'orbitron',
+  'caveat',
+  'unifrakturmaguntia',
+  'monoton',
+])
 
 function issueToken(userId: string): string {
   const secret = getJwtSecret()
@@ -218,6 +285,9 @@ export function registerAuthIpc() {
         usernameColor: string
         usernameColor2: string | null
         usernameAnimation: UsernameAnimation
+        usernameFont: string | null
+        profileEntryAnimation: string | null
+        bannerEffect: string | null
         email: string
       }>
     ): Promise<AuthResult> => {
@@ -277,6 +347,44 @@ export function registerAuthIpc() {
           const v = normalizeUsernameAnimation(patch.usernameAnimation)
           fields.push('username_animation = ?')
           values.push(v)
+        }
+        if (patch.usernameFont !== undefined) {
+          // null clears back to the default Syne face; otherwise
+          // the value must be a known catalogue id (mirrors the
+          // server-side validation in ScanVerse's
+          // routes/users.js → ALLOWED_USERNAME_FONT_IDS).
+          const f = patch.usernameFont == null ? null : sanitizeString(patch.usernameFont, 32)
+          if (f && !VALID_USERNAME_FONTS.has(f)) {
+            return { ok: false, error: 'Police de pseudo inconnue' }
+          }
+          fields.push('username_font = ?')
+          values.push(f)
+        }
+        if (patch.profileEntryAnimation !== undefined) {
+          // null and 'none' both mean "no animation"; normalise to
+          // null in storage so the profile page can skip applying
+          // any class. Any other value is validated against the
+          // catalogue.
+          const raw = patch.profileEntryAnimation
+          const e =
+            raw == null || raw === 'none'
+              ? null
+              : sanitizeString(raw, 32)
+          if (e && !VALID_ENTRY_ANIMATIONS.has(e)) {
+            return { ok: false, error: "Animation d'entrée inconnue" }
+          }
+          fields.push('profile_entry_animation = ?')
+          values.push(e)
+        }
+        if (patch.bannerEffect !== undefined) {
+          const raw = patch.bannerEffect
+          const e =
+            raw == null || raw === 'none' ? null : sanitizeString(raw, 32)
+          if (e && !VALID_BANNER_EFFECTS.has(e)) {
+            return { ok: false, error: 'Effet de bannière inconnu' }
+          }
+          fields.push('banner_effect = ?')
+          values.push(e)
         }
         if (patch.email !== undefined) {
           const e = sanitizeString(patch.email, 254).toLowerCase() || null

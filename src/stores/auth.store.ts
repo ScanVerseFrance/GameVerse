@@ -8,6 +8,13 @@ interface AuthState {
   user: PublicUser | null
   token: string | null
   error: string | null
+  /** Bumped à chaque appel réussi de updateProfile() ou
+   *  adoptFromCloud(). Les pages qui rendent un profil utilisateur
+   *  (ex. /community/profile/:id) écoutent ce nonce pour re-fetch
+   *  les données quand l'owner édite bio / avatar / bannière /
+   *  pseudo dans Compte ou Personnalisation — sans ça la page
+   *  affichait des données stale jusqu'à un reload manuel. */
+  profileNonce: number
   restoreSession: () => Promise<void>
   login: (username: string, password: string) => Promise<boolean>
   loginGuest: () => Promise<boolean>
@@ -29,6 +36,12 @@ interface AuthState {
   }) => Promise<boolean>
   logout: () => Promise<void>
   updateProfile: (patch: ProfilePatch) => Promise<boolean>
+  /** Re-fetch le user depuis la DB via auth.getSession sans toucher
+   *  au token. Sert aux surfaces qui mettent à jour des champs hors du
+   *  scope de `updateProfile` (ex. cosmétiques modifiés via
+   *  profile.updateCosmetics → l'auth store reste stale sinon, et le
+   *  TopNav / Sidebar continuent d'afficher l'ancienne déco). */
+  refreshUser: () => Promise<void>
   clearError: () => void
 }
 
@@ -37,6 +50,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
   error: null,
+  profileNonce: 0,
 
   restoreSession: async () => {
     const token = localStorage.getItem(TOKEN_KEY)
@@ -119,10 +133,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!token) return false
     const res = await window.nexus.auth.updateProfile(token, patch)
     if (res.ok && res.user) {
-      set({ user: res.user })
+      // Bump le nonce pour que la ProfilePage de cet utilisateur
+      // déclenche un re-fetch (sinon bio/avatar/bannière édités
+      // restaient invisibles tant qu'on ne reloadait pas la page).
+      set({ user: res.user, profileNonce: get().profileNonce + 1 })
       return true
     }
     return false
+  },
+
+  refreshUser: async () => {
+    // Refetch via getSession sans modifier le token — utilisé après
+    // un updateCosmetics qui touche les colonnes users que toPublic
+    // expose (avatarDecorationId pour la déco TopNav, etc.). Sans
+    // ça l'auth store reste sur l'ancienne valeur jusqu'au restart.
+    const token = get().token
+    if (!token) return
+    try {
+      const res = await window.nexus.auth.getSession(token)
+      if (res.ok && res.user && !res.user.isGuest) {
+        set({ user: res.user, profileNonce: get().profileNonce + 1 })
+      }
+    } catch {
+      /* swallow — refresh est best-effort, on ne casse pas la session
+       *  si l'IPC échoue ponctuellement */
+    }
   },
 
   clearError: () => set({ error: null }),

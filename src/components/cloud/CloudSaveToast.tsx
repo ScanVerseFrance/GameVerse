@@ -51,10 +51,20 @@ export function CloudSaveToastContainer() {
         // act on. A cloud-disconnected skip is uninteresting (badge
         // already shows offline); a no-save-files skip is also
         // silent so launching a game without saves doesn't pop a
-        // notification every quit.
+        // notification every quit. Same for two new skip reasons:
+        //   - steam_managed: Steam handles save sync via Steam
+        //     Cloud, we deliberately don't double-upload these.
+        //   - no_ludusavi_manifest: the game's title isn't in
+        //     PCGamingWiki so Ludusavi can't tell us what to back
+        //     up. Surface as red-error would be misleading — the
+        //     user can't fix it from the launcher (it's a manifest
+        //     issue upstream). Stay quiet, the SavesModal will
+        //     still surface the situation if the user opens it.
         if (
           data.skipReason === 'cloud_disconnected' ||
-          data.skipReason === 'no_save_files'
+          data.skipReason === 'no_save_files' ||
+          data.skipReason === 'steam_managed' ||
+          data.skipReason === 'no_ludusavi_manifest'
         ) {
           return
         }

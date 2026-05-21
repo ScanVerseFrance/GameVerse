@@ -25,6 +25,22 @@ export interface PublicUser {
    *  two-colour animated sweep via CSS variables (--uname-c1 /
    *  --uname-c2). Forced off when animation = 'rainbow'. */
   usernameColor2: string | null
+  /** Font catalogue id from src/config/usernameCustomisations.ts.
+   *  When null the username renders in the default app font (Syne).
+   *  Added in v0.3.4 — parity with ScanVerse's font picker. */
+  usernameFont: string | null
+  /** Entry-animation id (PROFILE_ENTRY_ANIMATIONS catalogue) applied
+   *  once when /community/profile/:id mounts. null = no animation.
+   *  Added in v0.3.4 — parity with ScanVerse. */
+  profileEntryAnimation: string | null
+  /** Banner FX catalogue id (BANNER_EFFECTS). Adds particles above
+   *  the profile banner. null = no FX. v0.3.4 — ScanVerse parity. */
+  bannerEffect: string | null
+  /** Cosmetic catalogue id de la décoration d'avatar. Inclus dans
+   *  PublicUser (auth store) pour que les surfaces ambiantes (TopNav,
+   *  Sidebar, etc.) puissent rendre l'overlay déco autour de l'avatar
+   *  de l'utilisateur connecté sans round-trip getCosmetics. */
+  avatarDecorationId: string | null
   isGuest: boolean
 }
 
@@ -55,7 +71,7 @@ export interface RecoveryCodeResult {
 
 export type ProfilePatch = Partial<{
   displayName: string
-  bio: string
+  bio: string | null
   avatarPath: string
   bannerPath: string
   usernameColor: string
@@ -67,5 +83,8 @@ export type ProfilePatch = Partial<{
     | 'glitch'
     | 'neon'
   usernameColor2: string | null
+  usernameFont: string | null
+  profileEntryAnimation: string | null
+  bannerEffect: string | null
   email: string
 }>

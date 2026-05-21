@@ -47,12 +47,35 @@ export interface Nameplate {
 export interface ProfileEffect {
   id: string
   name: string
-  parts: Array<{ index: number; file: string }>
+  /** Each part = one APNG layer. Parts are ordered low → high; lower
+   *  indices render BEHIND higher ones (Discord composition rule).
+   *  `durationMs` is the natural playthrough length of the APNG ;
+   *  `plays` distinguishes one-shot intros (1, freeze on last frame)
+   *  from ambient loops (0, breathe 5 s between iterations). */
+  parts: Array<{
+    index: number
+    file: string
+    durationMs: number
+    plays: 0 | 1
+  }>
+  /** Aggregate = longest part's duration. Used by the player to drive
+   *  the "occasional intro replay" cycle without scanning parts. */
+  durationMs: number
 }
 
 export const AVATAR_DECORATIONS: AvatarDecoration[] = manifest.avatarDecorations
 export const NAMEPLATES: Nameplate[] = manifest.nameplates
-export const PROFILE_EFFECTS: ProfileEffect[] = manifest.profileEffects
+export const PROFILE_EFFECTS: ProfileEffect[] = manifest.profileEffects as ProfileEffect[]
+
+/** Indexed lookups — keyed by id so renderers can resolve a single
+ *  effect in O(1) instead of scanning 331 entries on every render
+ *  (ScanVerse parity, used by the music HUD picker). */
+export const PROFILE_EFFECTS_BY_ID: Record<string, ProfileEffect> = Object.fromEntries(
+  PROFILE_EFFECTS.map((e) => [e.id, e]),
+)
+export const NAMEPLATES_BY_ID: Record<string, Nameplate> = Object.fromEntries(
+  NAMEPLATES.map((p) => [p.id, p]),
+)
 
 /* Synthetic "none" entries so the pickers can offer a "vanilla / no
  * decoration" choice without a separate code path. */
@@ -66,7 +89,12 @@ export const NONE_NAMEPLATE: Nameplate = {
   lightHex: null,
   gradientCss: null,
 }
-export const NONE_EFFECT: ProfileEffect = { id: 'none', name: 'Aucun', parts: [] }
+export const NONE_EFFECT: ProfileEffect = {
+  id: 'none',
+  name: 'Aucun',
+  parts: [],
+  durationMs: 0,
+}
 
 /* Lookup helpers — accept null IDs to make the call sites tidy. */
 export function findDecoration(id: string | null): AvatarDecoration {

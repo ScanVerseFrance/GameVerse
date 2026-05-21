@@ -11,11 +11,18 @@
  * `steam_appid` set, and surfacing per-row errors back to the
  * wizard so it can mark individual lines without losing the rest.
  */
-import { ipcMain } from 'electron'
+import { ipcMain, BrowserWindow } from 'electron'
 import path from 'node:path'
 import * as scanner from '../services/pc-scanner.service'
 import * as library from '../services/library.service'
 import { sanitizeString } from '../utils/security'
+
+/**
+ * Active scan signal — singleton mutable flag so `pcScanner:cancel`
+ * can flip it from anywhere and the in-flight deep walk notices
+ * between folders. Replaced on every new scan request.
+ */
+let activeSignal: { cancelled: boolean } | null = null
 
 export function registerPcScannerIpc(): void {
   ipcMain.handle('pcScanner:hasAnySource', async () => {
@@ -26,7 +33,7 @@ export function registerPcScannerIpc(): void {
     }
   })
 
-  ipcMain.handle('pcScanner:scan', async (_e, extraRootsRaw: unknown) => {
+  ipcMain.handle('pcScanner:scan', async (event, extraRootsRaw: unknown, optsRaw: unknown) => {
     // Validate the user-supplied extra roots (the wizard lets the
     // user add custom folders). We refuse anything that isn't an
     // absolute path string to keep the scanner from being tricked
@@ -38,11 +45,50 @@ export function registerPcScannerIpc(): void {
         .slice(0, 16)
         .map((r) => sanitizeString(r, 512))
     }
+    // Deep is opt-in via {deep:true} but the renderer always sends
+    // it now — we default to TRUE here so a call without options
+    // still walks everything (the user explicitly asked for a full
+    // PC scan, not the legacy "known dirs only" behaviour).
+    const opts = (optsRaw && typeof optsRaw === 'object' ? optsRaw : {}) as {
+      deep?: unknown
+    }
+    const deep = opts.deep !== false
+    // Throttled progress emitter — the walker fires per-folder which
+    // is way too chatty for the IPC bus. We rate-limit to ~10/s.
+    const win = BrowserWindow.fromWebContents(event.sender)
+    let lastEmit = 0
+    const emit = (p: string): void => {
+      const now = Date.now()
+      if (now - lastEmit < 100) return
+      lastEmit = now
+      try {
+        win?.webContents.send('pcScanner:progress', { currentPath: p })
+      } catch {
+        /* renderer closed — fall through */
+      }
+    }
+    const signal = { cancelled: false }
+    activeSignal = signal
     try {
-      return { ok: true as const, result: await scanner.runFullScan(extraRoots) }
+      const result = await scanner.runFullScan(extraRoots, {
+        deep,
+        onProgress: emit,
+        signal,
+      })
+      return { ok: true as const, result, cancelled: signal.cancelled }
     } catch (e) {
       return { ok: false as const, error: (e as Error).message }
+    } finally {
+      if (activeSignal === signal) activeSignal = null
     }
+  })
+
+  ipcMain.handle('pcScanner:cancel', async () => {
+    // Mark the in-flight scan as cancelled; the walker checks the
+    // flag between folders. Idempotent — calling when nothing is
+    // running is a no-op.
+    if (activeSignal) activeSignal.cancelled = true
+    return { ok: true as const }
   })
 
   /**
@@ -149,6 +195,14 @@ export function registerPcScannerIpc(): void {
           finalExe = mv.newExecutablePath ?? null
         }
         try {
+          // steamAppid vient du filtre catalogue Steam — quand
+          // présent, on l'écrit dans library_games.steam_appid pour
+          // récupérer automatiquement cover art / achievements / etc.
+          // sans round-trip supplémentaire au moment du rendu library.
+          const appid =
+            typeof g.steamAppid === 'number' && g.steamAppid > 0
+              ? g.steamAppid
+              : undefined
           const added = library.addLibraryGame({
             userId,
             title:
@@ -162,6 +216,7 @@ export function registerPcScannerIpc(): void {
             // we can re-scan + dedupe against them on a future Resync.
             sourceAddonId: 'local-scan',
             sourceGameId: `local:${path.basename(installPath).toLowerCase()}`,
+            steamAppId: appid,
           })
           crackedResults.push({
             installPath,

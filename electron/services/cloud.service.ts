@@ -378,8 +378,14 @@ async function openSocket(): Promise<void> {
     startHeartbeat()
     debugLog('cloud-ws', 'open', { url: wsUrl.replace(/token=[^&]+/, 'token=***') })
     setStatus('connected')
+    // Bootstrap presence — fetch the current state of every friend
+    // and seed local DB. Sans ça les rows users.presence_status
+    // restent stale tant qu'aucun presence:changed n'arrive (peut
+    // prendre plusieurs minutes), donc tous les amis sont marqués
+    // offline au boot même quand ils sont en ligne / en jeu.
+    void bootstrapFriendPresences()
   })
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     let env: CloudWsEnvelope | null = null
     try {
       env = JSON.parse(raw.toString()) as CloudWsEnvelope
@@ -413,6 +419,45 @@ async function openSocket(): Promise<void> {
         hasCurrentUser: !!currentUser,
       })
 
+      // ── presence:changed ─────────────────────────────────────────
+      // Le backend broadcaste ce type à chaque heartbeat / status
+      // patch d'un ami. Sans handler ici, on ne refresh JAMAIS le
+      // `last_active_at` local des amis cloud, et resolvePresence
+      // les flagge offline après PRESENCE_DECAY_MS (3 min).
+      // Résultat user-visible : ami marqué offline alors qu'il joue
+      // activement, recent game qui dit "à récemment joué" au lieu
+      // de "JOUE".
+      if (env.type === 'presence:changed') {
+        const p = env.data as {
+          userId?: string
+          status?: string
+          lastActiveAt?: string
+        } | null
+        if (p && typeof p.userId === 'string' && typeof p.status === 'string') {
+          try {
+            const { getDatabase } = await import('./database.service')
+            const ts = p.lastActiveAt
+              ? new Date(p.lastActiveAt).getTime() || Date.now()
+              : Date.now()
+            getDatabase()
+              .prepare(
+                'UPDATE users SET presence_status = ?, last_active_at = ? WHERE id = ?',
+              )
+              .run(p.status, ts, p.userId)
+            debugLog('cloud-ws', 'presence:changed → DB updated', {
+              userId: p.userId,
+              status: p.status,
+            })
+          } catch (err) {
+            debugLog('cloud-ws', 'presence:changed update failed', {
+              err: (err as Error).message,
+              userId: p.userId,
+            })
+          }
+        }
+        return
+      }
+
       if (env.type === 'message:new') {
         const m = env.data
         if (!m || typeof m !== 'object') {
@@ -425,12 +470,56 @@ async function openSocket(): Promise<void> {
           })
           return
         }
-        const peerName = peerDisplayNames.get(m.senderId) ?? null
-        const peerAvatar = peerAvatarUrls.get(m.senderId) ?? null
+        // Avatar resolution chain (parité avec activity:new) :
+        //   1. cache in-memory (warm depuis un event précédent)
+        //   2. row users locale (popullée par upsertCloudFriend au boot)
+        //   3. null → l'icône de fallback Lucide est affichée
+        // Sans le step 2, le 1er message d'une session affichait
+        // toujours le rond bleu + icône lucide parce que le cache
+        // n'avait pas encore été warmé.
+        let dbRow: {
+          display_name: string | null
+          username: string
+          avatar_path: string | null
+        } | null = null
+        try {
+          const { getDatabase } = await import('./database.service')
+          dbRow =
+            (getDatabase()
+              .prepare(
+                'SELECT display_name, username, avatar_path FROM users WHERE id = ?',
+              )
+              .get(m.senderId) as
+              | {
+                  display_name: string | null
+                  username: string
+                  avatar_path: string | null
+                }
+              | undefined) ?? null
+        } catch {
+          dbRow = null
+        }
+        const peerName =
+          peerDisplayNames.get(m.senderId) ??
+          dbRow?.display_name ??
+          dbRow?.username ??
+          null
+        const peerAvatar =
+          peerAvatarUrls.get(m.senderId) ??
+          dbRow?.avatar_path ??
+          null
+        // Warm les caches pour les events suivants.
+        if (peerName) peerDisplayNames.set(m.senderId, peerName)
+        if (peerAvatar) peerAvatarUrls.set(m.senderId, peerAvatar)
         debugLog('cloud-ws', 'message:new → pushToast', {
           senderId: m.senderId,
           peerName,
           hasAvatar: !!peerAvatar,
+          avatarSource: peerAvatarUrls.get(m.senderId)
+            ? 'cache'
+            : dbRow?.avatar_path
+              ? 'db'
+              : 'none',
         })
         toastSvc.pushToast({
           kind: 'friend_message',
@@ -472,13 +561,53 @@ async function openSocket(): Promise<void> {
             avatarUrl?: string | null
           }
         }).user
+        // Fallback DB query — quand l'event arrive sans embed user
+        // ET que les caches in-memory sont froids (premier event de
+        // la session p.ex.), on lit le row users locale qui a été
+        // populée par upsertCloudFriend. Ça garantit que le toast a
+        // toujours un nom + un avatar même au cold start, au lieu
+        // de tomber sur le rond vert Gamepad par défaut.
+        let dbRow: {
+          display_name: string | null
+          username: string
+          avatar_path: string | null
+        } | null = null
+        if (
+          !(
+            (embedded?.displayName || embedded?.username) &&
+            embedded?.avatarUrl
+          )
+        ) {
+          try {
+            const { getDatabase } = await import('./database.service')
+            dbRow =
+              (getDatabase()
+                .prepare(
+                  'SELECT display_name, username, avatar_path FROM users WHERE id = ?',
+                )
+                .get(a.userId) as
+                | {
+                    display_name: string | null
+                    username: string
+                    avatar_path: string | null
+                  }
+                | undefined) ?? null
+          } catch {
+            dbRow = null
+          }
+        }
         const peerName =
           embedded?.displayName ??
           embedded?.username ??
+          dbRow?.display_name ??
+          dbRow?.username ??
           peerDisplayNames.get(a.userId) ??
           null
         const peerAvatar =
-          embedded?.avatarUrl ?? peerAvatarUrls.get(a.userId) ?? null
+          embedded?.avatarUrl ??
+          dbRow?.avatar_path ??
+          peerAvatarUrls.get(a.userId) ??
+          null
         // Warm the caches with whatever we learned for the next event.
         if (peerName) peerDisplayNames.set(a.userId, peerName)
         if (peerAvatar) peerAvatarUrls.set(a.userId, peerAvatar)
@@ -486,6 +615,13 @@ async function openSocket(): Promise<void> {
           userId: a.userId,
           peerName,
           gameTitle,
+          avatarSource: embedded?.avatarUrl
+            ? 'embed'
+            : dbRow?.avatar_path
+              ? 'db'
+              : peerAvatarUrls.get(a.userId)
+                ? 'cache'
+                : 'none',
         })
         toastSvc.pushToast({
           kind: 'friend_launched_game',
@@ -494,7 +630,39 @@ async function openSocket(): Promise<void> {
           iconUrl: peerAvatar,
           coverUrl: payload?.coverUrl ?? null,
           link: `/community/profile/${a.userId}`,
+          // 3 s explicite (vs DEFAULT 6 s) — user feedback : "fait en
+          // sorte qu'elle reste 3s, pas +". Les toasts "ami joue" sont
+          // de l'info ambient, pas une action urgente, donc une vie
+          // courte est appropriée.
+          durationMs: 3000,
         })
+
+        // Sync presence + recentGame en DB locale — le serveur nous
+        // dit que cet ami vient de lancer un jeu, donc :
+        //   1) son `presence_status` doit passer à 'in_game' (sinon
+        //      le dot violet ne s'affiche pas sur sa friend card)
+        //   2) ses colonnes `remote_last_played_*` doivent refléter
+        //      la game actuelle (sinon le bloc "Joue à X" en bas de
+        //      la friend card reste vide pour les amis cloud)
+        try {
+          const { getDatabase } = await import('./database.service')
+          const { updatePresence } = await import('./social.service')
+          updatePresence(a.userId, 'in_game')
+          getDatabase()
+            .prepare(
+              `UPDATE users SET
+                 remote_last_played_title = ?,
+                 remote_last_played_cover_url = ?,
+                 remote_last_played_at = ?
+               WHERE id = ?`,
+            )
+            .run(gameTitle, payload?.coverUrl ?? null, Date.now(), a.userId)
+        } catch (err) {
+          debugLog('cloud-ws', 'activity:new presence sync failed', {
+            userId: a.userId,
+            err: (err as Error).message,
+          })
+        }
       } else if (env.type === 'friend:added') {
         // Cache the peer's display name + avatar as soon as we see
         // one — used by subsequent message / activity toasts to
@@ -615,6 +783,52 @@ async function openSocket(): Promise<void> {
  * dead, lands in 'disconnected'. If present but the network is down,
  * lands in 'offline' with the token kept for a future retry.
  */
+/**
+ * One-shot catch-up: read the local user row + PATCH /v1/auth/me
+ * with whatever we have. The cloud accepts the same payload shape
+ * the launcher uses for live profile updates, and Prisma's update
+ * is a no-op when every field matches the existing values — so
+ * spamming this on every boot is cheap.
+ *
+ * We deliberately push avatar/banner/bio/displayName but NOT email,
+ * to avoid accidentally rewriting an email the user changed via
+ * another machine.
+ */
+async function syncLocalProfileToCloud(userId: string): Promise<void> {
+  const { getDatabase } = await import('./database.service')
+  const row = getDatabase()
+    .prepare(
+      'SELECT display_name, bio, avatar_path, banner_path FROM users WHERE id = ?',
+    )
+    .get(userId) as
+    | {
+        display_name: string | null
+        bio: string | null
+        avatar_path: string | null
+        banner_path: string | null
+      }
+    | undefined
+  if (!row) return
+  // Only push if there's actually data — a brand-new account with
+  // every field null doesn't need a round-trip.
+  const payload: Record<string, string | null> = {}
+  if (row.display_name) payload.displayName = row.display_name
+  if (row.bio !== null) payload.bio = row.bio
+  if (row.avatar_path !== null) payload.avatarPath = row.avatar_path
+  if (row.banner_path !== null) payload.bannerPath = row.banner_path
+  if (Object.keys(payload).length === 0) return
+  const res = await cloudFetch('/v1/auth/me', {
+    method: 'PATCH',
+    body: payload,
+    timeoutMs: 60_000,
+  })
+  if (!res.ok) {
+    debugLog('cloud', 'profile catch-up returned non-200', {
+      status: res.status,
+    })
+  }
+}
+
 export async function bootConnect(): Promise<CloudConnectResult> {
   const token = readToken()
   if (!token) {
@@ -631,6 +845,37 @@ export async function bootConnect(): Promise<CloudConnectResult> {
     // Warm the peer-name cache in the background so the first
     // friend-message toast resolves to the real display name.
     void preloadPeerDisplayNames()
+    // Push the LOCAL profile (avatar, banner, bio, displayName)
+    // to the cloud as a catch-up sync. This is idempotent — same
+    // values land as a no-op DB update. It catches:
+    //   1. Users who updated their avatar pre-v0.3.4 when the
+    //      backend Zod schema capped avatarPath at 2048 chars and
+    //      silently rejected data URLs. Their cloud copy stayed
+    //      empty even though they re-saved locally many times.
+    //   2. Users who were offline when they last updated and the
+    //      fire-and-forget PATCH never landed.
+    // Best-effort — if it fails we don't surface anything because
+    // the user already has a working local copy. Errors are logged
+    // via debugLog so the dev / support trail isn't blank.
+    void syncLocalProfileToCloud(me.user.id).catch((err) => {
+      debugLog('cloud', 'profile catch-up sync failed', {
+        message: (err as Error).message,
+      })
+    })
+    // Aggregated stats catch-up — push libraryCount / playtime /
+    // last-played to the cloud so any friend currently viewing
+    // this profile sees the fresh numbers (replaces the stale
+    // "0 jeux" the launcher used to render before the
+    // 20260520120000_user_stats migration landed). Lazy-import to
+    // dodge the cloud.service ↔ stats-sync.service ↔ cloud.service
+    // cycle.
+    void import('./stats-sync.service').then((mod) => {
+      mod.queueStatsSync(me.user.id, true)
+    }).catch((err) => {
+      debugLog('cloud', 'stats catch-up sync failed', {
+        message: (err as Error).message,
+      })
+    })
     return { status: 'connected', user: me.user }
   } catch (e) {
     const err = e as HttpError
@@ -714,6 +959,167 @@ export async function passthroughJson<
 
 export function shutdownCloud(): void {
   closeSocket()
+}
+
+/**
+ * Demande au backend cloud, pour une liste d'amis, le nombre + top-5
+ * des amis qu'on a EN COMMUN avec chacun. Le calcul ne peut pas se
+ * faire localement parce que le launcher ne sync que ses propres
+ * edges sortants (`me → friend`) — il ne sait rien des edges entre
+ * deux amis cloud-syncés.
+ *
+ * Renvoie [] tant qu'on n'est pas connecté au cloud OU si l'endpoint
+ * échoue (réseau, 5xx, etc.) — l'UI dégrade gracieusement en
+ * affichant 0 en commun plutôt que de planter.
+ */
+/**
+ * Récupère la liste des amis (publics) d'un user arbitraire via le
+ * cloud. Le launcher ne sync que les edges sortants du current user,
+ * donc pour consulter les amis de Samy (ou Fahim, ou n'importe quel
+ * cloud-synced user), il FAUT passer par le cloud. Retourne [] si
+ * pas connecté ou si l'endpoint échoue.
+ */
+/**
+ * Au boot du WS, hydrate la table locale `users` avec la presence
+ * courante de tous nos amis (récupérée via /v1/presence/friends).
+ * Évite la fenêtre 0..3 min pendant laquelle resolvePresence décay
+ * tout en 'offline' faute de presence:changed reçu récent.
+ *
+ * Best-effort : si l'endpoint échoue, on garde la valeur locale —
+ * elle finira par être rafraîchie quand un event WS arrivera.
+ */
+async function bootstrapFriendPresences(): Promise<void> {
+  if (!readToken()) return
+  try {
+    const res = await cloudJson<{
+      presences: Array<{
+        userId: string
+        status: string
+        lastActiveAt: string
+      }>
+    }>('/v1/presence/friends', { method: 'GET', timeoutMs: 6000 })
+    if (!res.presences || res.presences.length === 0) return
+    const { getDatabase } = await import('./database.service')
+    const stmt = getDatabase().prepare(
+      'UPDATE users SET presence_status = ?, last_active_at = ? WHERE id = ?',
+    )
+    let touched = 0
+    for (const p of res.presences) {
+      if (!p.userId || !p.status) continue
+      const ts = p.lastActiveAt
+        ? new Date(p.lastActiveAt).getTime() || Date.now()
+        : Date.now()
+      try {
+        const out = stmt.run(p.status, ts, p.userId)
+        if (out.changes > 0) touched++
+      } catch {
+        /* row absent (friend not in local users table yet) — skip */
+      }
+    }
+    debugLog('cloud-ws', 'presence bootstrap done', {
+      received: res.presences.length,
+      updated: touched,
+    })
+  } catch (err) {
+    debugLog('cloud-ws', 'presence bootstrap failed', {
+      err: (err as Error).message,
+    })
+  }
+}
+
+export async function cloudFetchFriendsOf(
+  userId: string,
+): Promise<
+  Array<{
+    id: string
+    username: string
+    displayName: string | null
+    avatarPath: string | null
+    bannerPath: string | null
+    bio: string | null
+  }>
+> {
+  if (!userId) return []
+  if (!readToken()) return []
+  try {
+    const res = await cloudJson<{
+      friends: Array<{
+        id: string
+        username: string
+        displayName: string | null
+        avatarPath: string | null
+        bannerPath?: string | null
+        bio?: string | null
+      }>
+    }>(`/v1/friends/of/${encodeURIComponent(userId)}`, {
+      method: 'GET',
+      timeoutMs: 6000,
+    })
+    // Normalise bannerPath / bio en null (backend peut omettre les
+    // champs sur d'anciennes versions, garder null par défaut côté UI).
+    return (res.friends ?? []).map((f) => ({
+      id: f.id,
+      username: f.username,
+      displayName: f.displayName,
+      avatarPath: f.avatarPath,
+      bannerPath: f.bannerPath ?? null,
+      bio: f.bio ?? null,
+    }))
+  } catch (err) {
+    debugLog('cloud', 'cloudFetchFriendsOf failed', {
+      err: (err as Error).message,
+      userId,
+    })
+    return []
+  }
+}
+
+export async function cloudFetchMutualFriends(
+  friendIds: string[],
+): Promise<
+  Array<{
+    id: string
+    commonFriendsCount: number
+    commonFriends: Array<{
+      id: string
+      username: string
+      displayName: string | null
+      avatarPath: string | null
+    }>
+    /** Total amis du target (calculé serveur-side, indépendant du
+     *  viewer). Sert au profile hero "X amis" pour les users
+     *  cloud-syncés dont les edges ne sont pas en DB locale. */
+    friendCount: number
+  }>
+> {
+  if (friendIds.length === 0) return []
+  if (!readToken()) return []
+  try {
+    const res = await cloudJson<{
+      results: Array<{
+        id: string
+        commonFriendsCount: number
+        commonFriends: Array<{
+          id: string
+          username: string
+          displayName: string | null
+          avatarPath: string | null
+        }>
+        friendCount: number
+      }>
+    }>('/v1/friends/mutual', {
+      method: 'POST',
+      body: { friendIds },
+      timeoutMs: 8000,
+    })
+    return res.results ?? []
+  } catch (err) {
+    debugLog('cloud', 'cloudFetchMutualFriends failed', {
+      err: (err as Error).message,
+      friendIdsCount: friendIds.length,
+    })
+    return []
+  }
 }
 
 /**

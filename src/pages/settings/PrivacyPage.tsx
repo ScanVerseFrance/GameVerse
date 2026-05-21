@@ -6,7 +6,6 @@ import {
   Users,
   EyeOff,
   Eye,
-  Save,
   Loader2,
   AlertTriangle,
   Library as LibraryIcon,
@@ -318,13 +317,81 @@ export default function PrivacyPage() {
             </div>
           </Card>
 
+          {/* Résumé — Visiteurs publics. Direct port du card en bas
+              de l'onglet Confidentialité ScanVerse : un sommaire
+              vert/rouge des 3 sections les plus importantes (Profil,
+              Favoris, Avis) — donne à l'utilisateur un coup d'œil
+              instantané sur ce qu'un visiteur PUBLIC verra avant de
+              quitter la page. */}
+          <Card padding="md">
+            <p className="text-[10px] font-mono uppercase tracking-wider text-fg-muted mb-3">
+              Résumé — visiteurs publics
+            </p>
+            <div className="flex flex-col gap-2">
+              <PrivacySummaryRow
+                label="Profil"
+                isPublic={settings.isProfilePublic}
+              />
+              <PrivacySummaryRow
+                label="Bibliothèque"
+                isPublic={settings.isProfilePublic && settings.isLibraryPublic}
+              />
+              <PrivacySummaryRow
+                label="Avis"
+                isPublic={settings.isProfilePublic && settings.isReviewsPublic}
+              />
+              <PrivacySummaryRow
+                label="Favoris"
+                isPublic={settings.isProfilePublic && settings.isFavoritesPublic}
+              />
+              <PrivacySummaryRow
+                label="Activité"
+                isPublic={settings.isProfilePublic && settings.isHeatmapPublic}
+              />
+              <PrivacySummaryRow
+                label="Succès"
+                isPublic={settings.isProfilePublic && settings.isAchievementsPublic}
+              />
+              <PrivacySummaryRow
+                label="Amis"
+                isPublic={settings.isProfilePublic && settings.isFriendsPublic}
+              />
+            </div>
+          </Card>
+
           <div className="text-center text-xs text-fg-muted inline-flex items-center gap-1.5 justify-center w-full">
-            <Save className="w-3 h-3" />
-            Tes changements s'enregistrent automatiquement quelques secondes après ton dernier
-            clic.
+            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+            Modifications enregistrées automatiquement
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * Une ligne du résumé. Vert "Public" quand visible, rouge "Privé"
+ * sinon. Mirror du card "RÉSUMÉ — VISITEURS PUBLICS" ScanVerse.
+ */
+function PrivacySummaryRow({ label, isPublic }: { label: string; isPublic: boolean }) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="inline-flex items-center gap-2 text-fg-secondary">
+        {isPublic ? (
+          <Eye className="w-3.5 h-3.5 text-success" />
+        ) : (
+          <EyeOff className="w-3.5 h-3.5 text-error" />
+        )}
+        {label}
+      </span>
+      <span
+        className={cn(
+          'text-xs font-semibold',
+          isPublic ? 'text-success' : 'text-error',
+        )}
+      >
+        {isPublic ? 'Public' : 'Privé'}
+      </span>
     </div>
   )
 }

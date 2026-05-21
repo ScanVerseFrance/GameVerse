@@ -38,13 +38,29 @@ export interface ProfileCosmetics {
   profileMusicUrl: string | null
   profileMusicStart: number | null
   profileMusicEnd: number | null
+  /** Relative URL (served by the renderer dev server / file://) of a
+   *  user-uploaded audio file. When non-null, playback uses an
+   *  HTMLAudioElement instead of the YT iframe — Music tab "Importer
+   *  un fichier audio" escape hatch for users whose source isn't on
+   *  YouTube. Path is rooted at userData/profile-audio/<uid>.<ext>. */
+  profileMusicAudioPath: string | null
+  /** Plaque (nameplate webm) shown behind the EXPANDED music HUD when
+   *  a visitor listens to this user's profile music. Independent of
+   *  plaqueId which lives on the profile page — ScanVerse parity. */
+  profileMusicPlaqueId: string | null
+  /** Profile-effect overlay shown behind the expanded music HUD.
+   *  Independent of profileEffectId (which lives on the profile card
+   *  in messaging) so the user can pick a different vibe per surface. */
+  profileMusicEffectId: string | null
 }
 
 export function getCosmetics(userId: string): ProfileCosmetics {
   const row = getDatabase()
     .prepare(
       `SELECT plaque_id, profile_effect_id, avatar_decoration_id,
-              profile_music_url, profile_music_start, profile_music_end
+              profile_music_url, profile_music_start, profile_music_end,
+              profile_music_audio_path, profile_music_plaque_id,
+              profile_music_effect_id
          FROM users WHERE id = ?`
     )
     .get(userId) as
@@ -55,6 +71,9 @@ export function getCosmetics(userId: string): ProfileCosmetics {
         profile_music_url: string | null
         profile_music_start: number | null
         profile_music_end: number | null
+        profile_music_audio_path: string | null
+        profile_music_plaque_id: string | null
+        profile_music_effect_id: string | null
       }
     | undefined
   return {
@@ -64,6 +83,9 @@ export function getCosmetics(userId: string): ProfileCosmetics {
     profileMusicUrl: row?.profile_music_url ?? null,
     profileMusicStart: row?.profile_music_start ?? null,
     profileMusicEnd: row?.profile_music_end ?? null,
+    profileMusicAudioPath: row?.profile_music_audio_path ?? null,
+    profileMusicPlaqueId: row?.profile_music_plaque_id ?? null,
+    profileMusicEffectId: row?.profile_music_effect_id ?? null,
   }
 }
 
@@ -95,6 +117,18 @@ export function updateCosmetics(userId: string, patch: Partial<ProfileCosmetics>
   if (has('profileMusicEnd')) {
     fields.push('profile_music_end = ?')
     values.push(patch.profileMusicEnd)
+  }
+  if (has('profileMusicAudioPath')) {
+    fields.push('profile_music_audio_path = ?')
+    values.push(patch.profileMusicAudioPath)
+  }
+  if (has('profileMusicPlaqueId')) {
+    fields.push('profile_music_plaque_id = ?')
+    values.push(patch.profileMusicPlaqueId)
+  }
+  if (has('profileMusicEffectId')) {
+    fields.push('profile_music_effect_id = ?')
+    values.push(patch.profileMusicEffectId)
   }
   if (fields.length > 0) {
     values.push(userId)

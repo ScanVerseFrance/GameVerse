@@ -17,9 +17,21 @@ export function registerProfileIpc() {
     if (!patch || typeof patch !== 'object') return { ok: false, error: 'invalid patch' }
     const p = patch as Record<string, unknown>
     const out: Partial<svc.ProfileCosmetics> = {}
-    const stringOrNull = (k: 'plaqueId' | 'profileEffectId' | 'avatarDecorationId' | 'profileMusicUrl') => {
+    const stringOrNull = (
+      k:
+        | 'plaqueId'
+        | 'profileEffectId'
+        | 'avatarDecorationId'
+        | 'profileMusicUrl'
+        | 'profileMusicAudioPath'
+        | 'profileMusicPlaqueId'
+        | 'profileMusicEffectId',
+    ) => {
       if (p[k] === null) out[k] = null
-      else if (typeof p[k] === 'string') out[k] = sanitizeString(p[k] as string, 200)
+      // profileMusicAudioPath can be longer than 200 chars (e.g. data
+      // URL preview during upload) — cap at 1000 to be safe.
+      else if (typeof p[k] === 'string')
+        out[k] = sanitizeString(p[k] as string, k === 'profileMusicAudioPath' ? 1000 : 200)
     }
     const numberOrNull = (k: 'profileMusicStart' | 'profileMusicEnd') => {
       if (p[k] === null) out[k] = null
@@ -31,6 +43,9 @@ export function registerProfileIpc() {
     stringOrNull('profileMusicUrl')
     numberOrNull('profileMusicStart')
     numberOrNull('profileMusicEnd')
+    stringOrNull('profileMusicAudioPath')
+    stringOrNull('profileMusicPlaqueId')
+    stringOrNull('profileMusicEffectId')
     try {
       return { ok: true, cosmetics: svc.updateCosmetics(sanitizeString(userId, 64), out) }
     } catch (e) {
@@ -85,6 +100,27 @@ export function registerProfileIpc() {
       return {
         ok: true as const,
         stats: svc.getGameStats(sanitizeString(userId, 64)),
+      }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
+  // Profile achievements — derives a 15-entry board (progress +
+  // unlock state per catalogue id) from local SQLite. Drives the
+  // Profile page's "Achievements" tab. See
+  // electron/services/profile-achievements.service.ts for the
+  // metric-by-metric SQL.
+  ipcMain.handle('profile:achievements', async (_e, userId: unknown) => {
+    if (typeof userId !== 'string')
+      return { ok: false, error: 'userId required' }
+    try {
+      const { computeProfileAchievements } = await import(
+        '../services/profile-achievements.service'
+      )
+      return {
+        ok: true as const,
+        achievements: computeProfileAchievements(sanitizeString(userId, 64)),
       }
     } catch (e) {
       return { ok: false, error: (e as Error).message }

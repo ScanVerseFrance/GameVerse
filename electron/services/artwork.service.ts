@@ -72,6 +72,14 @@ function cacheGet(key: string): GameArtwork | null {
   if (!row) return null
   const ttl = row.external_source === 'none' ? NEG_CACHE_TTL_MS : CACHE_TTL_MS
   if (Date.now() - row.fetched_at >= ttl) return null
+  // Auto-invalidation : si la description encore en cache contient des
+  // HTML entities non-décodées (`&quot;`, `&amp;`, etc.), c'est une
+  // entrée pré-fix qu'on doit refetcher. Sans ça les jeux importés
+  // avant le fix description gardent leurs entities pendant 30 jours
+  // (TTL cache) → user voit toujours "&quot;Dale &amp; Dawson&quot;".
+  if (row.description && /&(quot|amp|apos|#\d+|lt|gt|hellip|nbsp);/i.test(row.description)) {
+    return null
+  }
   return toArtwork(row)
 }
 
@@ -232,8 +240,12 @@ async function steamCoverExists(appid: number): Promise<boolean> {
 
 async function steamSearch(term: string): Promise<SteamSearchHit | null> {
   try {
+    // l=french&cc=fr keeps the storefront search results consistent
+    // with the rest of the launcher (which is French-only). The old
+    // l=en&cc=US could land us on a US storefront where some titles
+    // are renamed or unavailable, breaking the name-to-appid match.
     const r = await fetchWithTimeout(
-      `https://store.steampowered.com/api/storesearch?term=${encodeURIComponent(term)}&l=en&cc=US`
+      `https://store.steampowered.com/api/storesearch?term=${encodeURIComponent(term)}&l=french&cc=fr`
     )
     if (!r.ok) return null
     const data = (await r.json()) as { items?: SteamSearchHit[] }
@@ -241,6 +253,41 @@ async function steamSearch(term: string): Promise<SteamSearchHit | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * Décode les HTML entities communes que Steam's appdetails renvoie
+ * dans `short_description` / `detailed_description` / genre labels.
+ * Sans ça les descriptions affichent `&quot;`, `&amp;`, `&#39;` etc.
+ * en clair au lieu des vrais caractères → user feedback "c'est bugé".
+ *
+ * Petit décodeur minimal (les entities Steam émet en pratique). Pour
+ * un décodeur complet il faudrait DOMParser (pas dispo en main
+ * process) ou une lib comme `he`.
+ */
+function decodeHtmlEntities(s: string | null | undefined): string | null {
+  if (!s) return null
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&hellip;/g, '…')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
+    .replace(/&laquo;/g, '«')
+    .replace(/&raquo;/g, '»')
+    .replace(/&rsquo;/g, '’')
+    .replace(/&lsquo;/g, '‘')
+    .replace(/&rdquo;/g, '”')
+    .replace(/&ldquo;/g, '“')
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    // & en dernier sinon on déencode prématurément les &amp;quot; en " (boucle)
+    .replace(/&amp;/g, '&')
 }
 
 async function fetchSteamAppDetails(appid: number): Promise<SteamAppDetails | null> {
@@ -283,6 +330,63 @@ function makeEmpty(cacheKey: string): GameArtwork {
 
 export async function lookupArtwork(rawTitle: string): Promise<GameArtwork> {
   return resolveArtwork(rawTitle, [])
+}
+
+/**
+ * Direct-by-appid variant — skip le SGDB lookup + le name search,
+ * tape directement appdetails. Utilisé quand le caller CONNAÎT
+ * déjà l'appid Steam (jeu importé via le PC scanner avec filtre
+ * Steam, ou JSON source qui déclare son appid).
+ *
+ * Sans ça, des titres comme "Dale & Dawson Stationery Supplies"
+ * échouaient à matcher via le name search Steam et retournaient
+ * une artwork vide → pas de description FR, pas de screenshots,
+ * pas de genres, pas de developer/publisher.
+ *
+ * Le résultat est mis en cache sous une clé `appid:<id>` qui ne
+ * rentre pas en conflit avec le cache name-based — le caller peut
+ * appeler les deux fonctions sans collision.
+ */
+export async function lookupArtworkByAppid(appid: number): Promise<GameArtwork> {
+  const cacheKey = `appid:${appid}`
+  const cached = cacheGet(cacheKey)
+  if (cached && cached.externalSource !== 'none') return cached
+  const details = await fetchSteamAppDetails(appid)
+  if (!details) {
+    const empty = makeEmpty(cacheKey)
+    cachePut(empty)
+    return empty
+  }
+  const screenshots = (details.screenshots ?? [])
+    .map((s) => s.path_full || s.path_thumbnail)
+    .filter((u): u is string => !!u)
+  const videos = (details.movies ?? [])
+    .map((m) => m.webm?.['480'] || m.webm?.max || m.mp4?.['480'] || m.mp4?.max)
+    .filter((u): u is string => !!u)
+    .map((u) => u.replace(/^http:\/\//, 'https://'))
+  const art: GameArtwork = {
+    cacheKey,
+    externalSource: 'steam',
+    externalId: String(appid),
+    coverUrl: `${STEAM_CDN}/${appid}/library_600x900.jpg`,
+    heroUrl: `${STEAM_CDN}/${appid}/library_hero.jpg`,
+    headerUrl: `${STEAM_CDN}/${appid}/header.jpg`,
+    logoUrl: `${STEAM_CDN}/${appid}/logo.png`,
+    description: decodeHtmlEntities(details.short_description),
+    developer: details.developers?.[0] ?? null,
+    publisher: details.publishers?.[0] ?? null,
+    releaseDate: details.release_date?.date ?? null,
+    genres:
+      details.genres
+        ?.map((g) => decodeHtmlEntities(g.description) ?? '')
+        .filter(Boolean) ?? [],
+    screenshots,
+    videos,
+    cachedAt: Date.now(),
+    fetchedAt: Date.now(),
+  }
+  cachePut(art)
+  return art
 }
 
 export async function lookupArtworkForJsonGame(
@@ -400,11 +504,14 @@ async function resolveArtwork(title: string, uris: string[]): Promise<GameArtwor
       heroUrl: sg.heroUrl ?? (steamAppId ? `${STEAM_CDN}/${steamAppId}/library_hero.jpg` : null),
       headerUrl: steamAppId ? `${STEAM_CDN}/${steamAppId}/header.jpg` : null,
       logoUrl: sg.logoUrl ?? (steamAppId ? `${STEAM_CDN}/${steamAppId}/logo.png` : null),
-      description: steamDetails?.short_description ?? null,
+      description: decodeHtmlEntities(steamDetails?.short_description),
       developer: steamDetails?.developers?.[0] ?? null,
       publisher: steamDetails?.publishers?.[0] ?? null,
       releaseDate: steamDetails?.release_date?.date ?? null,
-      genres: steamDetails?.genres?.map((g) => g.description ?? '').filter(Boolean) ?? [],
+      genres:
+        steamDetails?.genres
+          ?.map((g) => decodeHtmlEntities(g.description) ?? '')
+          .filter(Boolean) ?? [],
       screenshots,
       videos,
       cachedAt: Date.now(),
@@ -464,11 +571,14 @@ async function resolveArtwork(title: string, uris: string[]): Promise<GameArtwor
       heroUrl: `${STEAM_CDN}/${hit.id}/library_hero.jpg`,
       headerUrl: `${STEAM_CDN}/${hit.id}/header.jpg`,
       logoUrl: `${STEAM_CDN}/${hit.id}/logo.png`,
-      description: details?.short_description ?? null,
+      description: decodeHtmlEntities(details?.short_description),
       developer: details?.developers?.[0] ?? null,
       publisher: details?.publishers?.[0] ?? null,
       releaseDate: details?.release_date?.date ?? null,
-      genres: details?.genres?.map((g) => g.description ?? '').filter(Boolean) ?? [],
+      genres:
+        details?.genres
+          ?.map((g) => decodeHtmlEntities(g.description) ?? '')
+          .filter(Boolean) ?? [],
       screenshots,
       videos,
       cachedAt: Date.now(),

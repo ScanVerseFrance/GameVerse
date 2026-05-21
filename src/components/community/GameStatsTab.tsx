@@ -9,7 +9,7 @@ import {
   Minus,
   Trophy,
   Timer,
-  Award,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
@@ -90,32 +90,38 @@ export function GameStatsTab({ userId }: { userId: string }) {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* 4 KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* 4 KPI cards — ScanVerse-style: icon block (40×40) on the LEFT,
+          big Syne number + uppercase mono label stacked on the right.
+          Each card carries a distinct accent colour (purple, teal,
+          green, gold) so the row reads at a glance. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <KPICard
-          icon={<Clock className="w-3.5 h-3.5" />}
+          icon={<Clock size={18} />}
           label="Heures jouées"
           value={fmtHours(stats.totals.totalHours)}
           sub={`${stats.totals.totalSessions} session${stats.totals.totalSessions === 1 ? '' : 's'}`}
+          accent="#a855f7"
         />
         <KPICard
-          icon={<Gamepad2 className="w-3.5 h-3.5" />}
+          icon={<Sparkles size={18} />}
           label="Jeux joués"
           value={String(stats.totals.gamesPlayed)}
           sub="depuis toujours"
+          accent="#06b6d4"
         />
         <KPICard
-          icon={<Calendar className="w-3.5 h-3.5" />}
+          icon={<Calendar size={18} />}
           label="Jours actifs"
           value={String(stats.totals.activeDays)}
           sub="au moins une session"
+          accent="#10b981"
         />
         <KPICard
-          icon={<Flame className="w-3.5 h-3.5 text-warning" />}
+          icon={<Flame size={18} />}
           label="Streak record"
           value={`${stats.totals.streakRecord}j`}
           sub="jours consécutifs"
-          accent
+          accent="#fbbf24"
         />
       </div>
 
@@ -125,12 +131,14 @@ export function GameStatsTab({ userId }: { userId: string }) {
       {/* Hour-of-day + weekday distributions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ChartCard
+          icon={<Clock size={14} />}
           title="Heures de jeu préférées"
           subtitle="Sessions agrégées sur les 24 h d'une journée (tout l'historique)."
         >
           <HourHistogram data={stats.hourHistogram} />
         </ChartCard>
         <ChartCard
+          icon={<Calendar size={14} />}
           title="Jours de la semaine"
           subtitle="Répartition des sessions par jour."
         >
@@ -140,6 +148,7 @@ export function GameStatsTab({ userId }: { userId: string }) {
 
       {/* 30-day daily bars */}
       <ChartCard
+        icon={<TrendingUp size={14} />}
         title="30 derniers jours"
         subtitle={(() => {
           const activeDays = stats.last30Days.filter((d) => d.minutes > 0).length
@@ -170,6 +179,14 @@ export function GameStatsTab({ userId }: { userId: string }) {
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────
 
+/**
+ * KPI card — direct port of ScanVerse's StatCard layout (StatsPanel.jsx
+ * lines 30-44). Icon block on the LEFT in a tinted square (40×40,
+ * coloured by `accent`), then a stacked label + Syne-styled value on
+ * the right. `accent` is a hex string; we apply it both to the icon
+ * colour and as a low-alpha background for the tile, matching how the
+ * reference card tints purple/teal/green/gold across the four cards.
+ */
 function KPICard({
   icon,
   label,
@@ -181,23 +198,28 @@ function KPICard({
   label: string
   value: string
   sub: string
-  accent?: boolean
+  /** Hex colour (e.g. '#a855f7'). Drives the icon background + glyph. */
+  accent: string
 }) {
   return (
     <div
-      className={cn(
-        'rounded-lg border bg-[var(--surface-soft)] px-4 py-3',
-        accent ? 'border-warning/30' : 'border-glass-border',
-      )}
+      className="p-4 rounded-xl flex items-center gap-3 border bg-[var(--surface-soft)] border-glass-border"
     >
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-fg-muted">
+      <div
+        className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+        style={{ background: `${accent}22`, color: accent }}
+      >
         {icon}
-        <span>{label}</span>
       </div>
-      <p className="font-display font-bold text-2xl text-fg-primary mt-1.5 tabular-nums">
-        {value}
-      </p>
-      <p className="text-[11px] text-fg-muted mt-0.5">{sub}</p>
+      <div className="min-w-0">
+        <p className="font-display font-extrabold text-2xl text-fg-primary tabular-nums leading-none">
+          {value}
+        </p>
+        <p className="text-[10px] sm:text-xs font-mono uppercase tracking-wider text-fg-muted mt-1">
+          {label}
+        </p>
+        {sub && <p className="text-[10px] text-fg-muted mt-0.5">{sub}</p>}
+      </div>
     </div>
   )
 }
@@ -257,17 +279,26 @@ function RhythmCard({
 }
 
 function ChartCard({
+  icon,
   title,
   subtitle,
   children,
 }: {
+  /** Optional Lucide icon shown to the left of the title — matches
+   *  the ScanVerse layout (Clock for "Heures de jeu préférées",
+   *  Calendar for "Jours de la semaine", TrendingUp for "30 derniers
+   *  jours"). */
+  icon?: React.ReactNode
   title: string
   subtitle: string
   children: React.ReactNode
 }) {
   return (
     <div className="rounded-lg border border-glass-border bg-[var(--surface-soft)] p-4">
-      <h3 className="text-sm font-semibold text-fg-primary">{title}</h3>
+      <h3 className="text-sm font-semibold text-fg-primary flex items-center gap-2">
+        {icon && <span className="text-fg-secondary">{icon}</span>}
+        {title}
+      </h3>
       <p className="text-[11px] text-fg-muted mt-0.5 leading-snug">{subtitle}</p>
       <div className="mt-3">{children}</div>
     </div>
@@ -474,13 +505,13 @@ function MostBingedCard({
           <img src={game.coverUrl} alt="" className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <Award className="w-5 h-5 text-fg-muted" />
+            <Trophy className="w-5 h-5 text-fg-muted" />
           </div>
         )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-fg-muted">
-          <Award className="w-3.5 h-3.5 text-warning" />
+          <Trophy className="w-3.5 h-3.5 text-warning" />
           Le plus marathonné
         </div>
         {game ? (

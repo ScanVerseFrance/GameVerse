@@ -31,7 +31,9 @@ const DownloadsPage = lazy(() => import('./pages/downloads/DownloadsPage'))
 const LibraryPage = lazy(() => import('./pages/library/LibraryPage'))
 const CommunityPage = lazy(() => import('./pages/community/CommunityPage'))
 const ProfilePage = lazy(() => import('./pages/community/ProfilePage'))
-const ProfileEditPage = lazy(() => import('./pages/community/ProfileEditPage'))
+// ProfileEditPage supprimée : l'édition profil (nom, bio, plaque,
+// décoration, musique) vit maintenant dans /settings?tab=personalisation
+// — un seul endroit unifié pour customiser au lieu d'une page séparée.
 const FriendsPage = lazy(() => import('./pages/community/FriendsPage'))
 const ChatPage = lazy(() => import('./pages/community/ChatPage'))
 const BigPicturePage = lazy(() => import('./pages/big-picture/BigPicturePage'))
@@ -112,7 +114,8 @@ export const router = createHashRouter([
       { path: 'community', element: lazyElement(CommunityPage) },
       { path: 'community/friends', element: lazyElement(FriendsPage) },
       { path: 'community/profile/:userId', element: lazyElement(ProfilePage) },
-      { path: 'community/profile/:userId/edit', element: lazyElement(ProfileEditPage) },
+      // /community/profile/:userId/edit supprimée — l'édition profil
+      // a été unifiée dans /settings?tab=personalisation.
       { path: 'community/chat', element: lazyElement(ChatPage) },
       { path: 'community/chat/:peerId', element: lazyElement(ChatPage) },
       { path: 'big-picture', element: lazyElement(BigPicturePage) },

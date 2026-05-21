@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
+import { MusicProvider } from './context/MusicContext'
 import { useAuthStore } from './stores/auth.store'
 import { useThemeStore } from './stores/theme.store'
 import { useAddonStore } from './stores/addon.store'
@@ -289,7 +290,11 @@ export default function App() {
   // every route. Subscribes to `update:available` and shows a toast
   // in the bottom-right when the GitHub poller finds a new version.
   return (
-    <>
+    // MusicProvider wraps EVERYTHING so the MiniPlayer can survive
+    // route changes — leaving the profile page mustn't kill the
+    // music. Direct parity with ScanVerse where the audio element
+    // is owned by the global provider, not the page.
+    <MusicProvider>
       <RouterProvider router={router} />
       <UpdatePopup />
       {/* Global Ctrl/Cmd+K command palette — searches library,
@@ -304,6 +309,6 @@ export default function App() {
           mount has zero cost in steady-state (returns null until a
           version bump). */}
       <ChangelogDialog autoOpen />
-    </>
+    </MusicProvider>
   )
 }

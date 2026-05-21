@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, type ChangeEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   User as UserIcon,
@@ -24,6 +24,7 @@ import {
   RefreshCw,
   KeyRound,
   AlertTriangle,
+  Gamepad2,
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -38,6 +39,8 @@ import { useAddonStore } from '@/stores/addon.store'
 import type { AppSettings, SessionInfo, StorageUsage, SystemMetrics } from '@/types/app-settings.types'
 import { cn } from '@/utils/cn'
 import { ChangelogDialog } from '@/components/common/ChangelogDialog'
+import { ImageCropDialog } from '@/components/common/ImageCropDialog'
+import { toast } from '@/stores/inAppToast.store'
 // Personnalisation tab content lives in its own file because it's
 // ~500 lines of cosmetic grids (plaque / effect / decoration /
 // music / username styling) ported wholesale from the ScanVerse
@@ -50,29 +53,24 @@ import { PersonalisationSection } from './PersonalisationSection'
 // practical row-size issue at this scale).
 const AVATAR_MAX_BYTES = 10 * 1024 * 1024
 const BANNER_MAX_BYTES = 10 * 1024 * 1024
+// Note legacy : BANNER_MAX_BYTES avait été retiré quand la bannière
+// vivait uniquement sur la page profil. Re-introduit en v0.3.5 avec
+// le retour de l'upload bannière dans Settings → Compte.
+// profil maintenant (v0.3.4-g).
 
-const USERNAME_ANIMATIONS: Array<{ value: 'none' | 'shimmer' | 'rainbow' | 'pulse'; label: string }> = [
-  { value: 'none', label: 'Aucune' },
-  { value: 'shimmer', label: 'Shimmer' },
-  { value: 'rainbow', label: 'Arc-en-ciel' },
-  { value: 'pulse', label: 'Pulsation' },
-]
+// v0.3.4 — USERNAME_ANIMATIONS + COLOR_SWATCHES retirés :
+// l'onglet Personnalisation owns désormais TOUTE la stylisation
+// du pseudo (UsernameStylePicker, 11 polices + 6 animations +
+// 10 swatches + couleur animée + animation d'entrée). Plus de
+// duplication dans le Compte tab.
 
-const COLOR_SWATCHES = [
-  '',          // reset
-  '#8b5cf6',   // accent primary
-  '#6366f1',   // accent secondary
-  '#22c55e',   // success
-  '#f59e0b',   // warning
-  '#ef4444',   // error
-  '#ec4899',   // pink
-  '#06b6d4',   // cyan
-  '#eab308',   // gold
-  '#a78bfa',   // light violet
-]
 const TAB_ITEMS = [
   { value: 'account',       label: 'Compte',         icon: <UserIcon className="w-4 h-4" /> },
   { value: 'general',       label: 'Général',        icon: <SlidersHorizontal className="w-4 h-4" /> },
+  // v0.3.4 — équivalent du tab Lecteur de ScanVerse : options de
+  // lancement des jeux (confirm-quit, Steam launcher, locale FR,
+  // fullscreen par défaut).
+  { value: 'game',          label: 'Jeu',            icon: <Gamepad2 className="w-4 h-4" /> },
   // "Apparence" → "Personnalisation" : the tab now covers BOTH the
   // pure-visual options (themes, animations, blur) AND the profile
   // cosmetics that used to be hidden behind a community-page button
@@ -129,7 +127,9 @@ function AccountSection() {
   const logout = useAuthStore((s) => s.logout)
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '')
-  const [bio, setBio] = useState(user?.bio ?? '')
+  // Bio retirée de l'Account tab — elle vit maintenant dans la
+  // Personnalisation (BioCard) pour matcher ScanVerse qui groupe la
+  // bio avec les autres cosmétiques de profil.
   const [email, setEmail] = useState(user?.email ?? '')
   const [usernameColor, setUsernameColor] = useState(user?.usernameColor ?? '')
   const [usernameAnimation, setUsernameAnimation] = useState<
@@ -138,11 +138,16 @@ function AccountSection() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  // Crop modal state — populé quand l'user pick un fichier image
+  // statique. Pour les GIF/APNG on bypass le crop (le canvas
+  // toDataURL flatten l'animation, donc on push le data URL brut).
+  // `target` distingue avatar (1:1 → 512×512) de banner (16:5 →
+  // 1280×400) pour que le même Dialog gère les deux.
+  const [crop, setCrop] = useState<{ source: string; target: 'avatar' | 'banner' } | null>(null)
 
   // Sync local state with store when user data changes (login, reload).
   useEffect(() => {
     setDisplayName(user?.displayName ?? '')
-    setBio(user?.bio ?? '')
     setEmail(user?.email ?? '')
     setUsernameColor(user?.usernameColor ?? '')
     setUsernameAnimation(user?.usernameAnimation ?? 'none')
@@ -155,7 +160,6 @@ function AccountSection() {
     setSaved(false)
     const ok = await updateProfile({
       displayName,
-      bio,
       email: email || '',
       usernameColor,
       usernameAnimation,
@@ -164,6 +168,9 @@ function AccountSection() {
     if (ok) {
       setSaved(true)
       setTimeout(() => setSaved(false), 1500)
+      toast.success('Profil mis à jour')
+    } else {
+      toast.error('Échec de la sauvegarde')
     }
   }
 
@@ -184,12 +191,21 @@ function AccountSection() {
     e.target.value = ''
     if (!f) return
     if (f.size > AVATAR_MAX_BYTES) {
-      setUploadError(`Avatar trop volumineux (max ${Math.round(AVATAR_MAX_BYTES / 1024 / 1024)} Mo).`)
+      const msg = `Avatar trop volumineux (max ${Math.round(AVATAR_MAX_BYTES / 1024 / 1024)} Mo).`
+      setUploadError(msg)
+      toast.error(msg)
       return
     }
     setUploadError(null)
     const url = await readAsDataUrl(f)
-    if (url) await updateProfile({ avatarPath: url })
+    if (!url) return
+    // Tous les formats passent par le cropper (parité ScanVerse) —
+    // l'user veut pouvoir cadrer même les GIF. Trade-off connu :
+    // canvas.toDataURL flatten l'animation, donc un GIF anim devient
+    // un PNG/JPEG statique de la première frame. C'est le compromis
+    // explicite demandé par l'user qui préfère la cohérence d'UI à
+    // la préservation d'animation.
+    setCrop({ source: url, target: 'avatar' })
   }
 
   async function handleBanner(e: ChangeEvent<HTMLInputElement>) {
@@ -197,60 +213,83 @@ function AccountSection() {
     e.target.value = ''
     if (!f) return
     if (f.size > BANNER_MAX_BYTES) {
-      setUploadError(`Bannière trop volumineuse (max ${Math.round(BANNER_MAX_BYTES / 1024 / 1024)} Mo).`)
+      const msg = `Bannière trop volumineuse (max ${Math.round(BANNER_MAX_BYTES / 1024 / 1024)} Mo).`
+      setUploadError(msg)
+      toast.error(msg)
       return
     }
     setUploadError(null)
     const url = await readAsDataUrl(f)
-    if (url) await updateProfile({ bannerPath: url })
+    if (!url) return
+    // Idem avatar : tous formats passent par le cropper.
+    setCrop({ source: url, target: 'banner' })
   }
 
-  // Live preview of how the username will look — applies the same CSS the
-  // rest of the app reads from when rendering the user's display name.
-  const usernamePreviewStyle: React.CSSProperties = {
-    color: usernameColor || undefined,
+  async function handleCropConfirmed(dataUrl: string): Promise<void> {
+    if (!crop) return
+    const target = crop.target
+    setCrop(null)
+    const ok = await updateProfile(
+      target === 'banner' ? { bannerPath: dataUrl } : { avatarPath: dataUrl },
+    )
+    if (ok) {
+      toast.success(target === 'banner' ? 'Bannière mise à jour' : 'Avatar mis à jour')
+    } else {
+      toast.error(
+        target === 'banner'
+          ? 'Échec de la mise à jour de la bannière'
+          : "Échec de la mise à jour de l'avatar",
+      )
+    }
   }
-  const usernameAnimationClass =
-    usernameAnimation === 'shimmer'
-      ? 'username-shimmer'
-      : usernameAnimation === 'rainbow'
-      ? 'username-rainbow'
-      : usernameAnimation === 'pulse'
-      ? 'username-pulse'
-      : ''
+
+  // handleBanner retiré en v0.3.4-g : la bannière s'édite depuis
+  // la page profil (bouton "Changer la bannière" sur le hero) —
+  // plus de double-emploi avec le Compte tab.
+
+  // Live preview retiré en v0.3.4 — la stylisation du pseudo se
+  // configure maintenant exclusivement dans l'onglet Personnalisation
+  // via UsernameStylePicker (qui a son propre aperçu animé).
 
   return (
     <div>
       <SectionHeader icon={UserIcon} title="Compte" description="Ton profil et la façon dont les autres te voient" />
 
-      {/* Banner — full width, behind/above the avatar like Discord / Steam */}
-      <div className="relative rounded-lg overflow-hidden border border-glass-border mb-4 group">
-        <div
-          className="h-32 w-full"
-          style={
-            user.bannerPath
-              ? {
-                  backgroundImage: `url(${user.bannerPath})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                }
-              : {
-                  background:
-                    'linear-gradient(135deg, rgba(136, 192, 87, 0.35), rgba(91, 163, 43, 0.25), rgba(102, 192, 244, 0.18))',
-                }
-          }
-        />
-        <div className="absolute inset-0 flex items-end justify-end p-3 gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
-          <label className="cursor-pointer">
-            <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-black/60 text-white text-xs font-medium hover:bg-black/80 transition-colors">
-              <ImageIcon className="w-3.5 h-3.5" /> Changer la bannière
-            </span>
-            <input type="file" accept="image/*,image/gif" className="hidden" onChange={handleBanner} />
+      {/* v0.3.5 : bannière REMISE dans le Compte tab à côté de l'avatar
+          (l'user attend de pouvoir tout faire depuis Settings sans
+          devoir aller sur la page profil pour la bannière). Les deux
+          uploads passent par le même ImageCropDialog (target différent). */}
+
+      {/* Bannière — pleine largeur au-dessus de la row avatar/infos,
+          avec hover bouton "Modifier" et retirer si présente. */}
+      <div className="relative w-full mb-6 rounded-xl overflow-hidden border border-glass-border bg-bg-tertiary" style={{ aspectRatio: '16 / 5' }}>
+        {user.bannerPath ? (
+          <img src={user.bannerPath} alt="" className="absolute inset-0 w-full h-full object-cover" />
+        ) : (
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%)',
+              opacity: 0.25,
+            }}
+          />
+        )}
+        <div className="absolute inset-0 flex items-end justify-end p-3 gap-1.5 bg-gradient-to-t from-black/50 via-transparent to-transparent">
+          <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-black/55 hover:bg-black/70 backdrop-blur-md border border-white/10 transition-colors">
+            <ImageIcon className="w-3.5 h-3.5" />
+            {user.bannerPath ? 'Modifier la bannière' : 'Importer une bannière'}
+            <input
+              type="file"
+              accept="image/*,image/gif"
+              className="hidden"
+              onChange={handleBanner}
+            />
           </label>
           {user.bannerPath && (
             <button
               onClick={() => void updateProfile({ bannerPath: '' })}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-black/60 text-white text-xs font-medium hover:bg-error/80 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-black/55 hover:bg-error/80 backdrop-blur-md border border-white/10 transition-colors"
             >
               Retirer
             </button>
@@ -259,7 +298,7 @@ function AccountSection() {
       </div>
 
       <div className="flex items-start gap-6 mb-6 flex-wrap md:flex-nowrap">
-        <div className="flex flex-col items-center gap-2 -mt-12 z-10">
+        <div className="flex flex-col items-center gap-2 z-10">
           <div className="w-24 h-24 rounded-full bg-bg-tertiary border-4 border-bg-primary overflow-hidden flex items-center justify-center shadow-lift">
             {user.avatarPath ? (
               <img src={user.avatarPath} alt="" className="w-full h-full object-cover" />
@@ -289,96 +328,23 @@ function AccountSection() {
         <div className="flex-1 flex flex-col gap-4 min-w-0">
           <Input label="Nom affiché" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
           <Input label="E-mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">Bio</label>
-            <textarea
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              rows={3}
-              maxLength={300}
-              className="bg-[var(--surface-soft)] border border-glass-border hover:bg-[var(--surface-soft-hover)] hover:border-[var(--surface-soft-border)] focus:bg-[var(--surface-soft-hover)] focus:border-accent-primary/60 focus:outline-none focus:shadow-[0_0_0_3px_rgba(136,192,87,0.20)] rounded-md px-3.5 py-3 text-sm text-fg-primary placeholder:text-fg-muted resize-none transition-all"
-              placeholder="Parle un peu de toi aux autres joueurs…"
-            />
-            <span className="text-xs text-fg-muted self-end">{bio.length}/300</span>
-          </div>
+          {/* Bio retirée d'ici, déplacée dans la Personnalisation
+              (BioCard) pour regrouper avec les autres éléments de
+              présentation du profil (plaque, déco, musique, etc.). */}
         </div>
       </div>
 
-      {/* Username customisation — color swatches + animation picker.
-          Lightweight version of ComicScan's full system (fonts/effects/etc).
-          The preview line mirrors the styles we apply elsewhere. */}
-      <div className="mt-6 pt-6 border-t border-border-soft">
-        <h3 className="text-[11px] font-semibold uppercase tracking-widest text-fg-secondary mb-3">
-          Personnalisation du pseudo
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
-              Couleur
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {COLOR_SWATCHES.map((c) => (
-                <button
-                  key={c || 'reset'}
-                  onClick={() => setUsernameColor(c)}
-                  className={`w-7 h-7 rounded-full border-2 transition-all ${
-                    (usernameColor || '') === c
-                      ? 'border-fg-primary scale-110'
-                      : 'border-transparent hover:scale-105'
-                  }`}
-                  style={{
-                    background:
-                      c ||
-                      'repeating-conic-gradient(rgba(255,255,255,0.15) 0% 25%, transparent 0% 50%) 50% / 6px 6px',
-                  }}
-                  title={c || 'Couleur par défaut'}
-                  aria-label={c || 'Réinitialiser'}
-                />
-              ))}
-            </div>
-            <input
-              type="text"
-              value={usernameColor}
-              onChange={(e) => setUsernameColor(e.target.value)}
-              placeholder="#abc, rgb(…) ou vide"
-              className="h-10 px-3 rounded-md bg-[var(--surface-soft)] border border-glass-border focus:bg-[var(--surface-soft-hover)] focus:border-accent-primary/60 focus:outline-none text-sm font-mono text-fg-primary placeholder:text-fg-muted mt-1"
-              maxLength={32}
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium text-fg-secondary uppercase tracking-wider">
-              Animation
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {USERNAME_ANIMATIONS.map((a) => (
-                <button
-                  key={a.value}
-                  onClick={() => setUsernameAnimation(a.value)}
-                  className={`h-10 rounded-md text-xs font-medium border transition-colors ${
-                    usernameAnimation === a.value
-                      ? 'border-accent-primary/60 bg-accent-primary/10 text-fg-primary'
-                      : 'border-glass-border text-fg-secondary hover:bg-[var(--surface-soft)]'
-                  }`}
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Live preview */}
-        <div className="mt-4 p-4 rounded-md bg-[var(--surface-soft)] border border-glass-border">
-          <p className="text-[10px] uppercase tracking-wider text-fg-muted mb-1">Aperçu</p>
-          <span
-            className={`font-display font-bold text-2xl ${usernameAnimationClass}`}
-            style={usernamePreviewStyle}
-          >
-            {displayName || user.username}
-          </span>
-        </div>
-      </div>
+      {/*
+        v0.3.4 — Le bloc "Personnalisation du pseudo" qui vivait
+        ici est RETIRÉ : il faisait double-emploi avec le
+        UsernameStylePicker complet de l'onglet Personnalisation
+        (preview live + 11 polices + 6 animations + 10 swatches +
+        couleur animée + animation d'entrée). Le user a explicitement
+        demandé de retirer la duplication. Le state local
+        `usernameColor` + `usernameAnimation` reste pour ne pas
+        casser le `handleSave` partagé mais aucun champ n'est plus
+        rendu ici — l'utilisateur édite tout depuis Personnalisation.
+      */}
 
       {uploadError && (
         <div className="mt-4 flex items-start gap-2 text-sm text-error bg-error/10 border border-error/20 rounded-md px-3 py-2">
@@ -404,6 +370,21 @@ function AccountSection() {
 
       {/* ─── Sécurité du compte ─── */}
       <AccountSecurityBlock />
+
+      {/* Crop modal partagé pour avatar (1:1 → 512×512) et bannière
+          (16:5 → 1280×400). Pour les GIF/APNG le crop est bypassé en
+          amont dans handleAvatar/handleBanner. */}
+      <ImageCropDialog
+        open={crop != null}
+        sourceDataUrl={crop?.source ?? null}
+        aspect={crop?.target === 'banner' ? 16 / 5 : 1}
+        outputSize={
+          crop?.target === 'banner' ? { w: 1280, h: 400 } : { w: 512, h: 512 }
+        }
+        title={crop?.target === 'banner' ? 'Recadrer la bannière' : "Recadrer l'avatar"}
+        onCancel={() => setCrop(null)}
+        onCrop={(url) => void handleCropConfirmed(url)}
+      />
     </div>
   )
 }
@@ -1819,7 +1800,31 @@ function ChangelogButton() {
 
 // ───────── Page ─────────
 export default function SettingsPage() {
-  const [tab, setTab] = useState('account')
+  // Tab piloté par ?tab=... dans l'URL (ex. /settings?tab=personalisation
+  // pour atterrir directement sur la Personnalisation depuis le bouton
+  // "Modifier le profil" de la page profil). Quand l'user clique sur
+  // un autre onglet, on met l'URL à jour aussi pour que le back/forward
+  // navigateur navigue entre tabs.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlTab = searchParams.get('tab') ?? 'account'
+  const [tab, setTabState] = useState(urlTab)
+
+  // Sync interne → URL : remplace l'entrée history (replace:true) pour
+  // ne pas polluer le back stack à chaque click d'onglet.
+  const setTab = useCallback(
+    (next: string) => {
+      setTabState(next)
+      setSearchParams({ tab: next }, { replace: true })
+    },
+    [setSearchParams],
+  )
+
+  // Sync URL → state quand le tab change dans l'URL (cas où le user
+  // arrive sur /settings?tab=X via un Link, ou utilise le back/forward).
+  useEffect(() => {
+    if (urlTab !== tab) setTabState(urlTab)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlTab])
 
   return (
     // Layout ported from ScanVerse Paramètres : narrow centred column
@@ -1899,6 +1904,7 @@ export default function SettingsPage() {
       >
         {tab === 'account' && <AccountSection />}
         {tab === 'general' && <GeneralSection />}
+        {tab === 'game' && <GameLaunchSection />}
         {tab === 'personalisation' && <PersonalisationSection />}
         {tab === 'downloads' && <DownloadsSection />}
         {tab === 'notifications' && <NotificationsSection />}
@@ -1910,5 +1916,134 @@ export default function SettingsPage() {
         {tab === 'data' && <DataSection />}
       </motion.div>
     </div>
+  )
+}
+
+/**
+ * GameLaunchSection — onglet "Jeu" (équivalent du tab "Lecteur"
+ * de ScanVerse). Regroupe les options qui s'appliquent au moment
+ * où on lance un jeu :
+ *   • Confirmer la fermeture du launcher pendant qu'un jeu tourne
+ *   • Lancer les jeux Steam via Steam (recommandé, ON par défaut)
+ *   • Forcer la locale française dans tous les jeux (LANG/LC_ALL/
+ *     SteamAppLanguage). Sans ce toggle, certains jeux démarrent
+ *     en anglais malgré la langue système.
+ *   • Mode plein écran par défaut
+ *
+ * Pattern identique au tab Lecteur de ScanVerse : un sous-titre
+ * descriptif, un toggle visuel "Activé" / "Désactivé", et un
+ * panneau "Astuces de lancement" en bas.
+ */
+function GameLaunchSection() {
+  const confirmQuit = useSettingsStore((s) => s.confirmQuitWhilePlaying)
+  const setConfirmQuit = useSettingsStore((s) => s.setConfirmQuitWhilePlaying)
+  const preferSteam = useSettingsStore((s) => s.preferSteamLauncher)
+  const setPreferSteam = useSettingsStore((s) => s.setPreferSteamLauncher)
+  const forceFR = useSettingsStore((s) => s.forceFrenchLocale)
+  const setForceFR = useSettingsStore((s) => s.setForceFrenchLocale)
+  const fullscreen = useSettingsStore((s) => s.defaultFullscreen)
+  const setFullscreen = useSettingsStore((s) => s.setDefaultFullscreen)
+
+  return (
+    <div>
+      <SectionHeader
+        icon={Gamepad2}
+        title="Jeu"
+        description="Options qui s'appliquent au moment où tu lances un jeu."
+      />
+
+      <GameOptionCard
+        title="Confirmer avant de fermer pendant un jeu"
+        description="Affiche un dialogue de confirmation si tu essaies de fermer Nexus alors qu'un jeu est en cours."
+        enabled={confirmQuit}
+        onToggle={setConfirmQuit}
+      />
+
+      <GameOptionCard
+        title="Lancer via Steam pour les jeux Steam"
+        description="Les jeux importés depuis Steam sont lancés via steam://rungameid/<appid> — Steam gère DRM, succès et compteur de temps. Désactive seulement si tu sais ce que tu fais."
+        enabled={preferSteam}
+        onToggle={setPreferSteam}
+      />
+
+      <GameOptionCard
+        title="Forcer la locale française"
+        description="Pousse LANG=fr_FR.UTF-8 + SteamAppLanguage=french à chaque spawn. Tes jeux démarrent en français quand ils supportent la langue, sans bricoler la config Steam."
+        enabled={forceFR}
+        onToggle={setForceFR}
+      />
+
+      <GameOptionCard
+        title="Plein écran par défaut"
+        description="Ajoute -fullscreen aux options de lancement quand un jeu supporte ce switch. N'affecte pas les jeux qui ont déjà des launch options custom."
+        enabled={fullscreen}
+        onToggle={setFullscreen}
+      />
+
+      {/* Astuces — équivalent du panneau bleu en bas du tab Lecteur
+          ScanVerse. */}
+      <Card padding="md" className="mt-6">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-fg-secondary">
+          Astuces de lancement
+        </p>
+        <ul className="mt-3 flex flex-col gap-2 text-sm text-fg-secondary">
+          <li>· Le bouton « Resynchroniser » (haut-droite de la Bibliothèque) re-scanne tes installations Steam + cracks à tout moment.</li>
+          <li>· Les jeux importés via le scanner du PC héritent automatiquement de leur appid Steam, ce qui débloque les succès + le temps de jeu Steam.</li>
+          <li>· Le watcher de processus externe (Settings → Performance) détecte aussi les jeux lancés HORS Nexus et les compte dans tes stats.</li>
+          <li>· La musique de profil se met en pause automatiquement quand un jeu est lancé.</li>
+        </ul>
+      </Card>
+    </div>
+  )
+}
+
+/**
+ * Mini-card réutilisée pour chaque toggle de l'onglet Jeu. Pattern
+ * identique aux cards du tab Lecteur de ScanVerse (titre + texte
+ * descriptif + un gros toggle visuel à droite avec libellé
+ * "Activé" / "Désactivé").
+ */
+function GameOptionCard({
+  title,
+  description,
+  enabled,
+  onToggle,
+}: {
+  title: string
+  description: string
+  enabled: boolean
+  onToggle: (v: boolean) => void
+}) {
+  return (
+    <Card padding="md" className="mt-3">
+      <div className="flex items-center gap-4">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-fg-primary">{title}</p>
+          <p className="text-xs text-fg-muted mt-1 leading-relaxed">{description}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onToggle(!enabled)}
+          className={`flex items-center gap-2 px-3 h-9 rounded-md text-xs font-semibold transition-colors ${
+            enabled
+              ? 'bg-accent-primary/15 border border-accent-primary/40 text-accent-primary'
+              : 'bg-[var(--surface-soft)] border border-glass-border text-fg-muted'
+          }`}
+        >
+          <span
+            className={`w-7 h-4 rounded-full relative transition-colors ${
+              enabled ? 'bg-accent-primary/60' : 'bg-fg-muted/30'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
+                enabled ? 'left-3.5' : 'left-0.5'
+              }`}
+            />
+          </span>
+          {enabled ? 'Activé' : 'Désactivé'}
+        </button>
+      </div>
+    </Card>
   )
 }

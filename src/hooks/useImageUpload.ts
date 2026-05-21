@@ -24,7 +24,7 @@ export function useImageUpload() {
     setError(null)
   }
 
-  function pick(): Promise<{ dataUrl: string } | null> {
+  function pick(): Promise<{ dataUrl: string; mime: string } | null> {
     return new Promise((resolve) => {
       if (!inputRef.current) {
         // Lazily create a detached input — keeps the DOM clean and the
@@ -37,17 +37,18 @@ export function useImageUpload() {
         inputRef.current = el
       }
       const el = inputRef.current
-      resolverRef.current = resolve
+      const cb = resolve as (v: { dataUrl: string; mime: string } | null) => void
+      resolverRef.current = cb as (v: { dataUrl: string } | null) => void
       el.value = ''
       el.onchange = async () => {
         const f = el.files?.[0]
         if (!f) {
-          resolverRef.current?.(null)
+          cb(null)
           return
         }
         if (f.size > MAX_BYTES) {
           setError(`Fichier trop volumineux (max ${Math.round(MAX_BYTES / 1024 / 1024)} Mo).`)
-          resolverRef.current?.(null)
+          cb(null)
           return
         }
         const reader = new FileReader()
@@ -55,15 +56,17 @@ export function useImageUpload() {
           const url = typeof reader.result === 'string' ? reader.result : null
           if (!url) {
             setError('Lecture du fichier échouée.')
-            resolverRef.current?.(null)
+            cb(null)
             return
           }
           setError(null)
-          resolverRef.current?.({ dataUrl: url })
+          // Surface the MIME so the caller can decide whether to open
+          // the cropper (skipped for animated formats — see ProfilePage).
+          cb({ dataUrl: url, mime: f.type || 'application/octet-stream' })
         }
         reader.onerror = () => {
           setError('Lecture du fichier échouée.')
-          resolverRef.current?.(null)
+          cb(null)
         }
         reader.readAsDataURL(f)
       }

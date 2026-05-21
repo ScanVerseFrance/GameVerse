@@ -25,6 +25,7 @@ import { useSocialStore } from '@/stores/social.store'
 import { Username } from '@/components/common/Username'
 import { NotificationBell } from '@/components/layout/NotificationBell'
 import { CloudStatusBadge } from '@/components/cloud/CloudStatusBadge'
+import { findDecoration } from '@/config/profileCosmetics'
 import { cn } from '@/utils/cn'
 
 interface NavTab {
@@ -51,7 +52,42 @@ export function TopNav() {
   const location = useLocation()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
+  const profileNonce = useAuthStore((s) => s.profileNonce)
   const logout = useAuthStore((s) => s.logout)
+
+  // Décoration d'avatar — résolution avec FALLBACK IPC sur
+  // profile.getCosmetics si l'auth store n'a pas la valeur.
+  // Pourquoi : la chaîne auth.toPublic → user.avatarDecorationId
+  // dépend du restart Electron + restoreSession qui peut être
+  // shadowed par adoptFromCloud (cloud sync n'expose pas la déco).
+  // Le fallback IPC interroge directement la DB locale via le
+  // service profile, donc il est toujours frais. `profileNonce` est
+  // bumpé à chaque updateProfile + refreshUser → re-fetch quand
+  // l'user change sa déco dans Settings.
+  const [fallbackDecoId, setFallbackDecoId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!user?.id) {
+      setFallbackDecoId(null)
+      return
+    }
+    let cancelled = false
+    void window.nexus.profile.getCosmetics(user.id).then((res) => {
+      if (cancelled) return
+      if (res?.ok && res.cosmetics) {
+        setFallbackDecoId(res.cosmetics.avatarDecorationId ?? null)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, profileNonce])
+
+  // Préfère l'auth store si rempli (cohérent + sync), sinon fallback.
+  // Normalise les "vides" ('' ou 'none') vers null pour que `??` bascule
+  // sur le fallback IPC plutôt que de figer une string sans déco.
+  const userDeco = user?.avatarDecorationId
+  const decoId = userDeco && userDeco !== 'none' ? userDeco : fallbackDecoId
+  const decoration = findDecoration(decoId)
   // Compte sans allouer un array — appelé sur chaque store update,
   // on évite filter(...).length qui crée un sous-array à jeter.
   const activeDownloads = useDownloadStore((s) => {
@@ -243,13 +279,27 @@ export function TopNav() {
                 : 'border border-transparent hover:bg-surface-soft hover:border-glass-border'
             )}
           >
-            <span className="relative w-9 h-9 rounded-full bg-accent-gradient overflow-hidden flex items-center justify-center shrink-0 shadow-[0_2px_8px_-2px_rgba(124,92,255,0.5)]">
-              {user.avatarPath ? (
-                <img src={user.avatarPath} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-xs font-bold text-white">
-                  {(user.displayName ?? user.username).slice(0, 1).toUpperCase()}
-                </span>
+            {/* Avatar wrapper relative — la déco vit en SIBLING du
+                cercle clippé, sinon overflow-hidden l'écraserait. */}
+            <span className="relative w-9 h-9 shrink-0">
+              <span className="w-9 h-9 rounded-full bg-accent-gradient overflow-hidden flex items-center justify-center shadow-[0_2px_8px_-2px_rgba(124,92,255,0.5)]">
+                {user.avatarPath ? (
+                  <img src={user.avatarPath} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-xs font-bold text-white">
+                    {(user.displayName ?? user.username).slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+              </span>
+              {decoration.file && (
+                <img
+                  src={decoration.file}
+                  alt=""
+                  aria-hidden
+                  draggable={false}
+                  style={{ maxWidth: 'none', maxHeight: 'none' }}
+                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[115%] h-[115%] object-contain pointer-events-none select-none"
+                />
               )}
             </span>
             <Username
@@ -271,13 +321,27 @@ export function TopNav() {
                 onClick={() => setMenuOpen(false)}
                 className="flex items-center gap-3 px-4 py-4 bg-accent-gradient-soft hover:bg-surface-soft-hover transition-colors border-b border-glass-border"
               >
-                <span className="relative w-12 h-12 rounded-full bg-accent-gradient overflow-hidden flex items-center justify-center shrink-0 shadow-[0_4px_12px_-2px_rgba(124,92,255,0.5)]">
-                  {user.avatarPath ? (
-                    <img src={user.avatarPath} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-base font-bold text-white">
-                      {(user.displayName ?? user.username).slice(0, 1).toUpperCase()}
-                    </span>
+                {/* Avatar dropdown — même pattern wrapper relative
+                    + déco en sibling pour cohérence avec le top-right. */}
+                <span className="relative w-12 h-12 shrink-0">
+                  <span className="w-12 h-12 rounded-full bg-accent-gradient overflow-hidden flex items-center justify-center shadow-[0_4px_12px_-2px_rgba(124,92,255,0.5)]">
+                    {user.avatarPath ? (
+                      <img src={user.avatarPath} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-base font-bold text-white">
+                        {(user.displayName ?? user.username).slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                  </span>
+                  {decoration.file && (
+                    <img
+                      src={decoration.file}
+                      alt=""
+                      aria-hidden
+                      draggable={false}
+                      style={{ maxWidth: 'none', maxHeight: 'none' }}
+                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[115%] h-[115%] object-contain pointer-events-none select-none"
+                    />
                   )}
                 </span>
                 <div className="min-w-0 flex-1">

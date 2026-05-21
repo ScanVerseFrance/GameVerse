@@ -135,6 +135,17 @@ export function registerCloudIpc(): void {
           bannerPath?: string | null
           bio?: string | null
           createdAt?: string | null
+          // v0.3.4 — aggregated stats from the friend's launcher.
+          // Optional because pre-v0.3.4 backends won't send them.
+          stats?: {
+            libraryCount?: number | null
+            totalPlaytimeSeconds?: number | null
+            completedCount?: number | null
+            reviewCount?: number | null
+            lastPlayedTitle?: string | null
+            lastPlayedCoverUrl?: string | null
+            lastPlayedAt?: string | null
+          } | null
         }>
       }
       // Mirror each cloud friend into the LOCAL users table so the
@@ -143,11 +154,61 @@ export function registerCloudIpc(): void {
       // friends list renders fine but clicking a row returns
       // "Profil introuvable" because the local users table only
       // ever held the logged-in user's row.
+      //
+      // We ALSO mirror the (currentUser, friend) edge into the
+      // LOCAL `friends` table so:
+      //   - social.listFriends(userId) returns rows on the Profile
+      //     "Amis" tab + the standalone Communauté/Amis page
+      //   - getProfile().stats.friendCount returns the right number
+      //     (it queries COUNT(*) FROM friends WHERE user_id = ?)
+      // Both queries were returning 0 before because the local
+      // friends table was empty even when /v1/friends listed peers.
       if (data.friends && Array.isArray(data.friends)) {
         const { upsertCloudFriend } = await import('../services/social.service')
+        const me = svc.getUser()?.id ?? null
+        const db = (await import('../services/database.service')).getDatabase()
+        const insertEdge = db.prepare(
+          `INSERT INTO friends (user_id, friend_id, created_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(user_id, friend_id) DO NOTHING`,
+        )
+        const now = Date.now()
         for (const f of data.friends) {
           if (f && typeof f === 'object' && typeof f.id === 'string') {
             upsertCloudFriend(f)
+            if (me && me !== f.id) {
+              try {
+                insertEdge.run(me, f.id, now)
+              } catch {
+                /* per-row failure shouldn't blow up the list refresh */
+              }
+            }
+          }
+        }
+        // Garbage-collect: any local edges pointing at a friend the
+        // cloud no longer reports go away too, so removing a friend
+        // on another machine + refreshing here reconciles cleanly.
+        if (me) {
+          const cloudFriendIds = data.friends
+            .filter((f) => f && typeof f === 'object' && typeof f.id === 'string')
+            .map((f) => f.id)
+          const localRows = db
+            .prepare('SELECT friend_id FROM friends WHERE user_id = ?')
+            .all(me) as Array<{ friend_id: string }>
+          const stale = localRows
+            .map((r) => r.friend_id)
+            .filter((id) => !cloudFriendIds.includes(id))
+          if (stale.length > 0) {
+            const del = db.prepare(
+              'DELETE FROM friends WHERE user_id = ? AND friend_id = ?',
+            )
+            for (const id of stale) {
+              try {
+                del.run(me, id)
+              } catch {
+                /* ignore */
+              }
+            }
           }
         }
       }
@@ -183,6 +244,40 @@ export function registerCloudIpc(): void {
       return { ok: true }
     } catch (e) {
       return { ok: false, error: (e as Error).message }
+    }
+  })
+
+  // GET /v1/friends/of/:userId — liste publique des amis d'un user
+  // arbitraire. Utilisé par le FriendsTab pour hydrater quand le
+  // user consulté est cloud-synced (ses edges ne sont pas en local).
+  ipcMain.handle('cloud:friendsOf', async (_e, userId: unknown) => {
+    const id = safeStr(userId, 40)
+    if (!id) return { ok: false, error: 'userId required', friends: [] }
+    try {
+      const friends = await svc.cloudFetchFriendsOf(id)
+      return { ok: true, friends }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, friends: [] }
+    }
+  })
+
+  // POST /v1/friends/mutual — pour chaque friendId, le serveur
+  // renvoie {commonFriendsCount, commonFriends[0..4]}. Utilisé par
+  // le FriendsTab pour la avatar-stack "X en commun". Voir la doc
+  // dans cloud.service.cloudFetchMutualFriends pour le rationale
+  // (les amis de mes amis ne sont pas sync localement).
+  ipcMain.handle('cloud:mutualFriends', async (_e, friendIds: unknown) => {
+    if (!Array.isArray(friendIds)) {
+      return { ok: false, error: 'friendIds must be an array', results: [] }
+    }
+    const ids = friendIds
+      .filter((x): x is string => typeof x === 'string')
+      .slice(0, 200)
+    try {
+      const results = await svc.cloudFetchMutualFriends(ids)
+      return { ok: true, results }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, results: [] }
     }
   })
 

@@ -1,6 +1,10 @@
 import type { CSSProperties, HTMLAttributes } from 'react'
 import type { PublicUser } from '@/types/api.types'
 import { cn } from '@/utils/cn'
+import {
+  USERNAME_FONTS_BY_ID,
+  ensureFontLoaded,
+} from '@/config/usernameCustomisations'
 
 /**
  * Render a username with the user's chosen color + animation effect
@@ -22,7 +26,7 @@ interface UsernameProps extends HTMLAttributes<HTMLSpanElement> {
   user: Pick<
     PublicUser,
     'username' | 'displayName' | 'usernameColor' | 'usernameAnimation'
-  > & { usernameColor2?: string | null }
+  > & { usernameColor2?: string | null; usernameFont?: string | null }
   /** When true (default), prefer `displayName`; fall back to `username`.
    * Pass false to always show the raw `username`. */
   preferDisplay?: boolean
@@ -61,9 +65,22 @@ export function Username({
   const c2 = user.usernameColor2 ?? null
   const biActive = !!(c2 && !BI_COLOR_INCOMPATIBLE.has(anim))
 
+  // Font catalogue id (Syne / Inter / Bebas Neue / etc.). When set
+  // to anything other than the default we eagerly request the
+  // Google Fonts <link> so the glyphs swap in immediately.
+  const fontId = user.usernameFont ?? 'default'
+  const fontDef = USERNAME_FONTS_BY_ID[fontId]
+  if (fontDef?.googleFont) ensureFontLoaded(fontId)
+
   const finalStyle: CSSProperties = {
     ...style,
     ...(!COLOUR_OVERRIDE_ANIMATIONS.has(anim) && c1 ? { color: c1 } : {}),
+    ...(fontDef && fontId !== 'default'
+      ? {
+          fontFamily: fontDef.fontFamily,
+          fontWeight: fontDef.weight,
+        }
+      : {}),
     ...(biActive && c1 && c2
       ? ({
           // Custom properties consumed by `.username-bi` stylesheet.
@@ -77,6 +94,7 @@ export function Username({
       className={cn(animClass, biActive && 'username-bi', className)}
       style={finalStyle}
       data-anim={anim}
+      data-text={label}
       {...rest}
     >
       {label}

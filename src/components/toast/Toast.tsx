@@ -157,7 +157,10 @@ export function Toast({ item }: { item: ToastItem }) {
           >
             {meta.label}
           </p>
-          <p className="text-[13px] font-semibold text-white truncate leading-tight">
+          <p
+            className="text-[13px] font-semibold text-white truncate leading-tight"
+            style={{ fontFamily: 'Syne, sans-serif' }}
+          >
             {item.title}
           </p>
           {item.body && (

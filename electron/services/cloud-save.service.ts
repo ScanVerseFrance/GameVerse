@@ -270,7 +270,27 @@ export async function uploadGameSave(
 
   try {
     // 1. Ludusavi backup (not preview — actual file copy).
-    const result = await runBackup(ludusaviGameName(game.title), backupTree, false)
+    let result: Awaited<ReturnType<typeof runBackup>>
+    try {
+      result = await runBackup(ludusaviGameName(game.title), backupTree, false)
+    } catch (e) {
+      const msg = (e as Error).message
+      // Ludusavi has no PCGamingWiki manifest entry for this game.
+      // Most cracks / repacks ship titles Ludusavi doesn't recognise
+      // (the manifest is curated by PCGamingWiki editors). Surface a
+      // dedicated soft skip reason so the toast pipeline treats it
+      // as informational rather than a red error toast, AND so the
+      // SavesModal / status row can mark the game as "Pas géré" up
+      // front instead of waiting for the user to try a manual save.
+      if (/no info for these games/i.test(msg)) {
+        return {
+          ok: false,
+          skipped: true,
+          skipReason: 'no_ludusavi_manifest',
+        }
+      }
+      throw e
+    }
     let fileCount = 0
     for (const g of Object.values(result.games ?? {})) {
       fileCount += Object.keys(g.files ?? {}).length

@@ -50,6 +50,7 @@ interface CrackedGame {
   sizeBytes: number | null
   executablePath: string | null
   scanRoot: string
+  steamAppid?: number
 }
 
 interface ScanState {
@@ -92,9 +93,21 @@ export function PcScanWizard({
     cracked: Map<string, { ok: boolean; error?: string }>
   }>({ steam: new Map(), cracked: new Map() })
 
+  /** Live progress feedback from the deep walker. Updated as the
+   *  scanner descends through folders — gives the user something
+   *  to look at instead of a frozen spinner while every drive is
+   *  being walked. */
+  const [scanProgress, setScanProgress] = useState<string | null>(null)
+
   const runScan = useCallback(async () => {
     setState((s) => ({ ...s, phase: 'scanning', error: null }))
-    const res = await window.nexus.pcScanner.scan()
+    setScanProgress(null)
+    // Subscribe to per-folder progress BEFORE kicking the scan so
+    // we don't miss early emissions. The throttling is done on the
+    // main side (every ~100ms) so we just store the latest value.
+    const unsub = window.nexus.pcScanner.onProgress((p) => setScanProgress(p))
+    const res = await window.nexus.pcScanner.scan([], { deep: true })
+    unsub()
     if (!res.ok) {
       setState({
         phase: 'error',
@@ -129,6 +142,14 @@ export function PcScanWizard({
     }
   }, [open, runScan])
 
+  /** Cancel handler — fires the IPC cancel + closes the modal. The
+   *  walker stops at the next folder boundary; whatever it found
+   *  so far is silently discarded since we're closing anyway. */
+  function handleCancelAndClose(): void {
+    void window.nexus.pcScanner.cancel()
+    onClose()
+  }
+
   const totalSelected = selectedSteam.size + selectedCracked.size
 
   async function handleImport() {
@@ -144,6 +165,10 @@ export function PcScanWizard({
         executablePath: g.executablePath,
         sizeBytes: g.sizeBytes,
         moveToNexusFolder: moveCracks,
+        // Propage l'appid résolu par le deep-scan vers le main
+        // process pour que addLibraryGame écrive bien library_games
+        // .steam_appid → covers + achievements gratuits.
+        steamAppid: g.steamAppid,
       }))
     const res = await window.nexus.pcScanner.importSelected({
       userId: user.id,
@@ -216,13 +241,13 @@ export function PcScanWizard({
                   Scanner mon PC
                 </h2>
                 <p className="text-xs text-fg-muted mt-1 leading-snug">
-                  On cherche tes jeux Steam + tes installations crack dans les
-                  dossiers connus, puis tu choisis ce que tu veux ajouter à ta
-                  bibliothèque Nexus.
+                  On scanne TOUS tes disques (C:, D:, etc.) à la recherche de
+                  jeux Steam + d'installations crack, où qu'elles soient. Tu
+                  choisis ensuite ce que tu veux ajouter à ta bibliothèque.
                 </p>
               </div>
               <button
-                onClick={onClose}
+                onClick={handleCancelAndClose}
                 disabled={state.phase === 'importing'}
                 className="text-fg-muted hover:text-fg-primary p-1.5 rounded-sm hover:bg-[var(--surface-soft)] disabled:opacity-50"
                 aria-label="Fermer"
@@ -232,7 +257,12 @@ export function PcScanWizard({
             </header>
 
             <div className="flex-1 overflow-y-auto px-6 py-5">
-              {state.phase === 'scanning' && <ScanningState />}
+              {state.phase === 'scanning' && (
+                <ScanningState
+                  currentPath={scanProgress}
+                  onCancel={handleCancelAndClose}
+                />
+              )}
               {state.phase === 'error' && (
                 <ErrorState message={state.error} onRetry={() => void runScan()} />
               )}
@@ -328,15 +358,42 @@ export function PcScanWizard({
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────
 
-function ScanningState() {
+function ScanningState({
+  currentPath,
+  onCancel,
+}: {
+  currentPath: string | null
+  onCancel: () => void
+}) {
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-fg-muted">
       <Loader2 className="w-7 h-7 animate-spin text-accent-primary" />
       <p className="text-sm">Scan en cours…</p>
       <p className="text-[11px] text-center max-w-sm leading-relaxed">
-        Lecture de Steam libraryfolders.vdf, parsing des .acf, exploration des
-        dossiers Hydra/Games. Quelques secondes max.
+        Steam (libraryfolders.vdf + .acf) + walk profond de chaque disque fixe.
+        Peut prendre une minute sur un gros disque — les dossiers système sont
+        ignorés.
       </p>
+      {/* Live progress — montre où le walker en est, en clamping le
+          chemin pour ne pas péter la mise en page sur des paths longs.
+          `dir=rtl` + `text-overflow:ellipsis` simulent un "scrolling
+          window" qui garde la fin du path visible (généralement la
+          plus informative). */}
+      {currentPath && (
+        <p
+          className="text-[10px] font-mono text-fg-faint max-w-full px-4 truncate"
+          dir="rtl"
+          title={currentPath}
+        >
+          {currentPath}
+        </p>
+      )}
+      <button
+        onClick={onCancel}
+        className="mt-3 h-8 px-3 rounded-md text-xs font-medium border border-glass-border text-fg-secondary hover:text-fg-primary hover:bg-[var(--surface-soft)]"
+      >
+        Annuler
+      </button>
     </div>
   )
 }
@@ -402,10 +459,17 @@ function Lists({
             <SteamLogo className="w-3.5 h-3.5" /> Steam ({state.steam.length})
           </h3>
           {state.steamRoot && (
-            <p className="text-[11px] text-fg-muted mb-2 truncate" title={state.steamRoot}>
+            <p className="text-[11px] text-fg-muted mb-1 truncate" title={state.steamRoot}>
               Installé : {state.steamRoot}
             </p>
           )}
+          {/* Reassurance explicite — l'option "Déplacer" en bas du
+              wizard ne concerne JAMAIS ces lignes ; elles restent
+              gérées par Steam pour conserver playtime + achievements
+              + cloud saves natifs. */}
+          <p className="text-[11px] text-fg-faint mb-2">
+            Ces jeux restent gérés par Steam (non déplaçables).
+          </p>
           <ul className="flex flex-col gap-1.5">
             {state.steam.map((g) => {
               const result = importResults.steam.get(g.appid)
@@ -511,9 +575,21 @@ function GameRow({
             </span>
           )}
         </div>
-        <p className="text-[11px] text-fg-muted truncate" title={pathHint}>
+        <p className="text-[11px] text-fg-muted truncate">
           {subtitle}
           {sizeBytes != null && sizeBytes > 0 && ` · ${fmtBytes(sizeBytes)}`}
+        </p>
+        {/* Chemin complet sur disque — l'user a demandé à voir
+            l'emplacement exact pour pouvoir vérifier ce qui sera
+            importé / déplacé. dir=rtl + truncate garde la fin du
+            path visible (le nom du dossier final, le plus parlant)
+            quand le chemin déborde de la largeur. */}
+        <p
+          className="text-[10px] font-mono text-fg-faint truncate"
+          dir="rtl"
+          title={pathHint}
+        >
+          {pathHint}
         </p>
       </div>
       {result && (
