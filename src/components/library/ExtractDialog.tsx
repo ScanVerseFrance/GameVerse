@@ -11,7 +11,7 @@ import {
   Loader2,
   Trash2,
   Download as DownloadIcon,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { formatBytes } from '@/utils/parse-size'

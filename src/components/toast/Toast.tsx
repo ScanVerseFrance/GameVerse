@@ -21,7 +21,7 @@
  */
 import { useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { MessageSquare, UserPlus, Gamepad2, Trophy, Download, RefreshCw, Cloud, Bell, X } from 'lucide-react'
+import { MessageSquare, UserPlus, Gamepad2, Trophy, Download, RefreshCw, Cloud, Bell, Keyboard, X } from '@/lib/icons'
 import type { ToastItem, ToastKind } from '@/stores/toast.store'
 import { useToastStore } from '@/stores/toast.store'
 
@@ -38,6 +38,9 @@ const KIND_META: Record<
   download_complete: { label: 'Téléchargement', icon: Download, accent: 'from-sky-400 to-indigo-500' },
   update_available: { label: 'Mise à jour', icon: RefreshCw, accent: 'from-fuchsia-400 to-pink-500' },
   cloud_save: { label: 'Sauvegarde', icon: Cloud, accent: 'from-blue-400 to-cyan-500' },
+  controller_connected: { label: 'Contrôleur connecté', icon: Gamepad2, accent: 'from-emerald-400 to-green-500' },
+  controller_disconnected: { label: 'Contrôleur déconnecté', icon: Gamepad2, accent: 'from-rose-400 to-red-500' },
+  overlay_tip: { label: 'Astuce overlay', icon: Keyboard, accent: 'from-accent-primary to-accent-secondary' },
   test: { label: 'Test', icon: Bell, accent: 'from-cyan-400 to-emerald-500' },
 }
 
@@ -101,7 +104,7 @@ export function Toast({ item }: { item: ToastItem }) {
       className="
         group relative w-full overflow-hidden rounded-xl
         bg-gradient-to-br from-[#1a1f2e]/95 to-[#0f1320]/95 backdrop-blur-xl
-        border border-white/[0.08] shadow-2xl shadow-black/50
+        border border-white/[0.08]
         cursor-pointer select-none
         hover:border-white/[0.15] transition-colors
       "
@@ -126,10 +129,46 @@ export function Toast({ item }: { item: ToastItem }) {
       </button>
 
       <div className="flex items-stretch gap-2.5 p-2.5 pl-3">
-        {/* Avatar / icon column. Falls back to a circled lucide icon
-            tinted with the kind accent when no iconUrl is available. */}
-        <div className="shrink-0 self-start">
-          {item.iconUrl ? (
+        {/* Avatar / icon column. Controller toasts utilisent une image
+            CARRÉE 56×56 avec object-contain pour préserver le ratio
+            de la manette (PNG avec transparence). Les autres kinds
+            gardent le rendu rounded 40×40 (avatar circulaire). */}
+        <div className="shrink-0 self-center">
+          {item.kind === 'controller_connected' ||
+          item.kind === 'controller_disconnected' ? (
+            item.iconUrl ? (
+              // CSS mask-image transforme la PNG en pure silhouette
+              // monochrome : l'alpha channel du PNG devient le mask,
+              // on remplit avec un grey solide. Match exactement le
+              // rendu Steam (capture user) qui affiche une silhouette
+              // grise plate du modèle de manette — pas de photo
+              // détaillée, juste l'outline du body.
+              //
+              // backgroundColor = #b8b8b8 cohérent avec le rendu Steam
+              // sur fond sombre (gris-clair contrasté).
+              <div
+                className="w-14 h-14"
+                style={{
+                  backgroundColor: '#b8b8b8',
+                  WebkitMaskImage: `url(${item.iconUrl})`,
+                  maskImage: `url(${item.iconUrl})`,
+                  WebkitMaskSize: 'contain',
+                  maskSize: 'contain',
+                  WebkitMaskRepeat: 'no-repeat',
+                  maskRepeat: 'no-repeat',
+                  WebkitMaskPosition: 'center',
+                  maskPosition: 'center',
+                }}
+                aria-hidden
+              />
+            ) : (
+              <div
+                className={`w-14 h-14 rounded-md bg-gradient-to-br ${meta.accent} flex items-center justify-center`}
+              >
+                <Icon size={26} className="text-white" />
+              </div>
+            )
+          ) : item.iconUrl ? (
             <img
               src={item.iconUrl}
               alt=""

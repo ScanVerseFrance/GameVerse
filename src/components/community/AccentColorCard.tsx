@@ -24,7 +24,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Palette, ExternalLink } from 'lucide-react'
+import { Palette, ExternalLink } from '@/lib/icons'
 import { useThemeStore } from '@/stores/theme.store'
 
 const ANIMATED_KEY = 'nexus.accentAnimated'

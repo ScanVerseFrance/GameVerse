@@ -13,7 +13,7 @@
  */
 import { useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Check, X, Info, AlertTriangle } from 'lucide-react'
+import { Check, X, Info, AlertTriangle } from '@/lib/icons'
 import {
   useInAppToastStore,
   type InAppToastItem,

@@ -83,6 +83,58 @@ export function isAnkergamesPageUrl(url: string): boolean {
   }
 }
 
+/** v0.5.1 — Online-Fix.me : pareil que ankergames, l'URL pointe vers
+ *  une page HTML qui gate les mirrors derrière une inscription. On
+ *  ne peut pas auto-download : on ouvre la page dans le navigateur
+ *  du user et on marque le download "manuel".
+ *
+ *  On matche AUSSI les subdomains auth-gated (uploads., hosters.,
+ *  drive., t.) parce que les anciennes versions du JSON exportaient
+ *  ces URLs en directe — quand l'user re-clique sur Install pour un
+ *  download qui avait été enqueued avant le fix, il faut renvoyer
+ *  vers la page post au lieu de tenter le 401. */
+export function isOnlineFixPageUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    // online-fix.me/games/ ou /coop/ (page post canonique)
+    if (
+      u.hostname === 'online-fix.me' &&
+      (u.pathname.startsWith('/games/') || u.pathname.startsWith('/coop/'))
+    ) {
+      return true
+    }
+    // Subdomains auth-gated → ne peut pas auto-download
+    if (
+      /\.online-fix\.me$/i.test(u.hostname) &&
+      (u.hostname.startsWith('uploads.') ||
+        u.hostname.startsWith('hosters.') ||
+        u.hostname.startsWith('drive.') ||
+        u.hostname.startsWith('t.'))
+    ) {
+      return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+/** Pour les downloads OnlineFix legacy qui pointaient vers une
+ *  subdomain URL (uploads./hosters./drive.), on ne peut pas ouvrir
+ *  CETTE URL dans le browser (auth gate) — on doit ouvrir la page
+ *  online-fix.me racine pour que l'user retrouve le post. Fallback :
+ *  homepage du site si on n'a pas mieux. */
+export function onlineFixFallbackPageUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    if (u.hostname === 'online-fix.me') return url
+    // Sinon on ne sait pas vers quel post précis renvoyer → home.
+    return 'https://online-fix.me/'
+  } catch {
+    return 'https://online-fix.me/'
+  }
+}
+
 /** Install the single session-wide will-download listener. Safe to
  *  call repeatedly — first invocation wins. */
 function ensureSessionListener(): void {
@@ -375,6 +427,29 @@ export function startBridgeDownload(params: BridgeParams): BridgeHandle {
             `[ankergames-bridge] ${label} script @ ${url.slice(0, 80)} →`,
             result
           )
+          // v0.5.2 — quand on ne trouve pas les boutons, dump la page
+          // HTML pour diagnosis (fichier dans %TEMP%). User reste
+          // invisible — il faut comprendre ce que la page affiche.
+          if (
+            result === 'no-buttons-found' ||
+            result === 'opened-popup-no-direct' ||
+            result === 'no-download-now'
+          ) {
+            void win.webContents
+              .executeJavaScript('document.documentElement.outerHTML')
+              .then((html: string) => {
+                try {
+                  const fs = require('node:fs') as typeof import('node:fs')
+                  const os = require('node:os') as typeof import('node:os')
+                  const p = require('node:path') as typeof import('node:path')
+                  const fp = p.join(os.tmpdir(),
+                    `nexus-ankergames-${result}-${Date.now()}.html`)
+                  fs.writeFileSync(fp, html.slice(0, 1024 * 512), 'utf8')
+                  console.warn(`[ankergames-bridge] page dumped to ${fp}`)
+                } catch { /* skip */ }
+              })
+              .catch(() => { /* skip */ })
+          }
         })
         .catch((e) => {
           // Expected when the page navigates while the script is still

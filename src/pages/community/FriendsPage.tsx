@@ -14,7 +14,7 @@ import {
   Clock,
   CloudOff,
   Loader2,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { useCloudStore } from '@/stores/cloud.store'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'

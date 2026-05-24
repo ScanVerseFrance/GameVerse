@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Minus, Square, X, Copy } from 'lucide-react'
+import { Minus, Square, X, Copy } from '@/lib/icons'
 
 /**
  * Window chrome — barre de titre minimaliste avec logo gradient et

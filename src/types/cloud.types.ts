@@ -114,6 +114,31 @@ export type CloudWsEnvelope =
       data: { from: CloudPublicUser; message: string | null }
     }
   | { type: 'activity:new'; data: CloudActivity }
+  // Remote Play Together — Phase A signaling
+  | {
+      type: 'remote_play:invite'
+      data: {
+        fromUserId: string
+        fromName: string | null
+        gameTitle: string
+        gameId: string
+        steamAppId: number | null
+        coverUrl: string | null
+      }
+    }
+  | {
+      type: 'remote_play:response'
+      data: { fromUserId: string; accepted: boolean }
+    }
+  // Phase B WebRTC relay — `payload` is opaque (SDP / ICE candidate).
+  | {
+      type: 'remote_play:signal'
+      data: {
+        fromUserId: string
+        signalType: string
+        payload: unknown
+      }
+    }
 
 /** Steam-style friend request — one row in either direction of the
  *  pending pair. Used by the Friends page tabs (Incoming / Outgoing). */

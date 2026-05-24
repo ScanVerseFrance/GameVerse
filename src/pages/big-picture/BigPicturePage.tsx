@@ -18,7 +18,7 @@ import {
   Info,
   ArrowLeft,
   Wifi,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { useLibraryStore } from '@/stores/library.store'
 import { useDownloadStore } from '@/stores/download.store'
 import { useSocialStore } from '@/stores/social.store'

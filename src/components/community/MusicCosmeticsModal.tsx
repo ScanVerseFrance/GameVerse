@@ -30,7 +30,7 @@
  *                composite les couches en miniature directement.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { Search, X } from '@/lib/icons'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import {

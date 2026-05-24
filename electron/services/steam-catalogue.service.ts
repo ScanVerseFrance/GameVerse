@@ -203,6 +203,19 @@ export interface SearchCatalogueOptions {
   limit?: number
   offset?: number
   sort?: 'popularity' | 'name'
+  /** Filtres par genres Steam (case-insensitive). JOIN avec
+   *  game_artwork.genres (JSON array TEXT) via LIKE. Match en
+   *  OR : un seul des genres demandés suffit. Sparse côté
+   *  game_artwork (seuls les jeux dont l'artwork a été cached
+   *  ont des genres) → un filtre genre actif réduit fortement
+   *  le résultat. v0.5.1. */
+  genres?: string[]
+  /** Bornes taille téléchargement en bytes (decimal). On JOIN
+   *  json_source_games.file_size (string) parsé en bytes côté SQL
+   *  pour ne garder que les jeux dans la fourchette. v0.5.1.
+   *  Note : sparse (beaucoup de sources n'ont pas file_size). */
+  minSizeBytes?: number
+  maxSizeBytes?: number
 }
 
 /**
@@ -223,14 +236,97 @@ export function searchSteamCatalogue(opts: SearchCatalogueOptions): {
     limit = 60,
     offset = 0,
     sort = 'popularity',
+    genres = [],
+    minSizeBytes,
+    maxSizeBytes,
   } = opts
 
   const db = getDatabase()
 
+  // v0.5.1 — Précompute des sets d'appids matchant les filtres
+  // sparses (genres, taille) AVANT le JOIN. Évite l'EXISTS subquery
+  // par row de steam_catalogue (80k rows × 2k artwork = 160M ops).
+  // Stratégie :
+  //   1. Si genres → query game_artwork directement, récupère les
+  //      appids matching, on les passe en IN (...) sur c.appid.
+  //   2. Si taille → query json_source_games avec parsing string
+  //      → bytes côté SQL, idem on récupère les appids matching.
+  //   3. On intersecte les sets côté JS si les 2 filtres sont actifs.
+  // Coût : 2 queries indexées rapides + une IN sur 80k rows
+  // (rapide grâce à l'index primary key).
+  let filterAppids: Set<number> | null = null
+
+  if (genres.length > 0) {
+    try {
+      const genreLikes = genres
+        .map(() => 'genres LIKE ? COLLATE NOCASE')
+        .join(' OR ')
+      const params: unknown[] = genres.map((g) => `%"${g}"%`)
+      const rows = db
+        .prepare(
+          `SELECT external_id FROM game_artwork
+           WHERE external_source = 'steam' AND external_id IS NOT NULL AND (${genreLikes})`,
+        )
+        .all(...params) as Array<{ external_id: string }>
+      const ids = new Set<number>()
+      for (const r of rows) {
+        const n = Number.parseInt(r.external_id, 10)
+        if (Number.isFinite(n)) ids.add(n)
+      }
+      filterAppids = ids
+    } catch (e) {
+      console.warn('[steam-catalogue] genre filter failed:', (e as Error).message)
+      // Fail-soft : on ignore le filtre genre plutôt que crasher.
+      filterAppids = new Set()
+    }
+  }
+
+  if (typeof minSizeBytes === 'number' || typeof maxSizeBytes === 'number') {
+    try {
+      // file_size est une string type "12.5 GB" ou "850 MB". On
+      // parse au SQL via CAST + CASE pour transformer en bytes
+      // décimaux puis on filtre.
+      const sizeRows = db
+        .prepare(
+          `SELECT steam_appid AS appid,
+                  MIN(
+                    CASE
+                      WHEN file_size LIKE '% GB%' OR file_size LIKE '% Go%' THEN CAST(file_size AS REAL) * 1000000000
+                      WHEN file_size LIKE '% MB%' OR file_size LIKE '% Mo%' THEN CAST(file_size AS REAL) * 1000000
+                      WHEN file_size LIKE '% KB%' OR file_size LIKE '% Ko%' THEN CAST(file_size AS REAL) * 1000
+                      ELSE NULL
+                    END
+                  ) AS bytes
+           FROM json_source_games
+           WHERE steam_appid IS NOT NULL AND steam_appid > 0
+             AND file_size IS NOT NULL AND file_size != ''
+           GROUP BY steam_appid`,
+        )
+        .all() as Array<{ appid: number; bytes: number | null }>
+      const sizeSet = new Set<number>()
+      for (const r of sizeRows) {
+        if (r.bytes == null) continue
+        if (typeof minSizeBytes === 'number' && r.bytes < minSizeBytes) continue
+        if (typeof maxSizeBytes === 'number' && r.bytes > maxSizeBytes) continue
+        sizeSet.add(r.appid)
+      }
+      // Intersection avec le set existant.
+      if (filterAppids) {
+        const intersected = new Set<number>()
+        for (const id of sizeSet) if (filterAppids.has(id)) intersected.add(id)
+        filterAppids = intersected
+      } else {
+        filterAppids = sizeSet
+      }
+    } catch (e) {
+      console.warn('[steam-catalogue] size filter failed:', (e as Error).message)
+    }
+  }
+
   // The JOIN aggregates source-count + concatenated source names per
   // appid. LEFT JOIN so games without sources still surface (sources
   // are optional — Hydra-exact behaviour).
-  let where: string[] = []
+  const where: string[] = []
   const params: unknown[] = []
 
   if (query.trim()) {
@@ -245,7 +341,22 @@ export function searchSteamCatalogue(opts: SearchCatalogueOptions): {
   }
 
   if (withSourceOnly) {
-    where.push('source_count > 0')
+    // COALESCE pour ne pas trébucher sur les NULL du LEFT JOIN.
+    where.push('COALESCE(g.source_count, 0) > 0')
+  }
+
+  // Set de filtres pré-calculés (genres + taille). On l'injecte via
+  // une IN (..., ..., ...) ; SQLite gère bien jusqu'à des dizaines
+  // de milliers de paramètres. Si le set est vide → on bypass via
+  // un WHERE qui ne match rien plutôt que de skipper le filtre.
+  if (filterAppids) {
+    if (filterAppids.size === 0) {
+      // Empty set explicite — 0 résultats.
+      return { rows: [], total: 0 }
+    }
+    const placeholders = Array.from(filterAppids, () => '?').join(',')
+    where.push(`c.appid IN (${placeholders})`)
+    for (const id of filterAppids) params.push(id)
   }
 
   const whereClause = where.length > 0 ? ' WHERE ' + where.join(' AND ') : ''
@@ -292,9 +403,14 @@ export function searchSteamCatalogue(opts: SearchCatalogueOptions): {
     ${whereClause}
   `
 
-  const rows = db.prepare(sql).all(...params, limit, offset) as SteamCatalogueTile[]
-  const totalRow = db.prepare(countSql).get(...params) as { total: number }
-  return { rows, total: totalRow.total }
+  try {
+    const rows = db.prepare(sql).all(...params, limit, offset) as SteamCatalogueTile[]
+    const totalRow = db.prepare(countSql).get(...params) as { total: number }
+    return { rows, total: totalRow.total }
+  } catch (e) {
+    console.error('[steam-catalogue] search failed:', (e as Error).message)
+    return { rows: [], total: 0 }
+  }
 }
 
 /**

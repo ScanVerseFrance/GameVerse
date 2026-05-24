@@ -19,7 +19,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Flame, Star, Gem, Users, Crown } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Flame, Star, Gem, Users, Crown } from '@/lib/icons'
 import { useRef } from 'react'
 import { cn } from '@/utils/cn'
 

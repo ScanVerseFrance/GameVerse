@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Keyboard } from 'lucide-react'
+import { Keyboard } from '@/lib/icons'
 import { Modal } from '@/components/ui/Modal'
 import { isModifierEvent, shouldIgnoreKeyboardEvent } from '@/utils/keyboard'
 

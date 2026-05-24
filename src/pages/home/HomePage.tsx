@@ -20,7 +20,7 @@ import {
   Trophy,
   AlertTriangle,
   MessageCircle,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { useAuthStore } from '@/stores/auth.store'
 import { useLibraryStore } from '@/stores/library.store'
 import { useDownloadStore } from '@/stores/download.store'

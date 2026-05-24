@@ -15,7 +15,7 @@ import {
   Calendar,
   Trophy,
   type LucideIcon,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { Card } from '@/components/ui/Card'
 import { Toggle } from '@/components/ui/Toggle'
 import { useAuthStore } from '@/stores/auth.store'

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Camera, Sparkles, X, Maximize2 } from 'lucide-react'
+import { Camera, Sparkles, X, Maximize2 } from '@/lib/icons'
 
 /**
  * Steam/ScanVerse-style action menu that pops up next to the profile

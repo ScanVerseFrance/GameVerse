@@ -27,12 +27,33 @@ interface Props {
   query: string
   withSourceOnly: boolean
   sort: 'popularity' | 'name'
+  /** Filtre genres Steam (case-insensitive, union OR). Affecte la
+   *  search backend qui JOIN game_artwork.genres. */
+  genres?: string[]
+  /** Bornes taille téléchargement en bytes (decimal). Sparse côté
+   *  json_source_games.file_size. */
+  minSizeBytes?: number
+  maxSizeBytes?: number
 }
 
 const PAGE_SIZE = 60
 
-export function SteamCatalogueGrid({ query, withSourceOnly, sort }: Props) {
+export function SteamCatalogueGrid({
+  query,
+  withSourceOnly,
+  sort,
+  genres = [],
+  minSizeBytes,
+  maxSizeBytes,
+}: Props) {
   const debouncedQuery = useDebounce(query, 300)
+  // Stable key pour dépendre de la liste de genres sans déclencher
+  // un re-render sur chaque référence d'array. Sort alphabetique
+  // pour que ["RPG","Action"] et ["Action","RPG"] partagent la
+  // même clé.
+  const genresKey = [...genres].sort().join(',')
+  // Clé stable pour la taille — sert d'invalidation pour useEffect.
+  const sizeKey = `${minSizeBytes ?? ''}|${maxSizeBytes ?? ''}`
   const [tiles, setTiles] = useState<Tile[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
@@ -65,7 +86,7 @@ export function SteamCatalogueGrid({ query, withSourceOnly, sort }: Props) {
   useEffect(() => {
     setOffset(0)
     setTiles([])
-  }, [debouncedQuery, withSourceOnly, sort])
+  }, [debouncedQuery, withSourceOnly, sort, genresKey, sizeKey])
 
   // Fetch a page when offset / filters change.
   useEffect(() => {
@@ -81,6 +102,9 @@ export function SteamCatalogueGrid({ query, withSourceOnly, sort }: Props) {
         sort,
         limit: PAGE_SIZE,
         offset,
+        genres: genres.length > 0 ? genres : undefined,
+        minSizeBytes,
+        maxSizeBytes,
       })
       .then((res) => {
         if (cancelled || reqId !== requestSeqRef.current) return
@@ -119,7 +143,8 @@ export function SteamCatalogueGrid({ query, withSourceOnly, sort }: Props) {
     return () => {
       cancelled = true
     }
-  }, [debouncedQuery, withSourceOnly, sort, offset])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery, withSourceOnly, sort, offset, genresKey, sizeKey])
 
   // IntersectionObserver for infinite scroll.
   useEffect(() => {

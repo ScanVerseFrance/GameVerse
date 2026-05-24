@@ -121,6 +121,13 @@ export interface ProfileStats {
    *  when the user hasn't launched anything yet. */
   recentGame: {
     libraryGameId: string
+    /** Source game ID (e.g. "json:lego-marvel-2"). Permet de router
+     *  vers la page du jeu chez le viewer même quand on regarde le
+     *  profil d'un AUTRE user — libraryGameId est leur uuid local
+     *  qui n'existe pas chez le viewer. Null pour les jeux
+     *  non-json (Steam, addons) ou pour les amis sur un launcher
+     *  < v0.5.1 (le champ n'était pas broadcasté). */
+    sourceGameId: string | null
     title: string
     coverUrl: string | null
     lastPlayedAt: number
@@ -165,6 +172,8 @@ export type ActivityKind =
   | 'game_launched'
   | 'review_posted'
   | 'friend_added'
+  | 'achievement_unlocked'
+  | 'profile_achievement_unlocked'
 
 export interface ActivityItem {
   id: string

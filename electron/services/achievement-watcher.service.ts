@@ -72,6 +72,7 @@ const PUBLIC_DOCS =
     ? path.join(process.env.PUBLIC, 'Documents')
     : 'C:\\Users\\Public\\Documents'
 const USER_DOCS = path.join(os.homedir(), 'Documents')
+const PROGRAMDATA = process.env.ProgramData || 'C:\\ProgramData'
 
 /** Goldberg SteamEmu — the most common today. Two layout variants
  *  depending on the version (newer: per-appid folder; older: shared
@@ -114,35 +115,76 @@ function empressPaths(appid: number): string[] {
   ]
 }
 
-/** SKIDROW — section-per-achievement INI in user docs. */
+/** SKIDROW — sections-per-achievement INI. v0.5.1 : ajout du nom
+ *  de fichier `achiev.ini` (que Hydra utilise et qu'on loupait) en
+ *  plus de `achievements.ini`. Couvre USER_DOCS et LOCALAPPDATA. */
 function skidrowPaths(appid: number): string[] {
   return [
+    // Layout historique avec achievements.ini
     path.join(USER_DOCS, 'SKIDROW', String(appid), 'SteamEmu', 'UserStats', 'achievements.ini'),
     path.join(USER_DOCS, 'SKIDROW', String(appid), 'achievements.ini'),
+    // Layout Hydra avec achiev.ini (différent !) — c'est CE filename
+    // qu'utilisent les vrais cracks SKIDROW récents.
+    path.join(USER_DOCS, 'SKIDROW', String(appid), 'SteamEmu', 'UserStats', 'achiev.ini'),
+    path.join(USER_DOCS, 'Player', String(appid), 'SteamEmu', 'UserStats', 'achiev.ini'),
+    path.join(LOCALAPPDATA, 'SKIDROW', String(appid), 'SteamEmu', 'UserStats', 'achiev.ini'),
   ]
 }
 
-/** RLD! — similar layout to SKIDROW. */
+/** RLD! — v0.5.1 ajoute les paths ProgramData utilisés par Hydra
+ *  pour matcher les cracks RLD récents (Steam/Player, Steam/RLD!,
+ *  Steam/dodi). */
 function rldPaths(appid: number): string[] {
   return [
     path.join(LOCALAPPDATA, 'RLD!', String(appid), 'achievements.ini'),
     path.join(APPDATA, 'RLD!', String(appid), 'achievements.ini'),
+    path.join(PROGRAMDATA, 'RLD!', String(appid), 'stats', 'achievements.ini'),
+    path.join(PROGRAMDATA, 'Steam', 'Player', String(appid), 'stats', 'achievements.ini'),
+    path.join(PROGRAMDATA, 'Steam', 'RLD!', String(appid), 'stats', 'achievements.ini'),
+    path.join(PROGRAMDATA, 'Steam', 'dodi', String(appid), 'stats', 'achievements.ini'),
   ]
 }
 
-/** CreamAPI — usually a file inside the game install folder. We can't
- *  predict the install folder from outside, so we look at the library
- *  row's install_path passed via the watcher context. Returns nothing
- *  when no install path is known.
- *
- *  appid is unused for CreamAPI (the files live next to the game binary,
- *  not under a per-appid subfolder) but the parameter is kept for API
- *  symmetry with the other path resolvers in this block. */
-function creamPaths(_appid: number, installPath: string | null): string[] {
-  if (!installPath) return []
+/** CreamAPI — v0.5.1 : Hydra check aussi dans AppData
+ *  Roaming\CreamAPI\<appid>\stats\, pas seulement dans le install
+ *  folder. Couvre plus de cas (certains cracks installent ce fichier
+ *  hors install path). */
+function creamPaths(appid: number, installPath: string | null): string[] {
+  const out: string[] = [
+    path.join(APPDATA, 'CreamAPI', String(appid), 'stats', 'CreamAPI.Achievements.cfg'),
+  ]
+  if (installPath) {
+    out.push(
+      path.join(installPath, 'CreamAPI.Achievements.cfg'),
+      path.join(installPath, 'cream_api.ini'),
+    )
+  }
+  return out
+}
+
+/** SmartSteamEmu — INI sous AppData\SmartSteamEmu\<appid>\User\
+ *  Achievements.ini. Crack émulateur Steam moins commun mais
+ *  toujours utilisé par certains repacks anciens. */
+function smartSteamEmuPaths(appid: number): string[] {
   return [
-    path.join(installPath, 'CreamAPI.Achievements.cfg'),
-    path.join(installPath, 'cream_api.ini'),
+    path.join(APPDATA, 'SmartSteamEmu', String(appid), 'User', 'Achievements.ini'),
+  ]
+}
+
+/** Razor1911 — format plain-text (pas INI/JSON), un fichier
+ *  `achievement` sans extension dans AppData\.1911\<appid>\.
+ *  v0.5.1 : ajout pour parité Hydra. */
+function razor1911Paths(appid: number): string[] {
+  return [
+    path.join(APPDATA, '.1911', String(appid), 'achievement'),
+  ]
+}
+
+/** EMPRESS — v0.5.1 ajoute le path nested (publicDocuments/EMPRESS/
+ *  appid/remote/appid/achievements.json) qu'on loupait. */
+function empressPaths2(appid: number): string[] {
+  return [
+    path.join(PUBLIC_DOCS, 'EMPRESS', String(appid), 'remote', String(appid), 'achievements.json'),
   ]
 }
 
@@ -152,9 +194,12 @@ function resolveCandidates(appid: number, installPath: string | null): string[] 
     ...codexPaths(appid),
     ...onlineFixPaths(appid),
     ...empressPaths(appid),
+    ...empressPaths2(appid),
     ...skidrowPaths(appid),
     ...rldPaths(appid),
     ...creamPaths(appid, installPath),
+    ...smartSteamEmuPaths(appid),
+    ...razor1911Paths(appid),
   ]
 }
 
@@ -278,10 +323,52 @@ function unlockedFromIni(data: IniData): Set<string> {
   return out
 }
 
+/** Razor1911 — fichier plain-text sans extension. Format observé :
+ *  une ligne par achievement `name unlocked unlockTime` séparés
+ *  par espaces. Achievement "unlocked" = la 2ème valeur est "1"
+ *  ou "true". */
+function unlockedFromRazor1911(raw: string): Set<string> {
+  const out = new Set<string>()
+  for (const rawLine of raw.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const parts = line.split(/\s+/)
+    if (parts.length < 2) continue
+    const name = parts[0]
+    const flag = parts[1].toLowerCase()
+    if (flag === '1' || flag === 'true') out.add(name)
+  }
+  return out
+}
+
+/** SKIDROW achiev.ini — section unique `[Achievements]` avec valeurs
+ *  type `name = 1@<timestamp>` (le 1 préfixe signale unlocked, le
+ *  reste est le timestamp). Différent du SKIDROW historique qu'on
+ *  parsait via `unlockedFromIni`. */
+function unlockedFromSkidrowAchiev(data: IniData): Set<string> {
+  const out = new Set<string>()
+  const section = data.sections.get('Achievements') ?? data.sections.get('achievements')
+  if (!section) return out
+  for (const [key, value] of section.entries()) {
+    // Valeur format `1@<ts>` ou juste `1` selon variantes.
+    if (value.startsWith('1') || value === 'true') out.add(key)
+  }
+  return out
+}
+
 function unlocksFromFile(filePath: string, raw: string): Set<string> {
   // Path-driven format pick. JSON for Goldberg, INI for everything else.
   if (/\.json$/i.test(filePath)) return parseGoldbergJson(raw)
+  // SKIDROW achiev.ini (avec valeur `1@<ts>`) — détecté par filename
+  // exact. Doit passer AVANT le parser INI générique sinon ce dernier
+  // l'écraserait à vide (section-per-achievement attendue).
+  if (/\\achiev\.ini$/i.test(filePath) || /\/achiev\.ini$/i.test(filePath)) {
+    return unlockedFromSkidrowAchiev(parseIni(raw))
+  }
   if (/\.(ini|cfg)$/i.test(filePath)) return unlockedFromIni(parseIni(raw))
+  // Razor1911 — fichier sans extension nommé `achievement`. Le
+  // path se termine par `\achievement` (Windows) ou `/achievement`.
+  if (/[\\/]achievement$/i.test(filePath)) return unlockedFromRazor1911(raw)
   return new Set()
 }
 

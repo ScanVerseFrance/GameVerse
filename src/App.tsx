@@ -120,14 +120,34 @@ export default function App() {
 
     // Achievement unlocks already trigger native toasts via Electron's
     // Notification API; we also mirror them into the in-app bell so the
-    // user has a persistent history.
+    // user has a persistent history. v0.5.1 — l'event IPC inclut
+    // displayName + iconUrl + gameTitle pour afficher l'icône Steam
+    // dans la bell au lieu du trophée générique.
     const unsubAch = window.nexus.achievements.onUnlocked((data) => {
+      const d = data as {
+        userId: string
+        steamAppId: number
+        apiName: string
+        unlockedAt: number
+        displayName?: string | null
+        iconUrl?: string | null
+        gameTitle?: string | null
+        sourceGameId?: string | null
+      }
+      const label = d.displayName ?? d.apiName
+      const body = d.gameTitle
+        ? `${label} — ${d.gameTitle}`
+        : label
+      const link =
+        d.sourceGameId && d.sourceGameId.startsWith('json:')
+          ? `/json-game/${encodeURIComponent(d.sourceGameId.slice('json:'.length))}`
+          : null
       notifStore.push({
         kind: 'achievement_unlocked',
         title: 'Succès débloqué',
-        body: data.apiName,
-        link: null,
-        thumbnailUrl: null,
+        body,
+        link,
+        thumbnailUrl: d.iconUrl ?? null,
       })
     })
 
@@ -221,6 +241,76 @@ export default function App() {
           }
           break
         }
+      }
+      // v0.5.1 — Remote Play Together invite reçu. Le sender a
+      // cliqué "Inviter" dans son overlay, le cloud nous relay le
+      // signal. On affiche un toast in-app (et plus tard l'overlay)
+      // proposant Accept / Decline.
+      const e = env as { type: string; data?: {
+        fromUserId?: string
+        fromName?: string
+        gameTitle?: string
+        gameId?: string
+        steamAppId?: number | null
+        coverUrl?: string | null
+      } }
+      if (e.type === 'remote_play:invite' && e.data?.fromUserId && e.data.gameTitle) {
+        notifStore.push({
+          kind: 'info',
+          title: `${e.data.fromName ?? 'Un ami'} t'invite à jouer`,
+          body: e.data.gameTitle,
+          link: null,
+          thumbnailUrl: e.data.coverUrl ?? null,
+        })
+        // Phase A loopback (Test solo signaling) — pas de vraie
+        // window à ouvrir, juste valider la chain notif + accept/decline.
+        // Le check fromUserId === '__self_loopback__' évite que le
+        // confirm() s'affiche pour ce cas dégénéré (et la chain
+        // automate via runSelfLoopback déjà gère la state machine).
+        if (e.data.fromUserId === '__self_loopback__') {
+          return
+        }
+        // Phase B — Confirm dialog (browser confirm for MVP, à
+        // remplacer par un modal stylé en suivant). Si accept :
+        //   1. POST /remote-play/respond  → le host (sender) reçoit
+        //      l'envelope `remote_play:response` accepted=true et
+        //      ouvre sa window host (cf OverlayRemotePlayPanel)
+        //   2. On ouvre NOTRE window guest, qui beacon 'guest-ready'
+        //      au host jusqu'à ce qu'il envoie l'offer
+        const fromUserId = e.data.fromUserId
+        const fromName = e.data.fromName ?? 'Un ami'
+        const gameTitle = e.data.gameTitle
+        const gameId = e.data.gameId ?? ''
+        const steamAppId = e.data.steamAppId ?? null
+        const coverUrl = e.data.coverUrl ?? null
+        // Décale le confirm() hors du callback synchrone — sinon le
+        // dialog block la pump WS et on perd les autres envelopes.
+        setTimeout(() => {
+          const accept = window.confirm(
+            `${fromName} t'invite à jouer à "${gameTitle}" en Remote Play Together.\n\nAccepter ?`,
+          )
+          void (async () => {
+            try {
+              await window.nexus.cloud.remotePlayRespond(fromUserId, accept)
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.error('[remote-play] respond failed', err)
+            }
+            if (accept) {
+              try {
+                await window.nexus.remotePlay.openGuest(fromUserId, {
+                  gameId,
+                  gameTitle,
+                  steamAppId,
+                  coverUrl,
+                })
+              } catch (err) {
+                // eslint-disable-next-line no-console
+                console.error('[remote-play] openGuest failed', err)
+              }
+            }
+          })()
+        }, 0)
       }
     })
 

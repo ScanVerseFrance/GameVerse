@@ -25,7 +25,7 @@
  *     attempt failed (user might be on a coffee-shop wifi captive
  *     portal — let them click "Reconnecter" manually).
  */
-import { app, type BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import WebSocket from 'ws'
@@ -146,7 +146,24 @@ export function initCloud(getMain: () => BrowserWindow | null): void {
 }
 
 function emit(channel: string, payload: unknown): void {
-  getMainWindow?.()?.webContents.send(channel, payload)
+  // v0.5.1 — broadcast à TOUTES les windows (main + overlay + toast)
+  // au lieu de la main only. Sans ça, l'overlay window ne recevait
+  // jamais les `cloud:status` / `cloud:event` envelopes et restait
+  // bloquée sur "déconnecté" pour l'éternité même quand main était
+  // OK. La main hérite naturellement de ce broadcast aussi.
+  try {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.isDestroyed()) continue
+      try {
+        w.webContents.send(channel, payload)
+      } catch {
+        /* skip individual window failure */
+      }
+    }
+  } catch {
+    /* getAllWindows can throw during shutdown — fallback to main */
+    getMainWindow?.()?.webContents.send(channel, payload)
+  }
 }
 
 function setStatus(next: CloudConnectionStatus, reason?: string): void {
@@ -161,6 +178,17 @@ export function getStatus(): CloudConnectionStatus {
 
 export function getUser(): CloudUser | null {
   return currentUser
+}
+
+/**
+ * Broadcast a synthetic envelope on `cloud:event` to every window as if
+ * it had arrived from the cloud WS. Used by the Remote Play "test solo"
+ * loopback so devs can exercise the full invite/response UI chain
+ * without a second account. Don't use this for anything authoritative —
+ * the server doesn't see it.
+ */
+export function broadcastCloudEvent(envelope: unknown): void {
+  emit('cloud:event', envelope)
 }
 
 // ===========================================================================
@@ -547,6 +575,7 @@ async function openSocket(): Promise<void> {
         const payload = a.payload as {
           title?: string
           coverUrl?: string | null
+          sourceGameId?: string | null
         } | null
         const gameTitle = payload?.title ?? 'un jeu'
         // Activity envelopes embed `user: CloudPublicUser` directly —
@@ -648,15 +677,28 @@ async function openSocket(): Promise<void> {
           const { getDatabase } = await import('./database.service')
           const { updatePresence } = await import('./social.service')
           updatePresence(a.userId, 'in_game')
+          // Extract sourceGameId du payload broadcast par le launcher
+          // de l'ami (depuis v0.5.1). Sans ça, le card "A récemment
+          // joué" sur le profil ne peut pas router vers la page du
+          // jeu côté viewer.
+          const remoteSrcGid =
+            typeof payload?.sourceGameId === 'string' ? payload.sourceGameId : null
           getDatabase()
             .prepare(
               `UPDATE users SET
                  remote_last_played_title = ?,
                  remote_last_played_cover_url = ?,
-                 remote_last_played_at = ?
+                 remote_last_played_at = ?,
+                 remote_last_played_source_game_id = ?
                WHERE id = ?`,
             )
-            .run(gameTitle, payload?.coverUrl ?? null, Date.now(), a.userId)
+            .run(
+              gameTitle,
+              payload?.coverUrl ?? null,
+              Date.now(),
+              remoteSrcGid,
+              a.userId,
+            )
         } catch (err) {
           debugLog('cloud-ws', 'activity:new presence sync failed', {
             userId: a.userId,

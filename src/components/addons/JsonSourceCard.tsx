@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FileJson, Trash2, ChevronDown, Copy, ExternalLink, Search } from 'lucide-react'
+import { FileJson, Trash2, ChevronDown, Copy, ExternalLink, Search } from '@/lib/icons'
 import type { JsonSourceRecord, JsonSourceGame } from '@/types/json-source.types'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'

@@ -21,7 +21,7 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Layers } from 'lucide-react'
+import { Layers } from '@/lib/icons'
 
 interface SteamCatalogueTileProps {
   appid: number

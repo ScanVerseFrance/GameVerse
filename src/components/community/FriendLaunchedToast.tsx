@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import { Gamepad2 } from 'lucide-react'
+import { Gamepad2 } from '@/lib/icons'
 import { useAuthStore } from '@/stores/auth.store'
 import { useSocialStore } from '@/stores/social.store'
 import { cn } from '@/utils/cn'

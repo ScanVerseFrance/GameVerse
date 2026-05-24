@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Library as LibraryIcon, Search, X, Star, Compass, FolderTree, Settings2, ArrowUpDown, Clock, Trophy, Play, Sparkles, ScanLine } from 'lucide-react'
+import { Library as LibraryIcon, Search, X, Star, Compass, FolderTree, Settings2, ArrowUpDown, Clock, Trophy, Play, Sparkles, ScanLine, LayoutGrid, Rows3 } from '@/lib/icons'
 import { useLibraryStore } from '@/stores/library.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCollectionStore } from '@/stores/collection.store'
@@ -65,6 +65,18 @@ export default function LibraryPage() {
   const setSortMode = (m: SortMode): void => {
     setSortModeRaw(m)
     try { localStorage.setItem('nexus.library.sort', m) } catch { /* quota → ignore */ }
+  }
+  /** Layout des tiles : 'grid' = colonnes de cards 2:3 portrait (vue
+   *  par défaut Steam-like), 'list' = capsules horizontales Steam
+   *  header.jpg comme dans le catalogue. Persisté en localStorage. */
+  type ViewLayout = 'grid' | 'list'
+  const [viewLayout, setViewLayoutRaw] = useState<ViewLayout>(() => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('nexus.library.layout') : null
+    return raw === 'list' ? 'list' : 'grid'
+  })
+  const setViewLayout = (l: ViewLayout): void => {
+    setViewLayoutRaw(l)
+    try { localStorage.setItem('nexus.library.layout', l) } catch { /* */ }
   }
   const [editing, setEditing] = useState<LibraryGame | null>(null)
   const [launchError, setLaunchError] = useState<string | null>(null)
@@ -362,6 +374,44 @@ export default function LibraryPage() {
                 ))}
               </select>
             </div>
+            {/* Layout toggle — switch entre grid (cards portrait 2:3
+                Steam library_600x900) et list (capsules horizontales
+                Steam header.jpg style catalogue). Persisté en
+                localStorage via setViewLayout. */}
+            <div
+              className="inline-flex h-11 rounded-md border border-glass-border bg-[var(--surface-soft)] p-0.5"
+              role="group"
+              aria-label="Disposition de la bibliothèque"
+            >
+              <button
+                type="button"
+                onClick={() => setViewLayout('grid')}
+                className={cn(
+                  'h-full px-3 rounded text-sm inline-flex items-center gap-1.5 transition-colors',
+                  viewLayout === 'grid'
+                    ? 'bg-accent-primary/15 text-accent-primary'
+                    : 'text-fg-muted hover:text-fg-secondary',
+                )}
+                title="Affichage en grille (covers portrait)"
+                aria-pressed={viewLayout === 'grid'}
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewLayout('list')}
+                className={cn(
+                  'h-full px-3 rounded text-sm inline-flex items-center gap-1.5 transition-colors',
+                  viewLayout === 'list'
+                    ? 'bg-accent-primary/15 text-accent-primary'
+                    : 'text-fg-muted hover:text-fg-secondary',
+                )}
+                title="Affichage en liste (capsules horizontales)"
+                aria-pressed={viewLayout === 'list'}
+              >
+                <Rows3 className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -472,12 +522,24 @@ export default function LibraryPage() {
       ) : filtered.length === 0 ? (
         <div className="py-20 text-center text-sm text-fg-muted">Aucun jeu ne correspond à ces filtres.</div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+        <div
+          className={cn(
+            viewLayout === 'grid'
+              ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4'
+              // List mode : max 2 colonnes. Avant on était à 3 cols sur
+              // xl → chaque card ~480 px de large, le bloc texte/actions
+              // était squishé à ~150 px → meta line wrappait n'importe
+              // comment derrière les boutons. 2 cols = ~720 px par card
+              // → plein d'air pour titre + meta + 3 actions.
+              : 'grid grid-cols-1 xl:grid-cols-2 gap-3',
+          )}
+        >
           <AnimatePresence>
             {filtered.map((g) => (
               <LibraryCard
                 key={g.id}
                 game={g}
+                layout={viewLayout}
                 onPlay={() => void handlePlay(g)}
                 onEdit={() => setEditing(g)}
                 onToggleFavorite={() => void update(g.id, { isFavorite: !g.isFavorite })}

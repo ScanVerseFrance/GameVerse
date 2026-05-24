@@ -29,7 +29,7 @@ import {
   FileArchive,
   Save,
   Move,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
@@ -612,6 +612,7 @@ export default function JsonGamePage() {
   async function handleConfirmDownload(
     folder: string,
     variant: JsonSourceSearchHit | null,
+    onlineFixVariant: JsonSourceSearchHit | null,
   ) {
     if (!user || !gameId || !game || !pendingDownload) return
     const { uri, idx } = pendingDownload
@@ -627,6 +628,13 @@ export default function JsonGamePage() {
     const targetUri = useVariant ? variant!.uris[0] ?? uri : uri
     const targetTitle = useVariant ? variant!.title : game.title
     const targetGameId = useVariant ? `json:${variant!.id}` : `json:${gameId}`
+    // v0.5.1 — quand l'user a coché "Inclure Online-Fix" dans le
+    // dialog, on attache l'URL du variant Online-Fix au download.
+    // Le download.service va, à la fin du téléchargement, ouvrir la
+    // page Online-Fix + l'explorateur de fichiers pour que l'user
+    // récupère le patch et le merge. (On ne peut PAS auto-DL le
+    // patch : Online-Fix met un mot de passe sur les archives.)
+    const addonFixUrl = onlineFixVariant?.uris[0] ?? null
     const res = await startDownload({
       userId: user.id,
       gameTitle: targetTitle,
@@ -636,6 +644,8 @@ export default function JsonGamePage() {
       magnetOrUrl: targetUri,
       coverUrl: artwork?.coverUrl ?? undefined,
       targetFolder: folder || undefined,
+      addonFixUrl: addonFixUrl ?? undefined,
+      addonFixLabel: onlineFixVariant?.sourceName ?? undefined,
     })
     setDownloadingIdx(null)
     if (!res.ok) setDownloadError(res.error || 'Échec du démarrage du téléchargement.')
@@ -925,9 +935,16 @@ export default function JsonGamePage() {
   if (!game) {
     return (
       <div className="px-10 py-10 max-w-3xl mx-auto">
-        <Link to="/discover" className="inline-flex items-center gap-2 text-sm text-fg-secondary hover:text-fg-primary mb-6">
+        <button
+          type="button"
+          onClick={() => {
+            if (window.history.length > 1) navigate(-1)
+            else navigate('/discover')
+          }}
+          className="inline-flex items-center gap-2 text-sm text-fg-secondary hover:text-fg-primary mb-6"
+        >
           <ArrowLeft className="w-4 h-4" /> Retour
-        </Link>
+        </button>
         <Card padding="lg" className="text-center">
           <p className="text-sm text-fg-muted">Jeu introuvable.</p>
         </Card>
@@ -990,12 +1007,22 @@ export default function JsonGamePage() {
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-bg-primary via-bg-primary/40 to-bg-primary/10" />
 
-        <Link
-          to="/discover"
+        {/* Retour : utilise l'historique browser → revient à la
+            page d'où l'user est arrivé (lib, downloads, catalogue,
+            recherche…). Fallback /discover si rien dans l'historique
+            (entrée directe via URL bookmarkée). v0.5.1. */}
+        <button
+          type="button"
+          onClick={() => {
+            // history.length > 1 = il y a un previous. Sinon, default
+            // /discover (cas où l'user a ouvert l'app sur cette URL).
+            if (window.history.length > 1) navigate(-1)
+            else navigate('/discover')
+          }}
           className="absolute top-4 left-4 inline-flex items-center gap-2 h-9 px-3 rounded-md bg-black/60 hover:bg-black/80 text-white text-sm border border-white/10 backdrop-blur transition-colors"
         >
           <ArrowLeft className="w-4 h-4" /> Retour
-        </Link>
+        </button>
 
         <div className="absolute bottom-0 left-0 right-0 px-10 pb-6 flex items-end gap-6">
           <div className="w-32 h-48 rounded-md overflow-hidden border-2 border-white/10 shadow-lift bg-bg-tertiary shrink-0">
@@ -1880,7 +1907,9 @@ export default function JsonGamePage() {
       <DownloadConfirmDialog
         open={pendingDownload != null}
         onClose={() => setPendingDownload(null)}
-        onConfirm={(folder, variant) => void handleConfirmDownload(folder, variant)}
+        onConfirm={(folder, variant, onlineFixVariant) =>
+          void handleConfirmDownload(folder, variant, onlineFixVariant)
+        }
         downloadSizeBytes={parseSizeString(game?.fileSize ?? null)}
         gameTitle={game?.title ?? ''}
         coverUrl={artwork?.coverUrl ?? null}

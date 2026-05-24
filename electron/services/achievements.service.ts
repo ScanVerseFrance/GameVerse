@@ -31,6 +31,7 @@ import { BrowserWindow } from 'electron'
 import { getDatabase } from './database.service'
 import { getAppSettings } from './app-settings.service'
 import * as toastSvc from './toast-window.service'
+import { postActivity } from './social.service'
 
 const STEAM_WEB_API = 'https://api.steampowered.com'
 const STEAM_STORE_API = 'https://store.steampowered.com'
@@ -771,6 +772,8 @@ export function setUnlocked(
     // popping a generic Windows Action Center toast. The pushToast
     // helper enforces the per-kind toggle (`notifications.achievementUnlocked`)
     // internally and snooze, so we don't pre-check here.
+    let displayName: string | null = null
+    let iconUrl: string | null = null
     try {
       const row = db
         .prepare(
@@ -780,6 +783,8 @@ export function setUnlocked(
         | { display_name: string; icon_url: string | null }
         | undefined
       if (row) {
+        displayName = row.display_name
+        iconUrl = row.icon_url
         toastSvc.pushToast({
           kind: 'achievement_unlocked',
           title: 'Succès débloqué',
@@ -794,11 +799,68 @@ export function setUnlocked(
       // (a manual refresh of the achievements panel will reveal it).
       console.warn('[achievements:notify] pushToast threw:', (e as Error).message)
     }
+
+    // Lookup library row by steam_appid pour récupérer le titre + le
+    // sourceGameId. Sert au fil d'activité côté friends : « Fahim a
+    // débloqué « X » dans Lego Marvel ». Les amis n'ont pas la lib
+    // locale donc on broadcast titre + cover via la payload.
+    let gameTitle: string | null = null
+    let sourceGameId: string | null = null
+    let gameCoverUrl: string | null = null
+    try {
+      const lib = db
+        .prepare(
+          'SELECT title, source_game_id, cover_url FROM library_games WHERE user_id = ? AND steam_appid = ? LIMIT 1'
+        )
+        .get(userId, steamAppId) as
+        | { title: string; source_game_id: string | null; cover_url: string | null }
+        | undefined
+      if (lib) {
+        gameTitle = lib.title
+        sourceGameId = lib.source_game_id
+        gameCoverUrl = lib.cover_url
+      }
+    } catch {
+      /* table missing on fresh install — payload stays partial */
+    }
+
+    // Activity feed entry — local + miroir cloud côté friends. On
+    // post même si displayName est null : le renderer fallback sur
+    // apiName pour éviter une carte vide.
+    try {
+      const payload = {
+        gameTitle: gameTitle ?? null,
+        sourceGameId,
+        coverUrl: gameCoverUrl,
+        steamAppId,
+        apiName,
+        achievementName: displayName ?? apiName,
+        iconUrl,
+      }
+      postActivity(userId, 'achievement_unlocked', payload)
+      // Miroir cloud — uses passthrough so friends voient l'event en
+      // temps réel via WS activity:new. Import dynamique pour ne pas
+      // créer une dépendance circulaire au top-level.
+      void import('./cloud.service').then(({ passthroughJson, getStatus }) => {
+        if (getStatus() !== 'connected') return
+        return passthroughJson('/v1/activity', {
+          method: 'POST',
+          body: { kind: 'achievement_unlocked', payload },
+        }).catch(() => {})
+      })
+    } catch (e) {
+      console.warn('[achievements:activity] postActivity threw:', (e as Error).message)
+    }
+
     getMainWindow?.()?.webContents.send('achievements:unlocked', {
       userId,
       steamAppId,
       apiName,
       unlockedAt: now,
+      displayName,
+      iconUrl,
+      gameTitle,
+      sourceGameId,
     })
   } else {
     db.prepare(

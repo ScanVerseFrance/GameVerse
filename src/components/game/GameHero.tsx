@@ -1,4 +1,4 @@
-import { Star, Calendar, HardDrive, Users } from 'lucide-react'
+import { Star, Calendar, HardDrive, Users } from '@/lib/icons'
 import type { GameDetail } from '@/types/addon.types'
 
 interface GameHeroProps {

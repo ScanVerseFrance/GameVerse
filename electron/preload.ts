@@ -231,7 +231,11 @@ const api = {
     getGame: (gameId: string) => ipcRenderer.invoke('jsonSources:getGame', gameId),
     /** Pick a random game from the imported JSON catalogues —
      *  drives the "Surprise-moi" / dice button in the top nav. */
-    pickRandom: () => ipcRenderer.invoke('jsonSources:pickRandom'),
+    pickRandom: (filters?: {
+      genres?: string[]
+      minSizeBytes?: number
+      maxSizeBytes?: number
+    }) => ipcRenderer.invoke('jsonSources:pickRandom', filters ?? null),
     /** Subscribe to backfill-progress events. Main process fires
      *  these every 200 resolved titles + once at completion so the
      *  Discover page can re-fetch and re-dedup as appids land.
@@ -254,6 +258,9 @@ const api = {
       limit?: number
       offset?: number
       sort?: 'popularity' | 'name'
+      genres?: string[]
+      minSizeBytes?: number
+      maxSizeBytes?: number
     }) => ipcRenderer.invoke('steamCatalogue:search', opts),
     get: (appid: number) => ipcRenderer.invoke('steamCatalogue:get', appid),
     status: () => ipcRenderer.invoke('steamCatalogue:status'),
@@ -275,6 +282,32 @@ const api = {
       ) => cb(payload)
       ipcRenderer.on('steamCatalogue:progress', handler)
       return () => ipcRenderer.removeListener('steamCatalogue:progress', handler)
+    },
+    backfillGenres: (opts?: { limit?: number }) =>
+      ipcRenderer.invoke('steamCatalogue:backfillGenres', opts),
+    backfillStatus: () =>
+      ipcRenderer.invoke('steamCatalogue:backfillStatus'),
+    onGenresBackfill: (
+      cb: (payload: {
+        kind: 'start' | 'progress' | 'done'
+        done: number
+        total: number
+        withGenres?: number
+        jobId: string
+      }) => void,
+    ) => {
+      const handler = (_e: unknown, payload: unknown) =>
+        cb(
+          payload as {
+            kind: 'start' | 'progress' | 'done'
+            done: number
+            total: number
+            withGenres?: number
+            jobId: string
+          },
+        )
+      ipcRenderer.on('genres:backfill', handler)
+      return () => ipcRenderer.removeListener('genres:backfill', handler)
     },
   },
   artwork: {
@@ -477,6 +510,41 @@ const api = {
       ipcRenderer.invoke('cloud:postActivity', kind, payload),
     activityFeed: (limit?: number) =>
       ipcRenderer.invoke('cloud:activityFeed', limit),
+    // ── Remote Play Together (Phase A — signaling only, no stream) ─
+    remotePlayInvite: (payload: {
+      toUserId: string
+      gameTitle: string
+      gameId: string
+      steamAppId: number | null
+      coverUrl: string | null
+    }) => ipcRenderer.invoke('cloud:remotePlayInvite', payload),
+    remotePlayRespond: (fromUserId: string, accepted: boolean) =>
+      ipcRenderer.invoke('cloud:remotePlayRespond', fromUserId, accepted),
+    /**
+     * Phase B — relay un payload WebRTC (offer/answer/ICE candidate)
+     * au peer cible via cloud WS. Le destinataire reçoit un envelope
+     * `remote_play:signal` sur cloud.onEvent.
+     */
+    remotePlaySignal: (payload: {
+      toUserId: string
+      signalType: 'offer' | 'answer' | 'ice-candidate' | string
+      payload: unknown
+    }) => ipcRenderer.invoke('cloud:remotePlaySignal', payload),
+    /**
+     * Self-loopback : ré-émet localement les envelopes invite + response
+     * pour valider toute la chaîne UI sans second compte. Pas de call
+     * réseau, juste broadcast local sur cloud:event.
+     */
+    remotePlaySimulateLoopback: (payload: {
+      fromUserId: string
+      fromName: string
+      gameTitle: string
+      gameId: string
+      steamAppId: number | null
+      coverUrl: string | null
+      accept?: boolean
+      delayMs?: number
+    }) => ipcRenderer.invoke('cloud:remotePlaySimulateLoopback', payload),
     // ── Saves ───────────────────────────────────────────────────
     saveQuota: () => ipcRenderer.invoke('cloud:saveQuota'),
     listArtifacts: (shop: string, objectId: string) =>
@@ -641,6 +709,98 @@ const api = {
     // Diagnostic — pops a single decorative toast for the Settings
     // → Notifications "Tester" button. Bypasses per-kind toggles.
     test: () => ipcRenderer.invoke('toast:test'),
+    /** Push une notif depuis le main window vers la toast overlay
+     *  window. Restreint côté main aux kinds controller_*
+     *  (sécurité). Utilisé par useGamepadToast pour faire apparaître
+     *  les connexions/déconnexions manette en notif système plutôt
+     *  que dans le toast in-app. */
+    push: (payload: {
+      kind: 'controller_connected' | 'controller_disconnected'
+      title: string
+      body?: string | null
+      subtitle?: string | null
+      iconUrl?: string | null
+      coverUrl?: string | null
+      link?: string | null
+      durationMs?: number
+    }) => ipcRenderer.invoke('toast:push', payload),
+  },
+  overlay: {
+    /** Retourne le jeu en cours d'exécution (NULL si rien). */
+    getCurrentGame: () => ipcRenderer.invoke('overlay:getCurrentGame'),
+    /** Pilotage depuis le renderer — utilisé par le bouton "Fermer"
+     *  dans l'overlay et par un éventuel raccourci in-app. */
+    toggle: () => ipcRenderer.invoke('overlay:toggle'),
+    show: () => ipcRenderer.invoke('overlay:show'),
+    hide: () => ipcRenderer.invoke('overlay:hide'),
+    /** Push depuis main : le jeu courant a changé (launch / exit).
+     *  Permet à l'overlay window de re-render avec le nouveau
+     *  contexte sans re-fetcher. */
+    onGameChanged: (cb: (game: unknown) => void) => subscribe('overlay:gameChanged', cb),
+    /** v0.5.1 — push depuis main quand showOverlay() vient d'être
+     *  appelé. Le renderer s'en sert pour replay l'animation de
+     *  fade-in (sans ça, seule la 1ère ouverture s'anime). */
+    onShown: (cb: () => void) => subscribe('overlay:shown', cb),
+    /** v0.5.1 Phase 2 — state booléen "main UI ouverte par Shift+Tab".
+     *  Polled au mount par l'overlay offscreen pour set l'état initial,
+     *  puis subscribed pour les transitions live. Quand false, seul le
+     *  toast stack bottom-right est rendu — le backdrop / header /
+     *  panels disparaissent. Quand true, l'UI complète Steam-like
+     *  s'affiche. Le toast stack reste TOUJOURS monté pour que les
+     *  notifs apparaissent même UI fermée (Discord-style). */
+    isUserVisible: () => ipcRenderer.invoke('overlay:isUserVisible'),
+    onVisibilityChange: (cb: (visible: boolean) => void) =>
+      subscribe('overlay:visibility-change', cb),
+    // ── Notes per game ──
+    getNote: (userId: string, libraryGameId: string) =>
+      ipcRenderer.invoke('overlay:getNote', userId, libraryGameId),
+    saveNote: (userId: string, libraryGameId: string, text: string) =>
+      ipcRenderer.invoke('overlay:saveNote', userId, libraryGameId, text),
+    // ── Screenshots ──
+    captureScreenshot: (libraryGameId: string) =>
+      ipcRenderer.invoke('overlay:captureScreenshot', libraryGameId),
+    listScreenshots: (libraryGameId: string) =>
+      ipcRenderer.invoke('overlay:listScreenshots', libraryGameId),
+    openScreenshotsFolder: (libraryGameId: string) =>
+      ipcRenderer.invoke('overlay:openScreenshotsFolder', libraryGameId),
+    // ── Perf HUD ──
+    getPerfSnapshot: () => ipcRenderer.invoke('overlay:getPerfSnapshot'),
+    // ── Remote Play Together compatibility (Steam category 44) ──
+    isRemotePlayCompatible: (steamAppId: number) =>
+      ipcRenderer.invoke('overlay:isRemotePlayCompatible', steamAppId),
+    // v0.5.1 — toggle pointer-events de la window overlay. true =
+    // passthrough vers le jeu (overlay invisible aux clicks),
+    // false = capture des clicks par l'overlay (panels actifs).
+    setMousePassthrough: (passthrough: boolean) =>
+      ipcRenderer.invoke('overlay:setMousePassthrough', passthrough),
+    // Demande le focus clavier (pour <textarea>/<input> dans les panels).
+    // Flip WS_EX_NOACTIVATE off → le jeu peut se minimiser, mais c'est
+    // le choix explicite de l'user qui veut taper du texte.
+    requestKeyboardFocus: () =>
+      ipcRenderer.invoke('overlay:requestKeyboardFocus'),
+    // Restitue WS_EX_NOACTIVATE quand tous les champs sont blurrés.
+    releaseKeyboardFocus: () =>
+      ipcRenderer.invoke('overlay:releaseKeyboardFocus'),
+  },
+  // Remote Play Together — Phase B P2P streaming pipeline. The host
+  // and guest entries are separate renderer windows spawned by the
+  // main process; the renderer talks back via these IPCs.
+  remotePlay: {
+    openHost: (peerUserId: string, gameMeta: {
+      gameId: string; gameTitle: string;
+      steamAppId: number | null; coverUrl: string | null;
+    }) => ipcRenderer.invoke('remote-play:openHost', peerUserId, gameMeta),
+    openGuest: (peerUserId: string, gameMeta: {
+      gameId: string; gameTitle: string;
+      steamAppId: number | null; coverUrl: string | null;
+    }) => ipcRenderer.invoke('remote-play:openGuest', peerUserId, gameMeta),
+    closeHost: () => ipcRenderer.invoke('remote-play:closeHost'),
+    closeGuest: () => ipcRenderer.invoke('remote-play:closeGuest'),
+    getDesktopSources: () => ipcRenderer.invoke('remote-play:getDesktopSources'),
+    startGamepadBridge: () => ipcRenderer.invoke('remote-play:startGamepadBridge'),
+    stopGamepadBridge: () => ipcRenderer.invoke('remote-play:stopGamepadBridge'),
+    injectGamepadState: (state: unknown) =>
+      ipcRenderer.invoke('remote-play:injectGamepadState', state),
   },
   update: {
     // Manual check — fires the same logic as the 4h timer but bypasses

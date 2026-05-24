@@ -93,7 +93,9 @@
     background-repeat: no-repeat;
   }
   body.toast-overlay,
-  body.toast-overlay #root {
+  body.toast-overlay #root,
+  body.game-overlay,
+  body.game-overlay #root {
     background: transparent !important;
     background-image: none !important;
   }

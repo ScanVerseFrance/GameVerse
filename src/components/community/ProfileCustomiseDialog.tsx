@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Sparkles, Check, Search, X } from 'lucide-react'
+import { Sparkles, Check, Search, X } from '@/lib/icons'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { useAuthStore } from '@/stores/auth.store'

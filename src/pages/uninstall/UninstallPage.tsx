@@ -23,7 +23,7 @@
  */
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Trash2, AlertCircle, Loader2, X } from 'lucide-react'
+import { Trash2, AlertCircle, Loader2, X } from '@/lib/icons'
 
 type Phase = 'idle' | 'working' | 'done'
 

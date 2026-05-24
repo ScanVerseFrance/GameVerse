@@ -12,7 +12,7 @@ import {
   ChevronLeft,
   LogOut,
   type LucideIcon,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { useSettingsStore } from '@/stores/settings.store'
 import { useAuthStore } from '@/stores/auth.store'
 import { useDownloadStore } from '@/stores/download.store'
@@ -63,7 +63,7 @@ export function Sidebar() {
     },
     {
       label: 'Social',
-      items: [{ to: '/community', label: 'Communauté', icon: Users }],
+      items: [{ to: '/community', label: 'Amis', icon: Users }],
     },
     {
       label: 'Système',

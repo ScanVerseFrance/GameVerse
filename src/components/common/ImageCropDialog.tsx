@@ -39,9 +39,19 @@ interface ImageCropDialogProps {
   outputMime?: 'image/png' | 'image/jpeg'
   /** Compression quality (0..1) — only used for JPEG output. */
   outputQuality?: number
+  /** MIME du fichier d'origine. Si c'est `image/gif` ou `image/apng`
+   *  on affiche un bouton "Garder l'animation" qui bypass le canvas
+   *  render (perd le crop mais préserve l'animation). Sans ce prop,
+   *  le bouton n'apparaît pas. */
+  sourceMime?: string
   title?: string
   onCancel: () => void
   onCrop: (dataUrl: string) => void
+  /** Optionnel — appelé quand l'user clique « Garder l'animation »
+   *  pour un format animé. Le caller doit push le data URL d'origine
+   *  tel quel (pas de cropper). Si non défini, le bouton ne s'affiche
+   *  pas même pour les GIF. */
+  onKeepAnimated?: (originalDataUrl: string) => void
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -96,10 +106,16 @@ export function ImageCropDialog({
   outputSize,
   outputMime = 'image/jpeg',
   outputQuality = 0.9,
+  sourceMime,
   title = 'Recadrer',
   onCancel,
   onCrop,
+  onKeepAnimated,
 }: ImageCropDialogProps) {
+  const isAnimated =
+    (sourceMime ?? '').toLowerCase() === 'image/gif' ||
+    (sourceMime ?? '').toLowerCase() === 'image/apng'
+  const canKeepAnimated = isAnimated && !!onKeepAnimated
   const [crop, setCrop] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
   const [croppedArea, setCroppedArea] = useState<Area | null>(null)
@@ -198,10 +214,32 @@ export function ImageCropDialog({
           Glisse l'image pour la repositionner, utilise le zoom (ou la molette) pour cadrer.
         </p>
 
+        {/* Banner GIF/APNG : avertit l'user que recadrer flatten
+            l'animation, propose un raccourci pour pousser tel quel. */}
+        {canKeepAnimated && (
+          <div className="px-3 py-2 rounded-md bg-accent-primary/5 border border-accent-primary/30 text-[12px] text-fg-secondary">
+            <p>
+              <strong className="text-fg-primary">Format animé détecté</strong>
+              {' '}— recadrer flatten l'animation en image statique. Si
+              tu veux garder l'animation, clique « Garder l'animation »
+              (le cadrage sera ignoré).
+            </p>
+          </div>
+        )}
+
         <div className="flex justify-end gap-2 pt-2 border-t border-border-soft">
           <Button variant="outline" onClick={onCancel} disabled={applying}>
             Annuler
           </Button>
+          {canKeepAnimated && sourceDataUrl && (
+            <Button
+              variant="outline"
+              onClick={() => onKeepAnimated!(sourceDataUrl)}
+              disabled={applying}
+            >
+              Garder l'animation
+            </Button>
+          )}
           <Button onClick={() => void handleConfirm()} loading={applying} disabled={!croppedArea}>
             Recadrer & enregistrer
           </Button>

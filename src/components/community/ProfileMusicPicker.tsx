@@ -25,7 +25,7 @@
  *   - playAudio(path, meta, { start, end }) pour audio local
  */
 import { useEffect, useRef, useState } from 'react'
-import { Music, Play, Square, Pencil, Trash2, Upload, Plus, X } from 'lucide-react'
+import { Music, Play, Square, Pencil, Trash2, Upload, Plus, X } from '@/lib/icons'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { DualRangeSlider } from '@/components/ui/DualRangeSlider'

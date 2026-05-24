@@ -176,6 +176,16 @@ export interface NexusAPI {
     overlayEmpty: () => Promise<void>
     ready: () => Promise<void>
     test: () => Promise<{ ok: boolean }>
+    push: (payload: {
+      kind: 'controller_connected' | 'controller_disconnected'
+      title: string
+      body?: string | null
+      subtitle?: string | null
+      iconUrl?: string | null
+      coverUrl?: string | null
+      link?: string | null
+      durationMs?: number
+    }) => Promise<{ ok: boolean; error?: string }>
   }
   auth: {
     register: (p: RegisterPayload) => Promise<AuthResult>
@@ -505,7 +515,15 @@ export interface NexusAPI {
     getGame: (
       gameId: string
     ) => Promise<{ ok: true; game: JsonSourceSearchHit } | { ok: false; error: string }>
-    pickRandom: () => Promise<
+    pickRandom: (filters?: {
+      /** Genres Steam (case-insensitive). LIKE %"genre"% match dans
+       *  `game_artwork.genres` (JSON array). Vide / omis = pas de filtre. */
+      genres?: string[]
+      /** Taille minimum en bytes — exclut les jeux < à ce seuil. */
+      minSizeBytes?: number
+      /** Taille maximum en bytes — exclut les jeux > à ce seuil. */
+      maxSizeBytes?: number
+    }) => Promise<
       | { ok: true; game: JsonSourceSearchHit }
       | { ok: false; error: string }
     >
@@ -520,6 +538,14 @@ export interface NexusAPI {
       limit?: number
       offset?: number
       sort?: 'popularity' | 'name'
+      /** Filtre par genres Steam (case-insensitive, union OR). Sparse :
+       *  seuls les jeux dont le game_artwork est en cache ont des
+       *  genres résolus. */
+      genres?: string[]
+      /** Bornes taille téléchargement en bytes (decimal). Pris
+       *  depuis json_source_games.file_size, sparse. */
+      minSizeBytes?: number
+      maxSizeBytes?: number
     }) => Promise<{
       ok: boolean
       error?: string
@@ -606,6 +632,30 @@ export interface NexusAPI {
     }>
     onProgress: (
       cb: (payload: { seeded: number; pages: number }) => void,
+    ) => () => void
+    /** Backfill genres pour le filtre Catalogue. Background job, voir
+     *  electron/services/genre-backfill.service.ts. */
+    backfillGenres: (opts?: { limit?: number }) => Promise<{
+      ok: boolean
+      started?: boolean
+      reason?: string
+      error?: string
+    }>
+    backfillStatus: () => Promise<{
+      ok: boolean
+      running?: boolean
+      jobId?: string | null
+      lastRunStartedAt?: number
+      error?: string
+    }>
+    onGenresBackfill: (
+      cb: (payload: {
+        kind: 'start' | 'progress' | 'done'
+        done: number
+        total: number
+        withGenres?: number
+        jobId: string
+      }) => void,
     ) => () => void
   }
   artwork: {
@@ -1116,6 +1166,49 @@ export interface NexusAPI {
       | { ok: true; items: CloudActivity[] }
       | { ok: false; error: string; items: [] }
     >
+    // Remote Play Together (Phase A — signaling, no stream yet)
+    remotePlayInvite: (payload: {
+      toUserId: string
+      gameTitle: string
+      gameId: string
+      steamAppId: number | null
+      coverUrl: string | null
+    }) => Promise<{ ok: boolean; error?: string }>
+    remotePlayRespond: (
+      fromUserId: string,
+      accepted: boolean,
+    ) => Promise<{ ok: boolean; error?: string }>
+    /**
+     * Phase B — relay un payload WebRTC (offer/answer/ICE candidate)
+     * via le cloud relay (/v1/remote-play/signal). Le destinataire
+     * recoit un envelope `remote_play:signal` sur cloud.onEvent.
+     */
+    remotePlaySignal: (payload: {
+      toUserId: string
+      signalType: 'offer' | 'answer' | 'ice-candidate' | string
+      payload: unknown
+    }) => Promise<{ ok: boolean; error?: string }>
+    /**
+     * Self-loopback — émet localement les envelopes invite + response
+     * comme si elles venaient du cloud. Permet de tester la chaîne UI
+     * Remote Play en solo (sans second compte).
+     */
+    remotePlaySimulateLoopback: (payload: {
+      fromUserId: string
+      fromName: string
+      gameTitle: string
+      gameId: string
+      steamAppId: number | null
+      coverUrl: string | null
+      accept?: boolean
+      delayMs?: number
+    }) => Promise<{
+      ok: boolean
+      error?: string
+      loopback?: boolean
+      delayMs?: number
+      accept?: boolean
+    }>
     // Saves
     saveQuota: () => Promise<
       | ({ ok: true } & CloudQuota)
@@ -1270,6 +1363,104 @@ export interface NexusAPI {
     revokeOtherSessions: (userId: string, keepToken: string) => Promise<{ ok: boolean; removed?: number }>
     exportData: (userId: string) => Promise<{ ok: boolean; path?: string; error?: string }>
     resetAllData: () => Promise<{ ok: boolean }>
+  }
+  overlay: {
+    getCurrentGame: () => Promise<{ ok: boolean; game: LibraryGame | null }>
+    toggle: () => Promise<{ ok: boolean }>
+    show: () => Promise<{ ok: boolean }>
+    hide: () => Promise<{ ok: boolean }>
+    onGameChanged: (cb: (game: LibraryGame | null) => void) => () => void
+    getNote: (
+      userId: string,
+      libraryGameId: string,
+    ) => Promise<{ ok: boolean; text?: string; updatedAt?: number; error?: string }>
+    saveNote: (
+      userId: string,
+      libraryGameId: string,
+      text: string,
+    ) => Promise<{ ok: boolean; error?: string }>
+    captureScreenshot: (
+      libraryGameId: string,
+    ) => Promise<{ ok: boolean; path?: string; error?: string }>
+    listScreenshots: (
+      libraryGameId: string,
+    ) => Promise<{
+      ok: boolean
+      shots: Array<{ path: string; url: string; takenAt: number }>
+      error?: string
+    }>
+    openScreenshotsFolder: (libraryGameId: string) => Promise<{ ok: boolean }>
+    isRemotePlayCompatible: (
+      steamAppId: number,
+    ) => Promise<{ ok: boolean; compatible: boolean; resolved?: boolean; error?: string }>
+    setMousePassthrough: (passthrough: boolean) => Promise<{ ok: boolean }>
+    /** Demande le focus clavier (WS_EX_NOACTIVATE temporairement off).
+     *  À appeler quand un <textarea>/<input> reçoit le focus dans l'overlay. */
+    requestKeyboardFocus?: () => Promise<{ ok: boolean }>
+    /** Restitue WS_EX_NOACTIVATE quand tous les champs sont blurrés. */
+    releaseKeyboardFocus?: () => Promise<{ ok: boolean }>
+    onShown: (cb: () => void) => () => void
+    /** v0.5.1 Phase 2 — query l'état "main UI ouverte par Shift+Tab".
+     *  Polled au mount de l'overlay offscreen pour set son état
+     *  initial avant que le prochain broadcast arrive. */
+    isUserVisible: () => Promise<{ ok: boolean; visible: boolean; error?: string }>
+    /** v0.5.1 Phase 2 — push depuis main à chaque transition show/hide
+     *  de l'overlay. Le renderer offscreen s'en sert pour gate le
+     *  rendu du backdrop / header / panels (le toast stack reste
+     *  toujours visible). */
+    onVisibilityChange: (cb: (visible: boolean) => void) => () => void
+    getPerfSnapshot: () => Promise<{
+      ok: boolean
+      snapshot: {
+        cpu: { percent: number; cores: number; model: string }
+        ram: { usedBytes: number; totalBytes: number; percent: number }
+        gpu: {
+          percent: number
+          memUsedMB: number
+          memTotalMB: number
+          model: string
+        } | null
+        disk: { readBps: number; writeBps: number }
+        uptimeSeconds: number
+      } | null
+      error?: string
+    }>
+  }
+  remotePlay: {
+    openHost: (
+      peerUserId: string,
+      gameMeta: {
+        gameId: string
+        gameTitle: string
+        steamAppId: number | null
+        coverUrl: string | null
+      },
+    ) => Promise<{ ok: boolean; error?: string }>
+    openGuest: (
+      peerUserId: string,
+      gameMeta: {
+        gameId: string
+        gameTitle: string
+        steamAppId: number | null
+        coverUrl: string | null
+      },
+    ) => Promise<{ ok: boolean; error?: string }>
+    closeHost: () => Promise<{ ok: boolean }>
+    closeGuest: () => Promise<{ ok: boolean }>
+    getDesktopSources: () => Promise<{
+      ok: boolean
+      sources: Array<{
+        id: string
+        name: string
+        display_id: string
+        thumbnail: string
+      }>
+      error?: string
+    }>
+    startGamepadBridge: () => Promise<{ ok: boolean; error?: string }>
+    stopGamepadBridge: () => Promise<{ ok: boolean }>
+    injectGamepadState: (state: unknown) =>
+      Promise<{ ok: boolean; error?: string }>
   }
   update: {
     check: () => Promise<

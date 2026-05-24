@@ -8,7 +8,7 @@ import {
   X,
   CheckCircle2,
   Computer,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { cn } from '@/utils/cn'
 
 /**

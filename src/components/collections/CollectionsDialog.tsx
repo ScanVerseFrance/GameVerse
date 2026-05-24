@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FolderPlus, Pencil, Trash2, Check, Plus, X, Library } from 'lucide-react'
+import { FolderPlus, Pencil, Trash2, Check, Plus, X, Library } from '@/lib/icons'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'

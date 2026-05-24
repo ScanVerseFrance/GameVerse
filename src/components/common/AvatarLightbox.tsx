@@ -12,7 +12,7 @@
  * obvious read at the call site.
  */
 import { motion, AnimatePresence } from 'framer-motion'
-import { X } from 'lucide-react'
+import { X } from '@/lib/icons'
 import { useEffect } from 'react'
 
 interface AvatarLightboxProps {

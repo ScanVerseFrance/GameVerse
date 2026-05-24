@@ -19,6 +19,10 @@ export interface AppSettings {
     friendLaunchedGame?: boolean
     /** Friend request from another user. */
     friendRequest?: boolean
+    /** v0.5.1 — toast Windows envoyé une fois par session quand l'user
+     *  lance un jeu via Nexus, pour rappeler le raccourci Shift+Tab
+     *  qui ouvre l'overlay in-game (style Steam). Default: on. */
+    overlayTip?: boolean
     /** Snooze timestamp (Unix ms). When set in the future, every toast
      *  kind except `update_available` and `test` is suppressed. Lets the
      *  user mute the overlay while gaming / focusing without flipping

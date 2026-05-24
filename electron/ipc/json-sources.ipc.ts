@@ -81,10 +81,42 @@ export function registerJsonSourcesIpc() {
     }
   })
 
-  ipcMain.handle('jsonSources:pickRandom', async () => {
+  ipcMain.handle('jsonSources:pickRandom', async (_e, filters: unknown) => {
     try {
-      const game = svc.pickRandomJsonSourceGame()
-      if (!game) return { ok: false, error: 'Aucune source importée.' }
+      // Validation light : accepte juste les champs connus, ignore le
+      // reste. Caps à 30 genres pour éviter qu'un client maligne
+      // explose le LIKE chain.
+      const f =
+        filters && typeof filters === 'object'
+          ? (filters as Record<string, unknown>)
+          : {}
+      const safeFilters: svc.RandomPickFilters = {
+        genres: Array.isArray(f.genres)
+          ? f.genres
+              .filter((g): g is string => typeof g === 'string')
+              .slice(0, 30)
+              .map((g) => sanitizeString(g, 64))
+          : undefined,
+        minSizeBytes:
+          typeof f.minSizeBytes === 'number' && Number.isFinite(f.minSizeBytes)
+            ? Math.max(0, Math.floor(f.minSizeBytes))
+            : undefined,
+        maxSizeBytes:
+          typeof f.maxSizeBytes === 'number' && Number.isFinite(f.maxSizeBytes)
+            ? Math.max(0, Math.floor(f.maxSizeBytes))
+            : undefined,
+      }
+      const game = svc.pickRandomJsonSourceGame(safeFilters)
+      if (!game)
+        return {
+          ok: false,
+          error:
+            (safeFilters.genres && safeFilters.genres.length > 0) ||
+            safeFilters.minSizeBytes != null ||
+            safeFilters.maxSizeBytes != null
+              ? 'Aucun jeu ne correspond à ces filtres.'
+              : 'Aucune source importée.',
+        }
       return { ok: true, game }
     } catch (e) {
       return { ok: false, error: (e as Error).message }

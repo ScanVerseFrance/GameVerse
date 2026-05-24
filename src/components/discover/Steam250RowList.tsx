@@ -11,7 +11,7 @@
  * `limit` each click — same UX as Hydra's "Load more" button.
  */
 import { useEffect, useState, useCallback } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown } from '@/lib/icons'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { SteamCatalogueTile } from '@/components/game/SteamCatalogueTile'
 

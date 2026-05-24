@@ -10,7 +10,7 @@ import {
   LogIn,
   RefreshCw,
   WifiOff,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { useCloudStore } from '@/stores/cloud.store'
 import { PasswordStrength } from '@/components/common/PasswordStrength'
 import { cn } from '@/utils/cn'

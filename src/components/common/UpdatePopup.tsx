@@ -29,7 +29,7 @@ import {
   Loader2,
   AlertCircle,
   Sparkles,
-} from 'lucide-react'
+} from '@/lib/icons'
 import type { UpdateAvailableInfo } from '@/types/global'
 
 type Phase =

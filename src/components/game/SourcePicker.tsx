@@ -18,7 +18,7 @@
  */
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Star, Layers, HardDrive, Calendar, FileJson, Sparkles } from 'lucide-react'
+import { Star, Layers, HardDrive, Calendar, FileJson, Sparkles } from '@/lib/icons'
 import { dedupeGamesAcrossSources } from '@/utils/source-dedupe'
 import { parseGameTitle } from '@/utils/title-parse'
 import { cn } from '@/utils/cn'

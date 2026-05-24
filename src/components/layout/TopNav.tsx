@@ -17,14 +17,17 @@ import {
   Download,
   Users,
   Sparkles,
+  MessageCircle,
   type LucideIcon,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { useAuthStore } from '@/stores/auth.store'
 import { useDownloadStore } from '@/stores/download.store'
 import { useSocialStore } from '@/stores/social.store'
+import { useCloudStore } from '@/stores/cloud.store'
 import { Username } from '@/components/common/Username'
 import { NotificationBell } from '@/components/layout/NotificationBell'
 import { CloudStatusBadge } from '@/components/cloud/CloudStatusBadge'
+import { RandomizerDialog } from '@/components/common/RandomizerDialog'
 import { findDecoration } from '@/config/profileCosmetics'
 import { cn } from '@/utils/cn'
 
@@ -40,8 +43,59 @@ const NAV_TABS: ReadonlyArray<Omit<NavTab, 'badge'>> = [
   { to: '/catalogue', label: 'Catalogue', icon: Sparkles },
   { to: '/library', label: 'Bibliothèque', icon: LibraryIcon },
   { to: '/downloads', label: 'Téléchargements', icon: Download },
-  { to: '/community', label: 'Communauté', icon: Users },
+  // Renommé "Communauté" → "Amis" v0.5.1 : la section liste tes
+  // amis + leur activité, c'est pas une vraie "communauté" globale.
+  // L'URL reste /community (changer la route casserait tous les
+  // bookmarks + liens internes).
+  { to: '/community', label: 'Amis', icon: Users },
 ]
+
+/**
+ * Bouton chat icon-only dans la TopNav. Affiche un badge accent avec
+ * le nombre de messages non lus (somme des unreadCount des threads
+ * du cloud store). Click → navigate vers /community/chat où l'user
+ * voit la liste des conversations + peut sélectionner un peer.
+ *
+ * Placement intentionnel : entre CloudStatusBadge et NotificationBell,
+ * cohérent avec la grammaire visuelle "actions rapides" de la nav.
+ */
+function ChatButton() {
+  const navigate = useNavigate()
+  const totalUnread = useCloudStoreUnread()
+  return (
+    <button
+      type="button"
+      onClick={() => navigate('/community/chat')}
+      className="relative h-10 w-10 inline-flex items-center justify-center rounded-full text-fg-secondary hover:bg-surface-soft hover:text-accent-primary transition-all duration-200"
+      aria-label={
+        totalUnread > 0
+          ? `Chat (${totalUnread} message${totalUnread > 1 ? 's' : ''} non lu${totalUnread > 1 ? 's' : ''})`
+          : 'Chat'
+      }
+      title={
+        totalUnread > 0
+          ? `${totalUnread} message${totalUnread > 1 ? 's' : ''} non lu${totalUnread > 1 ? 's' : ''}`
+          : 'Ouvrir le chat'
+      }
+    >
+      <MessageCircle className="w-4 h-4" />
+      {totalUnread > 0 && (
+        // Badge accent → match style NotificationBell pour cohérence.
+        // Plafonné à 99+ pour ne pas exploser la largeur du badge.
+        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-accent-gradient text-white text-[10px] font-bold leading-[18px] text-center shadow-[0_2px_6px_-1px_rgba(124,92,255,0.6)]">
+          {totalUnread > 99 ? '99+' : totalUnread}
+        </span>
+      )}
+    </button>
+  )
+}
+
+/** Sélecteur qui somme les unreadCount sur tous les threads chat. */
+function useCloudStoreUnread(): number {
+  return useCloudStore((s) =>
+    s.threads.reduce((sum, t) => sum + (t.unreadCount || 0), 0),
+  )
+}
 
 /**
  * Top navigation refondue — glassmorphism, capsules arrondies, accent
@@ -101,6 +155,9 @@ export function TopNav() {
 
   const [query, setQuery] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  /** Randomizer popup — l'user choisit genres + taille avant de
+   *  lancer le pick. Click sur le Dice button toggle ça. */
+  const [randomizerOpen, setRandomizerOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -237,13 +294,13 @@ export function TopNav() {
 
       {/* Quick actions cluster */}
       <div className="flex items-center gap-1.5">
+        {/* Dice button — depuis v0.5.1 ouvre un popup de filtres
+            (genres + taille) au lieu de lancer un random immédiat.
+            Si l'user veut le hasard pur, il clique direct "Lancer le
+            hasard" dans le dialog sans rien filtrer (= comportement
+            d'avant en 2 clics). */}
         <button
-          onClick={async () => {
-            const res = await window.nexus.jsonSources.pickRandom()
-            if (res.ok) {
-              navigate(`/json-game/${encodeURIComponent(res.game.id)}`)
-            }
-          }}
+          onClick={() => setRandomizerOpen(true)}
           title="Jeu aléatoire — surprend-moi"
           className="h-10 w-10 inline-flex items-center justify-center rounded-full text-fg-secondary hover:bg-surface-soft hover:text-accent-primary transition-all duration-200"
         >
@@ -264,6 +321,11 @@ export function TopNav() {
         </button>
 
         <CloudStatusBadge />
+        {/* Bouton chat — accès rapide à /community/chat depuis n'importe
+            où dans l'app. Affiche un badge accent quand il y a des
+            messages non lus (somme des unreadCount de tous les
+            threads). Icône MessageCircle Lucide (line-art, monochrome). */}
+        <ChatButton />
         <NotificationBell />
       </div>
 
@@ -402,6 +464,12 @@ export function TopNav() {
           )}
         </div>
       )}
+      {/* Randomizer popup — monté ici pour qu'il vive au-dessus de
+          tout le layout (z-index 50 du Modal > z-index nav). */}
+      <RandomizerDialog
+        open={randomizerOpen}
+        onClose={() => setRandomizerOpen(false)}
+      />
     </nav>
   )
 }

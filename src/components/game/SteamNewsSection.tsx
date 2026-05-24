@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Newspaper, ExternalLink, RefreshCw } from 'lucide-react'
+import { Newspaper, ExternalLink, RefreshCw } from '@/lib/icons'
 import type { SteamNewsItem } from '@/types/steam-news.types'
 import { Card } from '@/components/ui/Card'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'

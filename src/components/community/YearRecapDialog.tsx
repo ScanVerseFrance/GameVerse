@@ -10,7 +10,7 @@
  * are needed when this opens — instant render.
  */
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Clock, Trophy, Gamepad2, CalendarDays } from 'lucide-react'
+import { X, Clock, Trophy, Gamepad2, CalendarDays } from '@/lib/icons'
 import { useEffect } from 'react'
 
 interface YearRecapDialogProps {

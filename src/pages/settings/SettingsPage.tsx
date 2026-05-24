@@ -25,7 +25,7 @@ import {
   KeyRound,
   AlertTriangle,
   Gamepad2,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -88,17 +88,6 @@ const TAB_ITEMS = [
   { value: 'data',          label: 'Données',        icon: <Database className="w-4 h-4" /> },
 ]
 
-/**
- * Détecte les formats d'image animés (GIF / APNG). Utilisé dans
- * handleAvatar / handleBanner du Compte tab pour bypass le cropper :
- * canvas.toDataURL flatten en frame statique, donc passer un GIF par
- * le cropper le casse. Parité avec ProfilePage.handlePickAvatar.
- */
-function isAnimatedImage(mime: string): boolean {
-  const m = (mime || '').toLowerCase()
-  return m === 'image/gif' || m === 'image/apng'
-}
-
 function formatBytes(bytes: number): string {
   if (!bytes || bytes <= 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -154,7 +143,7 @@ function AccountSection() {
   // toDataURL flatten l'animation, donc on push le data URL brut).
   // `target` distingue avatar (1:1 → 512×512) de banner (16:5 →
   // 1280×400) pour que le même Dialog gère les deux.
-  const [crop, setCrop] = useState<{ source: string; target: 'avatar' | 'banner' } | null>(null)
+  const [crop, setCrop] = useState<{ source: string; target: 'avatar' | 'banner'; mime?: string } | null>(null)
 
   // Sync local state with store when user data changes (login, reload).
   useEffect(() => {
@@ -210,19 +199,11 @@ function AccountSection() {
     setUploadError(null)
     const url = await readAsDataUrl(f)
     if (!url) return
-    // GIF / APNG : bypass le cropper. Le cropper rend via
-    // canvas.toDataURL qui flatten en PNG/JPEG statique de la
-    // première frame → l'animation est perdue. On push direct le
-    // data URL d'origine → l'animation survit. Décision revue v0.4.6
-    // (l'user veut explicitement les avatars/bannières animés).
-    if (isAnimatedImage(f.type)) {
-      const ok = await updateProfile({ avatarPath: url })
-      toast[ok ? 'success' : 'error'](
-        ok ? 'Avatar animé mis à jour' : "Échec de la mise à jour de l'avatar",
-      )
-      return
-    }
-    setCrop({ source: url, target: 'avatar' })
+    // v0.5.1 : on ouvre TOUJOURS le cropper, peu importe le format.
+    // Pour les GIF/APNG le dialog affiche un bouton « Garder
+    // l'animation » qui bypass le canvas render → push l'original
+    // tel quel. L'user choisit explicitement crop vs preserve.
+    setCrop({ source: url, target: 'avatar', mime: f.type })
   }
 
   async function handleBanner(e: ChangeEvent<HTMLInputElement>) {
@@ -238,16 +219,27 @@ function AccountSection() {
     setUploadError(null)
     const url = await readAsDataUrl(f)
     if (!url) return
-    // Idem avatar : bypass cropper pour GIF / APNG sinon l'animation
-    // est perdue à la flatten canvas.
-    if (isAnimatedImage(f.type)) {
-      const ok = await updateProfile({ bannerPath: url })
-      toast[ok ? 'success' : 'error'](
-        ok ? 'Bannière animée mise à jour' : 'Échec de la mise à jour de la bannière',
+    setCrop({ source: url, target: 'banner', mime: f.type })
+  }
+
+  async function handleKeepAnimated(originalDataUrl: string): Promise<void> {
+    if (!crop) return
+    const target = crop.target
+    setCrop(null)
+    const ok = await updateProfile(
+      target === 'banner' ? { bannerPath: originalDataUrl } : { avatarPath: originalDataUrl },
+    )
+    if (ok) {
+      toast.success(
+        target === 'banner' ? 'Bannière animée mise à jour' : 'Avatar animé mis à jour',
       )
-      return
+    } else {
+      toast.error(
+        target === 'banner'
+          ? 'Échec de la mise à jour de la bannière'
+          : "Échec de la mise à jour de l'avatar",
+      )
     }
-    setCrop({ source: url, target: 'banner' })
   }
 
   async function handleCropConfirmed(dataUrl: string): Promise<void> {
@@ -397,11 +389,13 @@ function AccountSection() {
       <AccountSecurityBlock />
 
       {/* Crop modal partagé pour avatar (1:1 → 512×512) et bannière
-          (16:5 → 1280×400). Pour les GIF/APNG le crop est bypassé en
-          amont dans handleAvatar/handleBanner. */}
+          (16:5 → 1280×400). v0.5.1 : ouvert pour TOUS les formats ;
+          GIF/APNG affichent un bouton « Garder l'animation » qui
+          bypass le canvas render et push l'original. */}
       <ImageCropDialog
         open={crop != null}
         sourceDataUrl={crop?.source ?? null}
+        sourceMime={crop?.mime}
         aspect={crop?.target === 'banner' ? 16 / 5 : 1}
         outputSize={
           crop?.target === 'banner' ? { w: 1280, h: 400 } : { w: 512, h: 512 }
@@ -409,6 +403,7 @@ function AccountSection() {
         title={crop?.target === 'banner' ? 'Recadrer la bannière' : "Recadrer l'avatar"}
         onCancel={() => setCrop(null)}
         onCrop={(url) => void handleCropConfirmed(url)}
+        onKeepAnimated={(url) => void handleKeepAnimated(url)}
       />
     </div>
   )
@@ -886,6 +881,7 @@ function NotificationsSection() {
   const friendMsgFlag = appSettings?.notifications.friendMessage ?? true
   const friendGameFlag = appSettings?.notifications.friendLaunchedGame ?? true
   const friendReqFlag = appSettings?.notifications.friendRequest ?? true
+  const overlayTipFlag = appSettings?.notifications.overlayTip ?? true
 
   // Diagnostic toast — pops a synthetic Windows toast and surfaces
   // whether Electron's Notification API thinks the OS supports it.
@@ -976,6 +972,12 @@ function NotificationsSection() {
           desc="Toast quand le launcher détecte une nouvelle version"
           checked={updateFlag}
           onChange={(v) => updateApp({ notifications: { updateAvailable: v } })}
+        />
+        <ToggleRow
+          label="Astuce overlay en jeu"
+          desc="Rappel Shift+Tab à chaque jeu lancé (style Steam)"
+          checked={overlayTipFlag}
+          onChange={(v) => updateApp({ notifications: { overlayTip: v } })}
         />
 
         {/* Snooze — pause-all for a chosen window. Update-available

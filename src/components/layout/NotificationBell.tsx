@@ -17,7 +17,7 @@ import {
   FileArchive,
   Sparkles,
   type LucideIcon,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { useNotificationsStore } from '@/stores/notifications.store'
 import type { NotificationKind, NotificationItem } from '@/types/notification.types'
 import { cn } from '@/utils/cn'

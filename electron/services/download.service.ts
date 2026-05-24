@@ -10,6 +10,8 @@ import { startTorrentDownload, setGlobalThrottle, type TorrentHandle } from './t
 import {
   startBridgeDownload,
   isAnkergamesPageUrl,
+  isOnlineFixPageUrl,
+  onlineFixFallbackPageUrl,
   type BridgeHandle,
 } from './ankergames-bridge.service'
 import { upsertLibraryFromDownload } from './library.service'
@@ -45,6 +47,10 @@ interface DownloadRow {
   created_at: number
   finished_at: number | null
   error: string | null
+  /** v0.5.1 — addonFix attached to the main download. Added via
+   *  ensureColumn migration in database.service init. */
+  addon_fix_url: string | null
+  addon_fix_label: string | null
 }
 
 interface ActiveHandle {
@@ -187,6 +193,8 @@ function rowToRecord(row: DownloadRow): DownloadRecord {
     eta: 0,
     peers: null,
     ratio: null,
+    addonFixUrl: row.addon_fix_url,
+    addonFixLabel: row.addon_fix_label,
   }
 }
 
@@ -291,8 +299,8 @@ export function enqueueDownload(params: NewDownloadParams): DownloadRecord {
   const pos = nextQueuePosition(params.userId)
   getDatabase()
     .prepare(
-      `INSERT INTO downloads (id, user_id, game_title, game_id, source_addon_id, source_url, kind, magnet_or_url, target_folder, cover_url, total_bytes, downloaded_bytes, status, queue_position, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'queued', ?, ?)`
+      `INSERT INTO downloads (id, user_id, game_title, game_id, source_addon_id, source_url, kind, magnet_or_url, target_folder, cover_url, total_bytes, downloaded_bytes, status, queue_position, created_at, addon_fix_url, addon_fix_label)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'queued', ?, ?, ?, ?)`
     )
     .run(
       id,
@@ -306,7 +314,9 @@ export function enqueueDownload(params: NewDownloadParams): DownloadRecord {
       targetFolder,
       params.coverUrl ?? null,
       pos,
-      now
+      now,
+      params.addonFixUrl ?? null,
+      params.addonFixLabel ?? null,
     )
   const record = getDownload(id)!
   emitAdded(record)
@@ -411,8 +421,73 @@ function registerCompletedGame(record: DownloadRecord, installPath: string): voi
         void createGameShortcutsIfAllowed(updated)
       }
     }
+    // v0.5.1 — "Inclure Online-Fix" : ouvre la page du patch dans le
+    // navigateur + le dossier d'install dans l'explorateur. Le user
+    // récupère le patch puis le merge en glisser-déposer. Pas d'auto
+    // extract possible — Online-Fix protège ses archives par mdp.
+    if (record.addonFixUrl) {
+      void openAddonFixForUser(record, finalPath)
+    }
   } catch (e) {
     console.warn('[downloads] failed to add to library:', (e as Error).message)
+  }
+}
+
+/**
+ * Open the Online-Fix patch page in the default browser AND the game
+ * install folder in the system file explorer, so the user can grab the
+ * patch and drag-drop it into the game folder. Also pushes a toast so
+ * the action is visible even when the launcher is in background.
+ *
+ * Fire-and-forget — every step is best-effort. The user still gets
+ * the toast even if the shell.openExternal call fails (sandboxed
+ * environments, etc.).
+ */
+async function openAddonFixForUser(
+  record: DownloadRecord,
+  installPath: string,
+): Promise<void> {
+  try {
+    const { shell } = await import('electron')
+    // Open the patch URL in the user's default browser.
+    if (record.addonFixUrl) {
+      void shell.openExternal(record.addonFixUrl).catch(() => {})
+    }
+    // Open the install folder in Explorer / Finder. showItemInFolder
+    // expects a file path ; we point it at the install folder itself
+    // (works on Windows + macOS + GNOME).
+    if (installPath) {
+      try {
+        if (fs.existsSync(installPath)) {
+          shell.openPath(installPath).catch(() => {})
+        }
+      } catch {
+        /* path probe failed — skip */
+      }
+    }
+    // Push a toast so the user knows what's happening + gets a 2nd
+    // way to re-trigger if the browser was closed.
+    try {
+      const { pushToast } = await import('./toast-window.service')
+      // On utilise 'download_complete' comme kind — c'est la
+      // sémantique la plus proche (suite directe d'un téléchargement
+      // réussi) et ça nous évite d'introduire un nouveau kind dans
+      // ToastKind juste pour ça.
+      pushToast({
+        kind: 'download_complete',
+        title: 'Patch Online-Fix prêt à appliquer',
+        body: `La page du patch s'est ouverte dans ton navigateur. Glisse les fichiers du patch dans le dossier d'installation pour activer le multijoueur.`,
+        iconUrl: record.coverUrl ?? null,
+        link: record.addonFixUrl ?? null,
+      })
+    } catch {
+      /* toast machinery hiccupped — non-fatal */
+    }
+  } catch (e) {
+    console.warn(
+      '[downloads] openAddonFixForUser failed:',
+      (e as Error).message,
+    )
   }
 }
 
@@ -486,6 +561,45 @@ function startHttp(record: DownloadRecord): void {
   // intercepts the resulting download via `will-download`. Progress
   // events go through the same callbacks as a regular HTTP download so
   // the UI sees nothing different.
+  // v0.5.1 — Online-Fix : les "downloads" sont des pages HTML qui
+  // gatent les vrais mirrors derrière une inscription. On ne peut
+  // pas auto-download. Au lieu de planter avec un 401, on ouvre la
+  // page dans le navigateur du user + on flag le DL comme "manuel"
+  // (status = 'completed' avec 0 bytes). L'user voit "Téléchargement
+  // manuel ouvert dans le navigateur" et il peut delete l'entry.
+  if (isOnlineFixPageUrl(record.magnetOrUrl)) {
+    const pageUrl = onlineFixFallbackPageUrl(record.magnetOrUrl)
+    void (async () => {
+      try {
+        const { shell } = await import('electron')
+        void shell.openExternal(pageUrl).catch(() => {})
+      } catch {
+        /* ignore */
+      }
+      try {
+        const { pushToast } = await import('./toast-window.service')
+        pushToast({
+          kind: 'download_complete',
+          title: 'Téléchargement Online-Fix manuel',
+          body: `${record.gameTitle} — la page Online-Fix s'est ouverte dans ton navigateur. Suis les instructions du site pour télécharger.`,
+          iconUrl: record.coverUrl ?? null,
+          link: pageUrl,
+        })
+      } catch {
+        /* toast machinery hiccupped */
+      }
+      // Mark as completed (no file) — c'est l'état le moins
+      // surprenant : pas d'erreur rouge, juste une entry terminée
+      // dans /downloads que l'user peut supprimer.
+      setRowStatus(record.id, 'completed')
+      emitState(record.id, 'completed')
+      active.delete(record.id)
+      pump()
+    })()
+    active.set(record.id, {})
+    return
+  }
+
   if (isAnkergamesPageUrl(record.magnetOrUrl)) {
     const handle = startBridgeDownload({
       pageUrl: record.magnetOrUrl,

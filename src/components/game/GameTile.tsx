@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Star, Gamepad2, Calendar, HardDrive } from 'lucide-react'
+import { Star, Gamepad2, Calendar, HardDrive } from '@/lib/icons'
 import { motion } from 'framer-motion'
 import type { AddonGame } from '@/types/addon.types'
 

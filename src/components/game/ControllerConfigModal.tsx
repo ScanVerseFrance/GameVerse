@@ -24,7 +24,7 @@ import {
   Crosshair,
   CircleDot,
   Layers,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { useAuthStore } from '@/stores/auth.store'

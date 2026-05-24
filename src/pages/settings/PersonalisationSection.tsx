@@ -21,7 +21,7 @@
  * inline (10 colours + 4 animations is small enough to fit).
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Palette } from 'lucide-react'
+import { Palette } from '@/lib/icons'
 import { Card } from '@/components/ui/Card'
 import { Toggle } from '@/components/ui/Toggle'
 import { Slider } from '@/components/ui/Slider'

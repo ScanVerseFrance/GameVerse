@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Award, Cpu, Star, Globe, Calendar, Gamepad2 } from 'lucide-react'
+import { Award, Cpu, Star, Globe, Calendar, Gamepad2 } from '@/lib/icons'
 import type { SteamMeta } from '@/types/steam-meta.types'
 import { Card } from '@/components/ui/Card'
 import { cn } from '@/utils/cn'

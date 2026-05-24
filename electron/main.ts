@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, protocol, shell, Tray } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { initDatabase, closeDatabase } from './services/database.service'
@@ -51,12 +51,28 @@ import {
   initCatalogRefresh,
   shutdownCatalogRefresh,
 } from './services/catalog-refresh.service'
+import { initGenreBackfill } from './services/genre-backfill.service'
+import {
+  initOverlay,
+  registerOverlayShortcut,
+  shutdownOverlay,
+} from './services/overlay.service'
+import {
+  initOverlayIpcServer,
+  shutdownOverlayIpcServer,
+} from './services/overlay-ipc-server.service'
+import {
+  initOverlayFramesServer,
+  shutdownOverlayFramesServer,
+} from './services/overlay-frames.service'
 import {
   initExternalProcessWatcher,
   shutdownExternalProcessWatcher,
 } from './services/external-process-watcher.service'
 import { initNotifications } from './services/notifications.service'
 import { registerNewFeaturesIpc } from './ipc/new-features.ipc'
+import { registerOverlayIpc } from './ipc/overlay.ipc'
+import { registerRemotePlayIpc } from './ipc/remote-play.ipc'
 import { backfillJsonSourceAppids } from './services/steam-apps.service'
 import {
   ensureSteamCatalogue,
@@ -82,6 +98,20 @@ const MAIN_DIST = path.join(APP_ROOT, 'dist-electron')
 const IS_UNINSTALL_MODE = process.argv.includes('--uninstall')
 
 let mainWindow: BrowserWindow | null = null
+
+/**
+ * Comportement Steam-like : cliquer la croix de fermeture HIDE la
+ * fenêtre dans le system tray au lieu de quit l'app. L'user reçoit
+ * toujours les notifs (manette branchée, ami lance un jeu, cloud
+ * sync, etc.) pendant qu'il joue. Pour vraiment quit il y a
+ * "Quitter Nexus Launcher" dans le menu contextuel du tray icon.
+ *
+ * `isQuitting` est flippé true uniquement quand l'user clique
+ * explicitement Quitter dans le tray. Sans ce flag, le close handler
+ * preventDefault systématiquement et hide la fenêtre.
+ */
+let tray: Tray | null = null
+let isQuitting = false
 
 // Last-resort safety net so a stray async error inside WebTorrent / SQLite /
 // any third-party lib can't take down the entire main process and the user's
@@ -122,6 +152,15 @@ function createWindow() {
       // Sans ça, le raw iframe YT charge mais reste muet jusqu'au
       // premier clic dans la fenêtre.
       autoplayPolicy: 'no-user-gesture-required',
+      // backgroundThrottling false : sans ça, quand le launcher est
+      // minimisé OU caché derrière un autre window (jeu fullscreen,
+      // navigateur, etc.), Chromium throttle le renderer agressivement :
+      // timers ralentis à 1Hz, RAF pausé, events ignorés. C'est
+      // catastrophique pour notre cas : les events `gamepadconnected`
+      // ne firent plus, donc aucune notif "manette connectée" pendant
+      // que l'user joue à un jeu. Idem pour les notifs amis, cloud
+      // sync, etc. — tout passe par le renderer.
+      backgroundThrottling: false,
     },
   })
 
@@ -129,6 +168,17 @@ function createWindow() {
 
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized-change', true))
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized-change', false))
+
+  // Steam-like close-to-tray : interception du close pour HIDE la
+  // fenêtre au lieu de la fermer. L'user clique la X, le launcher
+  // disparaît visuellement mais le process reste alive en background
+  // → continue à recevoir notifs amis / cloud / manettes / etc.
+  // Pour vraiment quitter il y a "Quitter" dans le menu tray.
+  mainWindow.on('close', (e) => {
+    if (isQuitting) return // user a explicitement demandé Quitter → laisse fermer
+    e.preventDefault()
+    mainWindow?.hide()
+  })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     // Whitelist strict des protocoles ouvrables en externe. Tout le
@@ -162,9 +212,22 @@ function createWindow() {
   })
 
   // Refuse les demandes de permission web (geolocation, notifications,
-  // media…) — l'app n'en a aucune utilité légitime et accepter par
-  // défaut ouvrirait un canal d'exfiltration via un addon hostile.
-  mainWindow.webContents.session.setPermissionRequestHandler((_wc, _perm, cb) => cb(false))
+  // media…) — l'app n'en a aucune utilité légitime PAR DÉFAUT, accepter
+  // sans contrôle ouvrirait un canal d'exfiltration via un addon hostile.
+  //
+  // EXCEPTION : les windows Remote Play (host/guest) ont besoin de
+  // `media` pour faire navigator.mediaDevices.getUserMedia({chromeMediaSource:'desktop'})
+  // (host) et navigator.getGamepads() (guest). On allowlist par URL :
+  // seules les fenêtres dont l'URL contient `mode=remote-play-*` passent.
+  mainWindow.webContents.session.setPermissionRequestHandler((wc, permission, cb) => {
+    const url = wc.getURL()
+    const isRemotePlay =
+      url.includes('mode=remote-play-host') || url.includes('mode=remote-play-guest')
+    if (isRemotePlay && (permission === 'media' || permission === 'display-capture')) {
+      return cb(true)
+    }
+    cb(false)
+  })
 
   if (VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(VITE_DEV_SERVER_URL)
@@ -194,6 +257,68 @@ function createWindow() {
   })
 }
 
+/**
+ * Restaure la fenêtre principale depuis le tray (clic icône ou item
+ * "Ouvrir" du menu). Gère les cas hidden / minimized / focus.
+ */
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (!mainWindow.isVisible()) mainWindow.show()
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.focus()
+}
+
+/**
+ * Crée le system tray icon avec un menu contextuel Steam-like :
+ * Ouvrir + sections principales + Quitter. Le tray reste alive
+ * tant que l'app tourne, et c'est lui qui empêche `window-all-closed`
+ * de quitter quand la main window est hidden (le tray n'est pas
+ * une BrowserWindow, mais il garde une référence à l'app — combiné
+ * avec mainWindow.hide() au lieu de close() ça suffit).
+ *
+ * L'icône est partagée avec celle de l'app (build/icon.ico).
+ */
+function createTray(): void {
+  if (tray) return // déjà créé
+  const iconPath = path.join(APP_ROOT, 'build', 'icon.ico')
+  try {
+    tray = new Tray(iconPath)
+  } catch (err) {
+    // Fallback : si l'ico est introuvable en dev, on log et skip.
+    // Le launcher continue à marcher, juste sans tray icon.
+    console.error('[tray] failed to create:', (err as Error).message)
+    return
+  }
+  tray.setToolTip('Nexus Launcher')
+  function navTo(route: string): void {
+    showMainWindow()
+    mainWindow?.webContents.send('nav:goto', route)
+  }
+  const menu = Menu.buildFromTemplate([
+    { label: 'Ouvrir Nexus Launcher', click: () => showMainWindow() },
+    { type: 'separator' },
+    { label: 'Bibliothèque', click: () => navTo('/library') },
+    { label: 'Découvrir', click: () => navTo('/discover') },
+    { label: 'Communauté', click: () => navTo('/community') },
+    { label: 'Paramètres', click: () => navTo('/settings') },
+    { type: 'separator' },
+    {
+      label: 'Quitter Nexus Launcher',
+      click: () => {
+        // Flippe isQuitting AVANT app.quit() — sinon le close handler
+        // de mainWindow va preventDefault et l'app ne quittera jamais.
+        isQuitting = true
+        app.quit()
+      },
+    },
+  ])
+  tray.setContextMenu(menu)
+  // Double-click = ouvre le launcher (single click ne fait rien pour
+  // éviter d'ouvrir par erreur en cherchant le menu contextuel).
+  tray.on('double-click', () => showMainWindow())
+  tray.on('click', () => showMainWindow())
+}
+
 /** State we save when Big Picture is entered, so the regular window
  *  state can be restored verbatim on exit. Captured once per enter
  *  cycle. Undefined while in regular mode. */
@@ -208,7 +333,10 @@ function registerWindowIpc() {
     if (mainWindow.isMaximized()) mainWindow.unmaximize()
     else mainWindow.maximize()
   })
-  ipcMain.handle('window:close', () => mainWindow?.close())
+  // window:close depuis le renderer hide aussi au lieu de close
+  // (parité avec le X de la titlebar custom — l'user veut le même
+  // comportement Steam-like).
+  ipcMain.handle('window:close', () => mainWindow?.hide())
   ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
 
   // ── Big Picture mode ───────────────────────────────────────────────
@@ -316,6 +444,7 @@ void app.whenReady().then(async () => {
       'cosmetics',
       'controller-buttons',
       'controller-bodies',
+      'controller-images',
       'steam-glyphs',
     ]
     const RESOURCES_BASE = process.resourcesPath ?? ''
@@ -441,6 +570,8 @@ void app.whenReady().then(async () => {
   registerCloudSaveIpc()
   registerAutoUpdateIpc()
   registerNewFeaturesIpc()
+  registerOverlayIpc()
+  registerRemotePlayIpc()
   registerSteamCatalogueIpc()
   // Hydra-parity services. Order matters: notifications table
   // creation must run before any service that pushes notifs;
@@ -449,6 +580,24 @@ void app.whenReady().then(async () => {
   initNotifications(() => mainWindow)
   initCatalogRefresh(() => mainWindow)
   initExternalProcessWatcher(() => mainWindow)
+  // Backfill genres pour le filtre Catalogue — service stateless,
+  // l'init enregistre juste la ref vers la mainWindow. Le job
+  // démarre quand le renderer call backfillGenres() au mount de
+  // la page Catalogue.
+  initGenreBackfill(() => mainWindow)
+  // Overlay in-game Steam-style — service stateless aussi. L'overlay
+  // window est créée à la demande au 1er toggle Shift+Tab.
+  initOverlay(() => mainWindow)
+  registerOverlayShortcut()
+  // Named-pipe server pour la DLL native injected (nexus-overlay.dll).
+  // Listen on `\\.\pipe\nexus-overlay-<launcher_pid>` ; sert le state
+  // courant (user, jeu, friends) à la DLL toutes les 500ms.
+  initOverlayIpcServer(() => mainWindow)
+  // v0.5.2 — Phase 2 RÉACTIVÉE. La React offscreen window rend la
+  // vraie UI Steam-style, ses frames RGBA sont streamés vers la DLL,
+  // qui compose via texture_renderer_dx11. Input forwarding DLL→Electron
+  // via send_event JSON → forwardInputToOverlay → sendInputEvent.
+  initOverlayFramesServer()
   // Hydra-exact bootstrap: two background jobs run in sequence.
   //
   //   1. Seed the Steam catalogue from SteamSpy (~85k popular games,
@@ -572,6 +721,11 @@ void app.whenReady().then(async () => {
   // on first push, so this call is just IPC registration — no extra
   // RAM cost until a notif actually fires.
   initToastWindow(() => mainWindow)
+  // System tray icon : permet de re-ouvrir le launcher après que
+  // l'user a cliqué sur la X (qui hide au lieu de close — cf.
+  // mainWindow.on('close')). Le tray contient aussi un bouton
+  // Quitter pour vraiment exit le process.
+  createTray()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -579,17 +733,31 @@ void app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  // Avec le close-to-tray, ce handler ne fire que quand l'user clique
+  // explicitement Quitter dans le tray (isQuitting=true → close
+  // handler laisse passer → toutes les windows se ferment → on
+  // arrive ici). Si l'user juste minimise / X la fenêtre, mainWindow
+  // est hide pas destroyed → ce handler ne fire pas → app reste alive.
+  // Donc cleanup uniquement quand vraiment quit.
+  if (!isQuitting) return
   shutdownDownloads()
   shutdownLibrary()
   shutdownAchievementWatcher()
   shutdownCloud()
   shutdownCatalogRefresh()
   shutdownExternalProcessWatcher()
+  shutdownOverlay()
+  shutdownOverlayIpcServer()
+  shutdownOverlayFramesServer()
   closeDatabase()
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
+  // Marque isQuitting au cas où le shutdown vient d'un signal externe
+  // (Ctrl+C, fermeture session Windows) → le close handler de la
+  // mainWindow doit laisser passer.
+  isQuitting = true
   shutdownDownloads()
   shutdownLibrary()
   shutdownAchievementWatcher()
@@ -597,6 +765,15 @@ app.on('before-quit', () => {
   shutdownAutoUpdate()
   shutdownToastWindow()
   closeDatabase()
+  // Destroy le tray icon proprement — sinon il reste affiché dans
+  // la zone de notif Windows jusqu'à un hover de l'user (cleanup
+  // paresseux côté shell).
+  try {
+    tray?.destroy()
+  } catch {
+    /* swallow */
+  }
+  tray = null
 })
 
 // ─────────────────────── UNINSTALL MODE ───────────────────────

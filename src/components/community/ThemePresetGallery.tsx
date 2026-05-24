@@ -31,7 +31,7 @@
  *   - Pas de PremiumGate : GameVerse n'a pas de tier feature.
  */
 import { useState } from 'react'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown } from '@/lib/icons'
 import { Card } from '@/components/ui/Card'
 import { useThemeStore } from '@/stores/theme.store'
 import { cn } from '@/utils/cn'

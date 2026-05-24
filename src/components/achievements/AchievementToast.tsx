@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Trophy } from 'lucide-react'
+import { Trophy } from '@/lib/icons'
 import { cn } from '@/utils/cn'
 
 /**

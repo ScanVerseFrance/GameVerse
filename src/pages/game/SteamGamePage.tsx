@@ -21,7 +21,7 @@
  * mis-resolved upstream.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, Link, Navigate } from 'react-router-dom'
+import { useParams, Link, Navigate, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
   ExternalLink,
@@ -35,7 +35,7 @@ import {
   Gamepad2,
   Trophy,
   Lock,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { motion } from 'framer-motion'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Card } from '@/components/ui/Card'
@@ -70,6 +70,13 @@ type Detail = {
 export default function SteamGamePage() {
   const { appid: appidParam } = useParams<{ appid: string }>()
   const appid = Number.parseInt(appidParam ?? '0', 10)
+  const navigate = useNavigate()
+  /** Retour back-in-history avec fallback /discover quand entrée
+   *  directe via URL (history.length <= 1). v0.5.1. */
+  function goBack(): void {
+    if (window.history.length > 1) navigate(-1)
+    else navigate('/discover')
+  }
 
   const [detail, setDetail] = useState<Detail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -209,12 +216,13 @@ export default function SteamGamePage() {
   if (!detail) {
     return (
       <div className="p-6 max-w-6xl mx-auto">
-        <Link
-          to="/discover"
+        <button
+          type="button"
+          onClick={goBack}
           className="inline-flex items-center gap-1 text-sm text-fg-muted hover:text-accent-primary mb-4"
         >
-          <ArrowLeft className="w-4 h-4" /> Retour à Découvrir
-        </Link>
+          <ArrowLeft className="w-4 h-4" /> Retour
+        </button>
         <Card padding="lg" className="text-center">
           <p className="text-fg-muted">
             Jeu introuvable dans le catalogue Steam (appid {appid}).
@@ -265,12 +273,13 @@ export default function SteamGamePage() {
         <div className="absolute inset-0 bg-gradient-to-t from-bg-primary via-bg-primary/70 to-transparent" />
 
         <div className="absolute top-4 left-4 z-10">
-          <Link
-            to="/discover"
+          <button
+            type="button"
+            onClick={goBack}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/40 hover:bg-black/70 backdrop-blur-sm text-sm text-white transition-colors"
           >
             <ArrowLeft className="w-4 h-4" /> Retour
-          </Link>
+          </button>
         </div>
 
         <div className="absolute bottom-0 left-0 right-0 p-6 lg:p-10 max-w-[1600px] mx-auto">

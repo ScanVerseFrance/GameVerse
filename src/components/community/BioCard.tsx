@@ -17,7 +17,7 @@
  * cours — évite les double-clics et les save no-op.
  */
 import { useEffect, useState } from 'react'
-import { Save } from 'lucide-react'
+import { Save } from '@/lib/icons'
 import { Card } from '@/components/ui/Card'
 import { useAuthStore } from '@/stores/auth.store'
 import { toast } from '@/stores/inAppToast.store'

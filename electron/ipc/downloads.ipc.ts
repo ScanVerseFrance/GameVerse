@@ -34,6 +34,14 @@ export function registerDownloadsIpc() {
         magnetOrUrl: sanitizeString(p.magnetOrUrl, 4000),
         coverUrl: typeof p.coverUrl === 'string' ? sanitizeString(p.coverUrl, 1000) : undefined,
         targetFolder: typeof p.targetFolder === 'string' ? p.targetFolder : undefined,
+        addonFixUrl:
+          typeof p.addonFixUrl === 'string'
+            ? sanitizeString(p.addonFixUrl, 4000)
+            : undefined,
+        addonFixLabel:
+          typeof p.addonFixLabel === 'string'
+            ? sanitizeString(p.addonFixLabel, 128)
+            : undefined,
       })
       return { ok: true, download: record }
     } catch (e) {

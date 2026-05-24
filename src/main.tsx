@@ -4,13 +4,16 @@ import App from './App'
 import { AppErrorBoundary } from './components/common/AppErrorBoundary'
 import { ToastOverlayPage } from './pages/toast/ToastOverlayPage'
 import { UninstallPage } from './pages/uninstall/UninstallPage'
+import OverlayApp from './overlay/OverlayApp'
+import { RemotePlayHost } from './remote-play/RemotePlayHost'
+import { RemotePlayGuest } from './remote-play/RemotePlayGuest'
 import './index.css'
 
 // Expose the launcher version on `window.__NEXUS_VERSION__` so the
 // error boundary can include it in copy-to-clipboard bug reports
 // without having to thread package.json through Vite separately.
 ;(window as unknown as { __NEXUS_VERSION__?: string }).__NEXUS_VERSION__ =
-  '0.5.0'
+  '0.5.1'
 
 // Toast overlay mode — detected from the URL hash. The toast window
 // service in electron/main loads index.html#/toast-overlay; when we
@@ -30,11 +33,34 @@ const isUninstall =
   typeof window !== 'undefined' &&
   window.location.hash.startsWith('#/uninstall')
 
+// Steam-style in-game overlay — chargé dans une 2ᵉ BrowserWindow
+// transparente alwaysOnTop par overlay.service avec `?mode=overlay`
+// dans la query string. Le shell launcher reste hors champ ; on rend
+// uniquement OverlayApp.
+const isOverlay =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('mode') === 'overlay'
+
+// Remote Play Together — Phase B P2P streaming. Two new modes :
+//   remote-play-host  : hidden BrowserWindow, captures + sends video
+//   remote-play-guest : fullscreen viewer, receives + displays video,
+//                       captures local gamepad, sends back
+const remotePlayMode = typeof window !== 'undefined'
+  ? new URLSearchParams(window.location.search).get('mode')
+  : null
+const isRemotePlayHost = remotePlayMode === 'remote-play-host'
+const isRemotePlayGuest = remotePlayMode === 'remote-play-guest'
+
 // Flag the body so index.css can override the global dark
 // --bg-primary fill — without this the transparent Electron window
 // shows a giant opaque rectangle behind the toast cards.
 if (isToastOverlay && typeof document !== 'undefined') {
   document.body.classList.add('toast-overlay')
+}
+// Idem pour l'overlay in-game : body transparent, on désactive le
+// --bg-primary global.
+if (isOverlay && typeof document !== 'undefined') {
+  document.body.classList.add('game-overlay')
 }
 
 // Unhandled-rejection trap → write to console (DevTools-visible).
@@ -56,6 +82,18 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <ToastOverlayPage />
     ) : isUninstall ? (
       <UninstallPage />
+    ) : isRemotePlayHost ? (
+      <AppErrorBoundary>
+        <RemotePlayHost />
+      </AppErrorBoundary>
+    ) : isRemotePlayGuest ? (
+      <AppErrorBoundary>
+        <RemotePlayGuest />
+      </AppErrorBoundary>
+    ) : isOverlay ? (
+      <AppErrorBoundary>
+        <OverlayApp />
+      </AppErrorBoundary>
     ) : (
       <AppErrorBoundary>
         <App />

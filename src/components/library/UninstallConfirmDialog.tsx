@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Trash2, AlertTriangle, HardDrive } from 'lucide-react'
+import { Trash2, AlertTriangle, HardDrive } from '@/lib/icons'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { formatBytes } from '@/utils/parse-size'

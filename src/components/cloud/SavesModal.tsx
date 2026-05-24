@@ -12,7 +12,7 @@ import {
   RotateCcw,
   Trash2,
   X,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { cn } from '@/utils/cn'
 
 /**

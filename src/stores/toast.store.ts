@@ -23,6 +23,9 @@ export type ToastKind =
   | 'friend_launched_game'
   | 'friend_request'
   | 'cloud_save'
+  | 'controller_connected'
+  | 'controller_disconnected'
+  | 'overlay_tip'
   | 'test'
 
 export interface ToastItem {

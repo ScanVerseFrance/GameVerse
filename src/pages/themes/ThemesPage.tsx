@@ -1,6 +1,6 @@
 import { useState, useRef, type ChangeEvent } from 'react'
 import { motion } from 'framer-motion'
-import { Palette, Plus, Upload } from 'lucide-react'
+import { Palette, Plus, Upload } from '@/lib/icons'
 import { useThemeStore } from '@/stores/theme.store'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'

@@ -112,19 +112,58 @@ export function detectVendor(id: string): ControllerVendor {
 }
 
 /** Nom court lisible pour la liste des manettes branchées.
+ *
  *  Strip TOUTES les parenthèses descriptives de Chrome :
  *    "Xbox 360 Controller (XInput STANDARD GAMEPAD Vendor: 045e Product: 028e)"
  *    "Xbox 360 Controller (XInput STANDARD GAMEPAD)"
  *    "DualSense Wireless Controller (Vendor: 054c Product: 0ce6)"
- *  → on garde uniquement la partie avant les parens. */
+ *
+ *  Override Xbox "Xbox 360 Controller" → "Manette Xbox" quand le PID
+ *  n'est PAS 028e (vrai 360 wired). Windows XInput report TOUTES les
+ *  manettes Xbox (One, Series, Elite) sous le label "Xbox 360
+ *  Controller" via sa couche de compat — c'est un mensonge système.
+ *  Steam le résout de la même façon (cf. capture "Xbox One Controller"
+ *  côté Steam vs "Xbox 360 Controller" côté Windows). On préfère un
+ *  label vendor-only ambigu à un label précis-mais-faux.
+ */
 export function shortControllerName(id: string): string {
   const vendor = detectVendor(id)
+  const lower = id.toLowerCase()
   // Strip toutes les parenthèses (Vendor:, STANDARD GAMEPAD, XInput, etc.)
-  // Pas juste celles avec "Vendor:" — Chrome peut retourner "(XInput
-  // STANDARD GAMEPAD)" sans champ Vendor sur les pads xinput.
-  const cleaned = id.replace(/\s*\([^)]*\)\s*/g, '').trim()
+  let cleaned = id.replace(/\s*\([^)]*\)\s*/g, '').trim()
+  if (vendor === 'xbox') {
+    // Detection précise par PID quand Chrome l'expose dans l'id.
+    // Sinon Windows XInput report TOUS les pads Xbox sous "Xbox 360
+    // Controller" via couche compat → on remap par PID, et default sur
+    // "Manette Xbox One" (matches Steam quand l'id est ambigu).
+    const pidMatch = lower.match(/product:\s*([0-9a-f]{4})/)
+    const pid = pidMatch?.[1] ?? null
+    // Table PID → label (sourcée de la base USB-IF Microsoft).
+    const PID_LABELS: Record<string, string> = {
+      '028e': 'Manette Xbox 360',
+      '028f': 'Manette Xbox 360',
+      '02d1': 'Manette Xbox One',
+      '02dd': 'Manette Xbox One',
+      '02e0': 'Manette Xbox One S',
+      '02e3': 'Manette Xbox Elite',
+      '02ea': 'Manette Xbox One',
+      '02fd': 'Manette Xbox One S',
+      '0b00': 'Manette Xbox Elite 2',
+      '0b12': 'Manette Xbox Series',
+      '0b13': 'Manette Xbox Series',
+      '0b20': 'Manette Xbox Wireless',
+    }
+    if (pid && PID_LABELS[pid]) {
+      cleaned = PID_LABELS[pid]
+    } else if (/xbox\s*360/i.test(cleaned) || /xbox\s*one/i.test(cleaned)) {
+      // Pas de PID exposé (XInput-only id). Par défaut on dit "Xbox One"
+      // — c'est le plus probable sur une machine moderne, et c'est ce
+      // que Steam affiche quand il n'a pas plus d'info précis.
+      cleaned = 'Manette Xbox One'
+    }
+  }
   if (cleaned) return cleaned
-  if (vendor === 'xbox') return 'Manette Xbox'
+  if (vendor === 'xbox') return 'Manette Xbox One'
   if (vendor === 'playstation') return 'Manette PlayStation'
   if (vendor === 'nintendo') return 'Manette Nintendo'
   return 'Manette générique'

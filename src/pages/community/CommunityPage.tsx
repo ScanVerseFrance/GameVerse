@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Users, Activity, UserPlus, Globe2, User as UserIcon, type LucideIcon } from 'lucide-react'
+import { Users, Activity, UserPlus, Globe2, User as UserIcon, type LucideIcon } from '@/lib/icons'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCloudStore } from '@/stores/cloud.store'
 import { Card } from '@/components/ui/Card'
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { ActivityFeedItem } from '@/components/community/ActivityFeedItem'
 import { UserCard } from '@/components/community/UserCard'
 import { FriendsNowPlaying } from '@/components/community/FriendsNowPlaying'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare } from '@/lib/icons'
 import type {
   ActivityItem,
   ActivityKind,
@@ -111,6 +111,11 @@ export default function CommunityPage() {
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [scope, setScope] = useState<ActivityScope>('friends')
   const [loading, setLoading] = useState(true)
+  // Pagination locale du fil — page = nombre d'items visibles. Steam-
+  // style : on charge 10 events, puis "Voir +" révèle les 10 suivants.
+  // Reset à 10 quand on change de scope sinon on garderait par exemple
+  // 30 items visibles en passant Amis → Moi alors qu'il n'y en a que 4.
+  const [visibleCount, setVisibleCount] = useState(10)
 
   useEffect(() => {
     if (user) void reloadFriends()
@@ -136,12 +141,24 @@ export default function CommunityPage() {
     })
   }, [user])
 
-  const visibleActivity = useMemo(() => {
+  const filteredActivity = useMemo(() => {
     if (!user) return activity
     if (scope === 'me') return activity.filter((a) => a.userId === user.id)
     if (scope === 'friends') return activity.filter((a) => a.userId !== user.id)
     return activity
   }, [activity, scope, user])
+
+  // Slice locale après filtrage — limite Voir +.
+  const visibleActivity = useMemo(
+    () => filteredActivity.slice(0, visibleCount),
+    [filteredActivity, visibleCount],
+  )
+
+  // Reset le compteur quand on bascule de scope : sinon en passant
+  // Amis → Moi on garderait la page 3 (30 items) alors qu'il y en a 4.
+  useEffect(() => {
+    setVisibleCount(10)
+  }, [scope])
 
   if (!user) return null
 
@@ -225,11 +242,33 @@ export default function CommunityPage() {
                   : 'Aucune activité pour le moment.'}
               </div>
             ) : (
-              <div>
-                {visibleActivity.map((a) => (
-                  <ActivityFeedItem key={a.id} item={a} />
-                ))}
-              </div>
+              // Gap entre items v0.5.1 : avant les items partageaient
+              // une bordure inférieure border-b, maintenant chaque item
+              // est une card autonome avec hover bg. Le gap-2 donne
+              // l'air respiré entre les events.
+              <>
+                <div className="flex flex-col gap-2">
+                  {visibleActivity.map((a) => (
+                    <ActivityFeedItem key={a.id} item={a} />
+                  ))}
+                </div>
+                {filteredActivity.length > visibleActivity.length && (
+                  <div className="mt-3 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleCount((n) => n + 10)}
+                      className="h-9 px-4 rounded-full text-xs font-semibold bg-[var(--surface-soft)] hover:bg-[var(--surface-soft-hover)] border border-glass-border text-fg-secondary hover:text-fg-primary transition-colors"
+                    >
+                      Voir + ({filteredActivity.length - visibleActivity.length}{' '}
+                      restant
+                      {filteredActivity.length - visibleActivity.length > 1
+                        ? 's'
+                        : ''}
+                      )
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </Card>
         </div>

@@ -191,18 +191,104 @@ export function searchJsonSourceGames(
  *
  * Returns null when no sources have been imported yet.
  */
-export function pickRandomJsonSourceGame(): JsonSourceSearchHit | null {
+/**
+ * Filtres optionnels pour le randomizer. Tous sont best-effort :
+ *   - genres : un OR sur des matchs LIKE dans `game_artwork.genres`
+ *     (TEXT JSON array). Les jeux sans entrée artwork sont skipés
+ *     quand genres est non-vide (impossible de matcher).
+ *   - minSizeBytes / maxSizeBytes : appliqués en JS après parsing
+ *     du champ `file_size` (TEXT type "1.5 GB", "500 MB", etc.).
+ *     SQLite ne sait pas parser des strings de taille, donc on
+ *     filtre côté Node après une 1ère passe SQL.
+ */
+export interface RandomPickFilters {
+  genres?: string[]
+  minSizeBytes?: number
+  maxSizeBytes?: number
+}
+
+/** Convertit une string type "1.5 GB" en bytes. Renvoie null pour les
+ *  formats inconnus (le caller décide alors si on inclut le jeu ou pas). */
+function parseFileSizeStr(s: string | null): number | null {
+  if (!s) return null
+  const m = s.trim().match(/^([\d.]+)\s*([KMGT]?)B?$/i)
+  if (!m || !m[1]) return null
+  const value = parseFloat(m[1])
+  if (!Number.isFinite(value)) return null
+  const unit = (m[2] ?? '').toUpperCase()
+  const mult =
+    unit === 'T' ? 1e12 : unit === 'G' ? 1e9 : unit === 'M' ? 1e6 : unit === 'K' ? 1e3 : 1
+  return value * mult
+}
+
+export function pickRandomJsonSourceGame(
+  filters: RandomPickFilters = {},
+): JsonSourceSearchHit | null {
   const db = getDatabase()
-  // SQLite's `ORDER BY RANDOM() LIMIT 1` is O(N) but acceptable
-  // for the catalogue sizes we ship (≤ low millions). The renderer
-  // calls this on user click, not in a tight loop.
-  const row = db
-    .prepare(
-      'SELECT g.id, g.source_id, g.title, g.upload_date, g.file_size, g.uris_json, g.added_at, g.steam_appid, s.name AS source_name FROM json_source_games g JOIN json_sources s ON s.id = g.source_id ORDER BY RANDOM() LIMIT 1',
-    )
-    .get() as (GameRow & { source_name: string }) | undefined
-  if (!row) return null
-  return { ...toGame(row), sourceName: row.source_name }
+  const { genres, minSizeBytes, maxSizeBytes } = filters
+
+  // Si on n'a aucun filtre, fast path identique à avant.
+  const noFilters =
+    (!genres || genres.length === 0) &&
+    minSizeBytes == null &&
+    maxSizeBytes == null
+  if (noFilters) {
+    const row = db
+      .prepare(
+        'SELECT g.id, g.source_id, g.title, g.upload_date, g.file_size, g.uris_json, g.added_at, g.steam_appid, s.name AS source_name FROM json_source_games g JOIN json_sources s ON s.id = g.source_id ORDER BY RANDOM() LIMIT 1',
+      )
+      .get() as (GameRow & { source_name: string }) | undefined
+    if (!row) return null
+    return { ...toGame(row), sourceName: row.source_name }
+  }
+
+  // Slow path avec filtres : on récupère tous les candidats (joinés
+  // avec game_artwork pour les genres), filtre par taille en JS,
+  // pick random.
+  const params: unknown[] = []
+  const whereParts: string[] = []
+  let joinArtwork = false
+  if (genres && genres.length > 0) {
+    joinArtwork = true
+    // LIKE %genre% est tolérant aux multiples genres concaténés dans
+    // le champ JSON (ex: ["Action","RPG"]). Case-insensitive via
+    // COLLATE NOCASE. OR entre tous les genres demandés = union.
+    const genreLikes = genres
+      .map(() => 'a.genres LIKE ? COLLATE NOCASE')
+      .join(' OR ')
+    whereParts.push(`(${genreLikes})`)
+    for (const g of genres) params.push(`%"${g}"%`)
+  }
+  const joinClause = joinArtwork
+    ? 'JOIN game_artwork a ON a.external_id = CAST(g.steam_appid AS TEXT) AND a.external_source = \'steam\''
+    : ''
+  const whereClause = whereParts.length > 0 ? `WHERE ${whereParts.join(' AND ')}` : ''
+  const sql = `
+    SELECT g.id, g.source_id, g.title, g.upload_date, g.file_size,
+           g.uris_json, g.added_at, g.steam_appid,
+           s.name AS source_name
+      FROM json_source_games g
+      JOIN json_sources s ON s.id = g.source_id
+      ${joinClause}
+      ${whereClause}
+  `
+  const candidates = db.prepare(sql).all(...params) as Array<
+    GameRow & { source_name: string }
+  >
+
+  // Filtre taille en JS — on parse file_size pour chaque candidat.
+  const filtered = candidates.filter((r) => {
+    if (minSizeBytes == null && maxSizeBytes == null) return true
+    const sz = parseFileSizeStr(r.file_size)
+    if (sz == null) return false // pas de taille connue → exclu si filtre actif
+    if (minSizeBytes != null && sz < minSizeBytes) return false
+    if (maxSizeBytes != null && sz > maxSizeBytes) return false
+    return true
+  })
+
+  if (filtered.length === 0) return null
+  const pick = filtered[Math.floor(Math.random() * filtered.length)]!
+  return { ...toGame(pick), sourceName: pick.source_name }
 }
 
 export function getJsonSourceGame(gameId: string): JsonSourceSearchHit | null {
@@ -584,6 +670,41 @@ export async function importJsonSourceFromText(
   const now = Date.now()
   const sourceId = `js-${crypto.randomBytes(8).toString('hex')}`
   const fileSafe = parsed.data
+
+  // v0.5.1 — refus du doublon. On compare sur 2 axes :
+  //   1. `name` (clé naturelle du fichier JSON — "Online-Fix",
+  //      "AnkerGames", etc.). Cas le plus courant : l'user re-import
+  //      le même fichier après modif.
+  //   2. `origin_path` (path absolu OU URL) — couvre le cas où
+  //      l'user renomme le fichier mais l'origine reste la même.
+  //
+  // Match case-insensitive sur le name pour ne pas laisser passer
+  // "Online-Fix" vs "online-fix". L'user qui veut VRAIMENT importer
+  // 2x peut renommer la clé `name` dans son JSON.
+  const trimmedName = fileSafe.name.trim()
+  const existing = db
+    .prepare(
+      `SELECT id, name, origin_path FROM json_sources
+       WHERE LOWER(name) = LOWER(?)
+          OR (origin_path IS NOT NULL AND origin_path = ?)
+       LIMIT 1`,
+    )
+    .get(trimmedName, originPath ?? '') as
+    | { id: string; name: string; origin_path: string | null }
+    | undefined
+  if (existing) {
+    // Message orienté UX : on dit pourquoi c'est rejeté + on suggère
+    // de Supprimer l'ancienne d'abord. Ça évite la frustration "j'ai
+    // cliqué importer 2x par erreur sans rien voir".
+    const reason =
+      existing.name.toLowerCase() === trimmedName.toLowerCase()
+        ? `Une source nommée « ${existing.name} » est déjà importée.`
+        : `Une source provenant de ce fichier est déjà importée (« ${existing.name} »).`
+    return {
+      ok: false,
+      error: `${reason} Supprime-la d'abord depuis Paramètres → Sources si tu veux la re-importer.`,
+    }
+  }
 
   const insertSource = db.prepare(
     'INSERT INTO json_sources (id, name, origin_path, game_count, imported_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'

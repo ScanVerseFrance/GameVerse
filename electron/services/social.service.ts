@@ -426,6 +426,7 @@ export function getProfile(
         remote_last_played_title?: string | null
         remote_last_played_cover_url?: string | null
         remote_last_played_at?: number | null
+        remote_last_played_source_game_id?: string | null
       })
     | undefined
   if (!row) return null
@@ -473,7 +474,7 @@ export function getProfile(
   // a random library entry.
   const recentRow = db
     .prepare(
-      `SELECT id, title, cover_url, last_played_at, total_playtime_seconds
+      `SELECT id, title, cover_url, last_played_at, total_playtime_seconds, source_game_id
        FROM library_games
        WHERE user_id = ? AND last_played_at IS NOT NULL
        ORDER BY last_played_at DESC LIMIT 1`
@@ -485,6 +486,7 @@ export function getProfile(
         cover_url: string | null
         last_played_at: number
         total_playtime_seconds: number
+        source_game_id: string | null
       }
     | undefined
   // If no local recent row but the cloud reported one (cross-user
@@ -494,6 +496,7 @@ export function getProfile(
   const recentGame = recentRow
     ? {
         libraryGameId: recentRow.id,
+        sourceGameId: recentRow.source_game_id,
         title: recentRow.title,
         coverUrl: recentRow.cover_url,
         lastPlayedAt: recentRow.last_played_at,
@@ -503,6 +506,12 @@ export function getProfile(
     : !isSelfView && row.remote_last_played_title && row.remote_last_played_at
       ? {
           libraryGameId: `remote:${row.id}`,
+          // sourceGameId vient des broadcasts d'activité de l'ami (cf.
+          // cloud.service.ts activity:new handler qui persiste
+          // remote_last_played_source_game_id). Null pour les amis qui
+          // sont encore sur des launchers < v0.5.1 (le payload ne le
+          // contenait pas) — dans ce cas le card n'est pas cliquable.
+          sourceGameId: row.remote_last_played_source_game_id ?? null,
           title: row.remote_last_played_title,
           coverUrl: row.remote_last_played_cover_url ?? null,
           lastPlayedAt: row.remote_last_played_at,
@@ -642,7 +651,8 @@ export function listFriends(userId: string, viewerId?: string): FriendListItem[]
              u.bio, u.is_guest, u.updated_at, u.hide_play_activity,
              u.presence_status, u.last_active_at, u.presence_visibility,
              u.remote_last_played_title, u.remote_last_played_cover_url,
-             u.remote_last_played_at, u.remote_total_playtime_seconds
+             u.remote_last_played_at, u.remote_total_playtime_seconds,
+             u.remote_last_played_source_game_id
       FROM friends f JOIN users u ON u.id = f.friend_id
       WHERE f.user_id = ?
       ORDER BY u.updated_at DESC
@@ -654,6 +664,7 @@ export function listFriends(userId: string, viewerId?: string): FriendListItem[]
         remote_last_played_cover_url?: string | null
         remote_last_played_at?: number | null
         remote_total_playtime_seconds?: number | null
+        remote_last_played_source_game_id?: string | null
       }
     >
 
@@ -677,7 +688,7 @@ export function listFriends(userId: string, viewerId?: string): FriendListItem[]
       LIMIT 5`,
   )
   const getRecent = db.prepare(
-    `SELECT id, title, cover_url, last_played_at, total_playtime_seconds
+    `SELECT id, title, cover_url, last_played_at, total_playtime_seconds, source_game_id
        FROM library_games
       WHERE user_id = ? AND last_played_at IS NOT NULL
       ORDER BY last_played_at DESC
@@ -719,11 +730,13 @@ export function listFriends(userId: string, viewerId?: string): FriendListItem[]
             cover_url: string | null
             last_played_at: number
             total_playtime_seconds: number
+            source_game_id: string | null
           }
         | undefined
       if (localRow) {
         recentGame = {
           libraryGameId: localRow.id,
+          sourceGameId: localRow.source_game_id,
           title: localRow.title,
           coverUrl: localRow.cover_url,
           lastPlayedAt: localRow.last_played_at,
@@ -734,9 +747,12 @@ export function listFriends(userId: string, viewerId?: string): FriendListItem[]
         // Fallback cloud — l'ami a poussé son "last played" dans la
         // colonne remote_* via son propre launcher (cf.
         // upsertCloudFriend). Le libraryGameId est synthétique car
-        // le jeu vit dans LEUR library, pas la nôtre.
+        // le jeu vit dans LEUR library, pas la nôtre — mais le
+        // sourceGameId (e.g. "json:lego-marvel-2") permet au viewer
+        // de router vers la page du jeu dans son propre catalogue.
         recentGame = {
           libraryGameId: `remote:${r.id}`,
+          sourceGameId: r.remote_last_played_source_game_id ?? null,
           title: r.remote_last_played_title,
           coverUrl: r.remote_last_played_cover_url ?? null,
           lastPlayedAt: r.remote_last_played_at,

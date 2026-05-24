@@ -108,6 +108,10 @@ function significantWords(s: string): string[] {
     // matched SGDB's raw hit "Marvel's Spider-Man" which kept the
     // apostrophe and tokenised to "marvel"+"s".
     .replace(/['’`]/g, '')
+    // Drop trademark / registered / copyright glyphs avant le split
+    // pour ne pas créer de pseudo-séparateurs là où il n'y en a pas.
+    // "Battlefield™ 6" → "battlefield 6" → ["battlefield", "6"].
+    .replace(/[™®©℗℠]/g, '')
     .split(/[^a-z0-9]+/)
     .filter((w) => {
       if (!w) return false
@@ -146,11 +150,49 @@ function significantWords(s: string): string[] {
  * Same function for SGDB and Steam paths so a Steam hit can't smuggle
  * a result through that SGDB would have caught.
  */
+/** Compacted form for fallback exact-match — strip everything except
+ *  letters and digits, lowercased. "R.E.P.O" → "repo", "R.E.P.O." →
+ *  "repo", "PEAK!" → "peak", "Spider-Man" → "spiderman",
+ *  "Battlefield™ 6" → "battlefield6". */
+function compactedForm(s: string): string {
+  // toLowerCase() avant le regex pour éviter de garder un éventuel
+  // caractère unicode majuscule. La regex `^a-z0-9` ne match QUE
+  // ASCII donc tous les ™®©, espaces, ponctuation tombent.
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
 function hitLooksRight(query: string, hitName: string): boolean {
   if (!hitName) return false
   const q = significantWords(query)
   const hArr = significantWords(hitName)
-  if (q.length === 0 || hArr.length === 0) return false
+
+  // v0.5.1 — fallback exact-match pour les titres où la tokenisation
+  // produit 0 mot "significatif" : abréviations dottées (R.E.P.O.),
+  // titres ultra-courts (PEAK, Inscryption → 1 mot mais < 3 chars
+  // si plus court), acronymes seuls (FTL, MGSV). Compare la forme
+  // compactée (sans punctuation, sans espaces) ; si l'une est préfixe
+  // de l'autre OU si elles sont égales, on match. Catch les cas que
+  // la règle "mots significatifs" rejette à tort.
+  if (q.length === 0) {
+    const qc = compactedForm(query)
+    const hc = compactedForm(hitName)
+    if (qc.length === 0 || hc.length === 0) return false
+    // Égalité OU préfixe avec ratio ≥ 80% pour autoriser un
+    // trailing " edition" / "." / suffix court.
+    if (qc === hc) return true
+    if (hc.startsWith(qc) && qc.length / hc.length >= 0.8) return true
+    if (qc.startsWith(hc) && hc.length / qc.length >= 0.8) return true
+    return false
+  }
+
+  if (hArr.length === 0) {
+    // Hit name a 0 mot significatif mais query en a → tente le même
+    // fallback compacté (le hit est probablement une abréviation
+    // pure type R.E.P.O qu'on évalue contre un query mot normal).
+    const qc = compactedForm(query)
+    const hc = compactedForm(hitName)
+    return qc === hc
+  }
 
   // Rule 1: subset.
   for (const w of q) {

@@ -1,4 +1,4 @@
-import { Wifi, Database, Activity, Sparkles } from 'lucide-react'
+import { Wifi, Database, Activity, Sparkles } from '@/lib/icons'
 import { useCloudStore } from '@/stores/cloud.store'
 import { useDownloadStore } from '@/stores/download.store'
 import { cn } from '@/utils/cn'

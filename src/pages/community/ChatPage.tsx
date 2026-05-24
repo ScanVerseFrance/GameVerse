@@ -10,7 +10,7 @@ import {
   Loader2,
   ArrowLeft,
   Users,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { useCloudStore } from '@/stores/cloud.store'
 import { PresenceDot } from '@/components/common/PresenceDot'
 import { cn } from '@/utils/cn'

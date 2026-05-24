@@ -23,6 +23,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const RELEASE = path.join(ROOT, 'release');
 const APP_OUT = path.join(RELEASE, 'win-unpacked');
+const OVERLAY_DIR = path.join(ROOT, 'tools', 'nexus-overlay');
+const OVERLAY_BAT = path.join(OVERLAY_DIR, 'build.bat');
+const OVERLAY_DIST = path.join(OVERLAY_DIR, 'build', 'dist');
 // Per-run staging dir so a previous build's leftover (often held open
 // briefly by Windows Defender / Search indexer after the build exits)
 // doesn't block us. We mirror it into `installer/payload-active` via a
@@ -83,6 +86,34 @@ function iconsStale() {
     run('node', [ART_GEN]);
   } else {
     console.log('\n[0/3] Icons up to date, skipping art generation.');
+  }
+
+  // 0.5) Build the in-game overlay (DLL + injector) for BOTH x64 and
+  //      x86 so electron-builder's extraResources copy in step 1
+  //      picks up fresh artefacts. Sans ce step, le build prod
+  //      embarquerait silencieusement les binaires de la précédente
+  //      itération — ou rien du tout si tools/nexus-overlay/build/dist
+  //      n'a jamais été peuplé sur ce poste. C++ CMake build is
+  //      incremental, donc no-op quand les sources n'ont pas bougé.
+  if (process.platform === 'win32') {
+    console.log('\n[0.5/3] Build Nexus Overlay (x64 + x86)…');
+    if (!existsSync(OVERLAY_BAT)) {
+      console.error(`✗ overlay build script missing: ${OVERLAY_BAT}`);
+      process.exit(1);
+    }
+    run(OVERLAY_BAT, [], { cwd: OVERLAY_DIR });
+    for (const arch of ['x64', 'x86']) {
+      const dll = path.join(OVERLAY_DIST, arch, 'nexus-overlay.dll');
+      const inj = path.join(OVERLAY_DIST, arch, 'nexus-overlay-injector.exe');
+      if (!existsSync(dll) || !existsSync(inj)) {
+        console.error(`✗ overlay ${arch} artefacts missing after build:`);
+        console.error(`    ${dll}`);
+        console.error(`    ${inj}`);
+        process.exit(1);
+      }
+    }
+  } else {
+    console.log('\n[0.5/3] Skip overlay build (non-Windows host).');
   }
 
   // 1) Build the main launcher in --dir mode.

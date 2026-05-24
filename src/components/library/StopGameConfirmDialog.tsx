@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Square, AlertTriangle } from 'lucide-react'
+import { Square, AlertTriangle } from '@/lib/icons'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 

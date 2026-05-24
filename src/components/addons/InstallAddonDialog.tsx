@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Globe, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react'
+import { Globe, CheckCircle2, AlertCircle, ArrowRight } from '@/lib/icons'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'

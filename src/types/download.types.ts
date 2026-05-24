@@ -23,6 +23,11 @@ export interface DownloadRecord {
   eta: number
   peers: number | null
   ratio: number | null
+  /** v0.5.1 — URL Online-Fix associée (l'user a coché "Inclure
+   *  Online-Fix" au démarrage). Ouvre dans le navigateur quand le
+   *  téléchargement principal se termine. */
+  addonFixUrl: string | null
+  addonFixLabel: string | null
 }
 
 export interface DownloadSettings {
@@ -43,6 +48,18 @@ export interface NewDownloadParams {
   magnetOrUrl: string
   coverUrl?: string
   targetFolder?: string
+  /** v0.5.1 — quand l'user a coché "Inclure Online-Fix" dans le
+   *  dialog, on stocke l'URL du variant Online-Fix correspondant.
+   *  À la fin du téléchargement principal le download.service ouvrira
+   *  cette URL dans le navigateur + le dossier d'install dans
+   *  l'explorateur pour que l'user merge le patch en glisser-déposer.
+   *  Pourquoi pas auto-extract ? Online-Fix protège ses archives par
+   *  mot de passe — pas d'auto-DL possible côté client.
+   *
+   *  `addonFixLabel` = "Online-Fix" (nom de la source) — sert juste à
+   *  enrichir la toast finale ("Patch Online-Fix prêt"). */
+  addonFixUrl?: string
+  addonFixLabel?: string
 }
 
 export interface DownloadProgressEvent {

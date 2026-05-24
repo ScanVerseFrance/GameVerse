@@ -13,7 +13,7 @@
  * "Mins"). We map to French for the UI.
  */
 import { useEffect, useState } from 'react'
-import { Clock, Loader2 } from 'lucide-react'
+import { Clock, Loader2 } from '@/lib/icons'
 import { Card } from '@/components/ui/Card'
 
 const DURATION_UNIT_FR: Record<string, string> = {

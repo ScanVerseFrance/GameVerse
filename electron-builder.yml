@@ -57,6 +57,25 @@ extraResources:
   # le device via Windows.Gaming.Input → bug 2-joueurs persiste.
   - from: installer-extras/HidHide_Setup.exe
     to: drivers/HidHide_Setup.exe
+  # Nexus Overlay (in-game hook) — paire DLL + injector par bitness.
+  # overlay-inject.service.ts lit le PE header du jeu (x64 vs x86)
+  # puis spawn l'injector matching avec --dll=<path>. LoadLibraryW
+  # refuse les loads cross-bitness, donc on a besoin des DEUX paires
+  # (LEGO série + jeux pré-2014 sont 32-bit). Le service les cherche
+  # à <resources>/nexus-overlay/<arch>/ en prod — mirror exact du
+  # layout dev tools/nexus-overlay/build/dist/<arch>/.
+  # Build via tools/nexus-overlay/build.bat (invoqué par
+  # scripts/build-installer.mjs avant electron-builder).
+  - from: tools/nexus-overlay/build/dist/x64
+    to: nexus-overlay/x64
+    filter:
+      - "nexus-overlay.dll"
+      - "nexus-overlay-injector.exe"
+  - from: tools/nexus-overlay/build/dist/x86
+    to: nexus-overlay/x86
+    filter:
+      - "nexus-overlay.dll"
+      - "nexus-overlay-injector.exe"
   # Avatar decorations + nameplates : 574 MB de PNG. Vite skip
   # silently la copie de public/cosmetics au build (1.8 GB total,
   # timeout / file watcher issue). On bundle direct via extraResources

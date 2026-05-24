@@ -8,7 +8,7 @@ import {
   AlertCircle,
   Check,
   Download as DownloadIcon,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { motion } from 'framer-motion'
 import type { DownloadSource } from '@/types/addon.types'
 import { Button } from '@/components/ui/Button'

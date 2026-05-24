@@ -32,7 +32,7 @@ import {
   Activity,
   Gamepad2,
   type LucideIcon,
-} from 'lucide-react'
+} from '@/lib/icons'
 
 interface ComputedAchievement {
   id: string

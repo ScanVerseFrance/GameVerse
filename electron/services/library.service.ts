@@ -13,6 +13,7 @@ import {
   isBridgeRunning as isControllerBridgeRunning,
 } from './controller-bridge.service'
 import type { AddLibraryParams, LibraryGame, LibraryStatus, UpdateLibraryParams } from '@/types/library.types'
+import { searchSteamCatalogue } from './steam-catalogue.service'
 
 interface LibraryRow {
   id: string
@@ -413,7 +414,92 @@ export function listLibrary(userId: string): LibraryGame[] {
     })
   }
 
-  return rows.map(rowToGame)
+  // v0.5.1 — backfill steam_appid pour les rows qui n'en ont pas.
+  // Symptôme : un jeu importé via JSON source (cFinder, OnlineFix,
+  // AnkerGames) sans appid résolu côté addon → la library row reste
+  // avec steam_appid=NULL et tous les downstream (catalogue → page
+  // détaillée, panel Succès overlay, achievements service…) galèrent
+  // à matcher le row à un appid Steam. Sans ça, ouvrir Geometry Dash
+  // depuis le catalogue cFinder affichait "Télécharger" alors que le
+  // jeu est déjà installé.
+  // Sync (SQLite local), 1 query → 1 query d'update, idempotent.
+  const needsAppid = rows.filter(
+    (r) => (!r.steam_appid || r.steam_appid <= 0) && r.title,
+  )
+  if (needsAppid.length > 0) {
+    try {
+      const updateAppid = db.prepare(
+        'UPDATE library_games SET steam_appid = ? WHERE id = ? AND (steam_appid IS NULL OR steam_appid <= 0)',
+      )
+      for (const r of needsAppid) {
+        const res = searchSteamCatalogue({ query: r.title, limit: 1 })
+        const hit = res.rows[0]
+        if (hit?.appid && hit.appid > 0) {
+          // Match heuristic : on accepte si le 1er hit a un nom proche
+          // (case-insensitive, ignore espaces et ponct). Évite de
+          // matcher "Geometry Dash" → "Geometry Dash 2" par erreur.
+          const norm = (s: string) =>
+            s.toLowerCase().replace(/[^a-z0-9]/g, '')
+          if (norm(hit.name).startsWith(norm(r.title)) || norm(r.title).startsWith(norm(hit.name))) {
+            updateAppid.run(hit.appid, r.id)
+            r.steam_appid = hit.appid
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[library] appid backfill failed:', (e as Error).message)
+    }
+  }
+
+  // Dedup par steam_appid v0.5.1 : un même jeu peut atterrir 2× dans
+  // library_games quand il a été ajouté via DEUX flows distincts (ex:
+  // pc-scanner + import json catalogue). Les deux rows ont des
+  // source_game_id différents (`local:xxx` vs `json:yyy`) donc le
+  // dedup au INSERT loupe — c'est volontaire pour les jeux non-Steam
+  // (deux jeux indé qui partagent un titre peuvent légitimement
+  // coexister). Mais quand `steam_appid` est résolu et identique sur
+  // les deux rows, c'est sans doute le MÊME jeu → on merge à read.
+  //
+  // Règle de préférence dans un groupe :
+  //   1. Row avec `executable_path` (jouable maintenant)
+  //   2. Row avec `install_path` (téléchargé mais pas configuré)
+  //   3. Row la plus récente (added_at desc)
+  // Le row choisi conserve son `id` ; les autres sont filtrés out
+  // mais restent en DB (l'user peut les voir en activant un toggle
+  // futur "afficher tous les imports").
+  const byAppid = new Map<number, LibraryRow>()
+  const result: LibraryRow[] = []
+  for (const r of rows) {
+    const appid = (r as LibraryRow & { steam_appid?: number | null }).steam_appid
+    if (!appid || appid <= 0) {
+      result.push(r) // pas d'appid → pas de dedup, on garde tel quel
+      continue
+    }
+    const existing = byAppid.get(appid)
+    if (!existing) {
+      byAppid.set(appid, r)
+      result.push(r)
+      continue
+    }
+    // Comparaison : remplacer existing par r si r est "meilleur"
+    const existingScore =
+      (existing.executable_path ? 4 : 0) +
+      (existing.install_path ? 2 : 0) +
+      (existing.is_favorite ? 1 : 0)
+    const rScore =
+      (r.executable_path ? 4 : 0) +
+      (r.install_path ? 2 : 0) +
+      (r.is_favorite ? 1 : 0)
+    if (rScore > existingScore) {
+      // r prime → remplace existing dans result + map
+      const idx = result.indexOf(existing)
+      if (idx >= 0) result[idx] = r
+      byAppid.set(appid, r)
+    }
+    // Sinon on skip r (existing reste le winner)
+  }
+
+  return result.map(rowToGame)
 }
 
 /**
@@ -962,7 +1048,16 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
         coverUrl: game.coverUrl,
       })
     }
-    postActivity(game.userId, 'game_launched', { gameId: id, title: game.title, coverUrl: game.coverUrl })
+    postActivity(game.userId, 'game_launched', {
+      gameId: id,
+      // sourceGameId est la VRAIE clé pour router vers la page du
+      // jeu côté viewer (e.g. "json:lego-marvel-2"). Sans elle, le
+      // viewer reçoit `gameId` = uuid local du launcher de l'auteur
+      // qui n'existe pas dans sa lib → clic → page vide.
+      sourceGameId: game.sourceGameId ?? null,
+      title: game.title,
+      coverUrl: game.coverUrl,
+    })
     emit('library:running', { id, running: true })
 
     // Presence: flip the user to 'in_game' so the green dot becomes
@@ -979,6 +1074,7 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
     // on their cloud feed without needing a separate writer.
     void mirrorActivityToCloud('game_launched', {
       gameId: id,
+      sourceGameId: game.sourceGameId ?? null,
       title: game.title,
       coverUrl: game.coverUrl,
     })
@@ -1017,6 +1113,77 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
     // failures don't block launch.
     void notifyWatcherGameStarted(getLibraryGame(id))
 
+    // v0.5.1 — push le current game vers l'overlay service pour que
+    // le Shift+Tab affiche le bon logo + les bons achievements.
+    // On passe AUSSI child.pid : l'overlay service en a besoin pour
+    // vérifier via Windows API que la fenêtre OS foreground appartient
+    // bien à ce process — sinon Shift+Tab depuis le launcher ou un
+    // autre app ouvrirait l'overlay incorrectement (bug Steam-like
+    // security signalé par l'user).
+    void (async () => {
+      try {
+        const { setCurrentGame } = await import('./overlay.service')
+        setCurrentGame(getLibraryGame(id), child.pid ?? null)
+      } catch {
+        /* overlay service unavailable — non-fatal */
+      }
+    })()
+
+    // v0.5.1 Phase 2 — toast "Shift+Tab" via la BrowserWindow toast
+    // custom (Bypass Windows Focus Assist) ET broadcasté à l'overlay
+    // offscreen pour rendu via DLL sur le swap chain du jeu en
+    // exclusive fullscreen.
+    //
+    // Délai 4000ms : il faut attendre que (a) la DLL soit injectée,
+    // (b) le frame_pipe connecte, (c) l'offscreen window se crée et
+    // (d) React + ToastStack mount + subscribe à toast:push.
+    // Sans ce délai, le push arrive avant que le listener offscreen
+    // existe → notif perdue pour le rendu in-game.
+    setTimeout(() => {
+      void (async () => {
+        try {
+          const { pushToast } = await import('./toast-window.service')
+          pushToast({
+            kind: 'overlay_tip',
+            title: 'Overlay Nexus en jeu',
+            body: 'Appuie sur Shift+Tab pour ouvrir l’overlay (amis, chat, captures, succès…).',
+            durationMs: 8000,
+          })
+        } catch {
+          /* toast-window unavailable — non-fatal */
+        }
+      })()
+    }, 4000)
+
+    // v0.5.1 Phase 2 — DLL injection RÉ-ACTIVÉE.
+    //
+    // La DLL hook le swap chain du jeu (D3D11/12/OpenGL) et dessine la
+    // React UI rendue offscreen par Electron via un texture fullscreen
+    // quad. Marche par-dessus EXCLUSIVE FULLSCREEN — c'est la seule
+    // technique fiable (Steam/Discord/Nvidia font pareil).
+    //
+    // Si la DLL n'est pas build (`tools/nexus-overlay/build/dist/`
+    // manquant), `injectOverlay` log un warning et continue sans
+    // overlay in-game (le launcher reste fonctionnel).
+    void (async () => {
+      try {
+        const { injectOverlay } = await import('./overlay-inject.service')
+        // Passe l'exe path : injectOverlay lit le PE header pour
+        // détecter l'arch (x86 vs x64) et choisir la bonne paire
+        // injector + DLL. Sans ça, on injecte une DLL x64 dans un
+        // jeu x86 (LEGO série) et LoadLibraryW retourne NULL.
+        // game.executablePath est typé `string | null` (un jeu peut
+        // être enregistré sans .exe dans certaines branches legacy),
+        // mais à ce point dans launchGame il a forcément été spawn
+        // depuis cette valeur — donc non-null. Cast safe.
+        if (game.executablePath) {
+          injectOverlay(child.pid ?? 0, game.executablePath)
+        }
+      } catch {
+        /* artefacts missing — non-fatal */
+      }
+    })()
+
     child.on('exit', () => {
       const session = running.get(id)
       if (!session) return
@@ -1043,6 +1210,24 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
       }
       emit('library:running', { id, running: false, sessionSeconds: seconds })
       void notifyWatcherGameStopped(id)
+      // v0.5.1 — clear overlay current game on exit. Si un autre
+      // jeu est encore actif `running.size > 0`, on push le 1er
+      // restant comme nouveau current.
+      void (async () => {
+        try {
+          const { setCurrentGame } = await import('./overlay.service')
+          const remaining = Array.from(running.keys())[0]
+          // Si un autre jeu reste actif, on push son PID aussi pour
+          // que le foreground check de l'overlay continue de marcher.
+          const remainingPid = remaining ? (running.get(remaining)?.child.pid ?? null) : null
+          setCurrentGame(
+            remaining ? (getLibraryGame(remaining) ?? null) : null,
+            remainingPid,
+          )
+        } catch {
+          /* overlay service unavailable — non-fatal */
+        }
+      })()
       // Flip back from 'in_game' to 'online' — the renderer's heartbeat
       // will subsequently downgrade to 'away' if the window isn't
       // focused, but the immediate post-exit state is "yes the launcher

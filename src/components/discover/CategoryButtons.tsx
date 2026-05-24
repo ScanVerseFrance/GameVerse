@@ -6,7 +6,7 @@
  * Pills arrondies pleines au repos, gradient accent quand sélectionnées.
  */
 import { useNavigate } from 'react-router-dom'
-import { Flame, CalendarDays, Trophy, Sparkles } from 'lucide-react'
+import { Flame, CalendarDays, Trophy, Sparkles } from '@/lib/icons'
 import { cn } from '@/utils/cn'
 
 interface CategoryButtonsProps {

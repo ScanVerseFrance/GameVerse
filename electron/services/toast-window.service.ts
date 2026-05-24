@@ -29,6 +29,8 @@ import { BrowserWindow, screen, ipcMain, app } from 'electron'
 import path from 'node:path'
 import { getAppSettings } from './app-settings.service'
 import { debugLog } from './debug-log.service'
+import { isOverlayFramesConnected } from './overlay-frames.service'
+import { isOverlayVisible } from './overlay.service'
 
 const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 const RENDERER_DIST = path.join(__dirname, '..', 'dist')
@@ -43,6 +45,10 @@ const SCREEN_MARGIN_BOTTOM = 16
 
 let toastWindow: BrowserWindow | null = null
 let mainWindowRef: (() => BrowserWindow | null) | null = null
+// Debounce du hide : on ne cache la toast-window qu'après un délai de
+// 600ms sans toast. Sans ce guard, deux toasts consécutifs provoquent
+// un show→hide→show en ~300ms → clignotement visible à l'écran.
+let pendingHideTimer: NodeJS.Timeout | null = null
 /**
  * Once the toast renderer signals it has its IPC listener mounted
  * (via the `toast:ready` channel), this flips true and stays true
@@ -75,6 +81,9 @@ export type ToastKind =
   | 'friend_launched_game'
   | 'friend_request'
   | 'cloud_save'
+  | 'controller_connected'
+  | 'controller_disconnected'
+  | 'overlay_tip'
   | 'test'
 
 export interface ToastPayload {
@@ -121,6 +130,11 @@ function isKindEnabled(kind: ToastKind): boolean {
       friend_launched_game: s.friendLaunchedGame !== false,
       friend_request: s.friendRequest !== false,
       cloud_save: true,
+      // Controller toasts : pas de toggle dédié, toujours actifs.
+      // L'user peut snooze tout via le master snooze.
+      controller_connected: true,
+      controller_disconnected: true,
+      overlay_tip: s.overlayTip !== false,
     }
     return map[kind as Exclude<ToastKind, 'test'>] !== false
   } catch {
@@ -258,6 +272,55 @@ export function pushToast(payload: ToastPayload): boolean {
     debugLog('toast', 'suppressed by settings', { kind: payload.kind })
     return false
   }
+
+  // v0.5.1 Phase 2 — quand le DLL nexus-overlay est connecté et
+  // dessine l'offscreen sur le swap chain du jeu, l'offscreen window
+  // a déjà son propre InGameToastStack qui affichera la notif. On
+  // SHORT-CIRCUIT la dedicated toast-window pour éviter d'avoir le
+  // toast affiché en double (une fois en OS overlay, une fois dans
+  // le composite DLL). Broadcast à toutes les windows pour que
+  // l'offscreen + la main launcher window reçoivent la notif via
+  // leur subscription `toast:push`.
+  if (isOverlayFramesConnected()) {
+    debugLog('toast', 'DLL connected → broadcast-only path', {
+      kind: payload.kind,
+    })
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.isDestroyed()) continue
+      try {
+        w.webContents.send('toast:push', payload)
+      } catch {
+        /* skip individual window failure */
+      }
+    }
+    return true
+  }
+
+  // Overlay window is fullscreen and sits on top of the dedicated toast
+  // window at the same alwaysOnTop level — the toast window is invisible
+  // behind it. Broadcast-only so the overlay's InGameToastStack handles
+  // display while the overlay is open.
+  if (isOverlayVisible()) {
+    debugLog('toast', 'overlay visible → overlay-only path', {
+      kind: payload.kind,
+    })
+    // L'overlay window fullscreen couvre la dedicated toast window.
+    // On envoie UNIQUEMENT à l'overlay (InGameToastStack) et on EXCLUT
+    // la dedicated toast window — si elle recevait le toast elle
+    // appellerait overlayEmpty() à la dismiss, déclenchant un
+    // show/hide inutile qui produit des artefacts DWM visibles.
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.isDestroyed()) continue
+      if (toastWindow && !toastWindow.isDestroyed() && w === toastWindow) continue
+      try {
+        w.webContents.send('toast:push', payload)
+      } catch {
+        /* skip */
+      }
+    }
+    return true
+  }
+
   let win: BrowserWindow
   try {
     win = ensureToastWindow()
@@ -289,9 +352,11 @@ export function pushToast(payload: ToastPayload): boolean {
     pendingPayloads.push(payload)
   }
 
-  // Show the window if it was hidden. `showInactive` on a
-  // focusable:false window doesn't steal focus from whatever the
-  // user is doing.
+  // Annule tout hide en attente pour éviter show→hide→show rapide.
+  if (pendingHideTimer) {
+    clearTimeout(pendingHideTimer)
+    pendingHideTimer = null
+  }
   if (!win.isVisible()) {
     win.showInactive()
   }
@@ -349,12 +414,20 @@ function registerToastIpc(): void {
     }
   })
 
-  // The overlay tells us it has no more visible toasts → hide the
-  // window so it stops eating any GPU cycles (transparent windows
-  // still cost a small amount of compositor work on Windows).
+  // Le renderer signale qu'il n'y a plus de toasts visibles → on planifie
+  // un hide avec un délai de 600ms. Ce debounce évite show→hide→show en
+  // rafale (ex: deux toasts qui arrivent à 400ms d'intervalle) qui cause
+  // un clignotement dû à l'init/deinit du compositor DWM Windows.
   ipcMain.handle('toast:overlay-empty', () => {
     if (!toastWindow || toastWindow.isDestroyed()) return
-    if (toastWindow.isVisible()) toastWindow.hide()
+    if (!toastWindow.isVisible()) return
+    if (pendingHideTimer) clearTimeout(pendingHideTimer)
+    pendingHideTimer = setTimeout(() => {
+      pendingHideTimer = null
+      if (toastWindow && !toastWindow.isDestroyed() && toastWindow.isVisible()) {
+        toastWindow.hide()
+      }
+    }, 600)
   })
 
   // Renderer signals it has mounted and its onPush listener is
@@ -366,6 +439,39 @@ function registerToastIpc(): void {
     })
     toastRendererReady = true
     drainPendingPayloads()
+  })
+
+  // Push depuis le renderer (utilisé par useGamepadToast pour push
+  // une notif manette dans l'overlay window plutôt que dans l'app).
+  // Validation : on garde les champs au shape ToastPayload + on
+  // restreint à des kinds autorisés depuis le renderer (pas
+  // d'update_available faked).
+  ipcMain.handle('toast:push', (_e, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') {
+      return { ok: false, error: 'invalid payload' }
+    }
+    const p = payload as Partial<ToastPayload>
+    const allowedKinds: ToastKind[] = [
+      'controller_connected',
+      'controller_disconnected',
+    ]
+    if (!p.kind || !allowedKinds.includes(p.kind as ToastKind)) {
+      return { ok: false, error: 'kind not allowed from renderer' }
+    }
+    pushToast({
+      kind: p.kind as ToastKind,
+      title: String(p.title ?? '').slice(0, 200),
+      body: p.body ? String(p.body).slice(0, 300) : null,
+      subtitle: p.subtitle ? String(p.subtitle).slice(0, 200) : null,
+      iconUrl: p.iconUrl ? String(p.iconUrl).slice(0, 500) : null,
+      coverUrl: p.coverUrl ? String(p.coverUrl).slice(0, 500) : null,
+      link: p.link ? String(p.link).slice(0, 500) : null,
+      durationMs:
+        typeof p.durationMs === 'number' && p.durationMs > 0
+          ? Math.min(20000, Math.floor(p.durationMs))
+          : undefined,
+    })
+    return { ok: true }
   })
 
   // Diagnostic test hook used by Settings → Notifications. Bypasses
@@ -397,6 +503,10 @@ export function initToastWindow(getMain: () => BrowserWindow | null): void {
 
 /** Tear down at app quit. */
 export function shutdownToastWindow(): void {
+  if (pendingHideTimer) {
+    clearTimeout(pendingHideTimer)
+    pendingHideTimer = null
+  }
   if (toastWindow && !toastWindow.isDestroyed()) {
     toastWindow.destroy()
   }

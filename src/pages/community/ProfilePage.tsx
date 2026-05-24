@@ -21,7 +21,7 @@ import {
   Play,
   Sparkles,
   type LucideIcon,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { cn } from '@/utils/cn'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCloudStore } from '@/stores/cloud.store'
@@ -147,16 +147,34 @@ function RecentGameCard({
     if (diff < 7 * 86_400_000) return `il y a ${Math.round(diff / 86_400_000)} j`
     return new Date(game.lastPlayedAt).toLocaleDateString()
   })()
+  // Route vers la page du jeu via sourceGameId (e.g. "json:lego-marvel-2").
+  // C'est la seule clé qui marche cross-user — libraryGameId est l'uuid
+  // local du launcher de l'AUTHOR, qui n'existe pas chez le viewer.
+  // Si sourceGameId est null (jeu non-json OU ami sur launcher < v0.5.1
+  // qui n'envoyait pas le champ), le card devient non-cliquable plutôt
+  // que de pointer vers une page vide.
+  const href =
+    game.sourceGameId && game.sourceGameId.startsWith('json:')
+      ? `/json-game/${encodeURIComponent(game.sourceGameId.slice('json:'.length))}`
+      : null
+  const baseClasses = cn(
+    'p-3 sm:p-4 rounded-xl flex items-stretch gap-3 no-underline transition-colors',
+    isLive
+      ? 'bg-bg-secondary border border-accent-primary/40 hover:border-accent-primary'
+      : href
+        ? 'bg-bg-secondary border border-border-soft hover:border-accent-primary/30'
+        : 'bg-bg-secondary border border-border-soft cursor-default',
+  )
+  const Wrapper = ({ children }: { children: React.ReactNode }) =>
+    href ? (
+      <Link to={href} className={baseClasses}>
+        {children}
+      </Link>
+    ) : (
+      <div className={baseClasses}>{children}</div>
+    )
   return (
-    <Link
-      to={`/json-game/${encodeURIComponent(game.libraryGameId.startsWith('json:') ? game.libraryGameId.slice('json:'.length) : game.libraryGameId)}`}
-      className={cn(
-        'p-3 sm:p-4 rounded-xl flex items-stretch gap-3 no-underline transition-colors',
-        isLive
-          ? 'bg-bg-secondary border border-accent-primary/40 hover:border-accent-primary'
-          : 'bg-bg-secondary border border-border-soft hover:border-accent-primary/30'
-      )}
-    >
+    <Wrapper>
       {game.coverUrl ? (
         <img
           src={game.coverUrl}
@@ -197,7 +215,7 @@ function RecentGameCard({
           )}
         </div>
       </div>
-    </Link>
+    </Wrapper>
   )
 }
 
@@ -307,7 +325,7 @@ export default function ProfilePage() {
   /** Pending crop: when the user picks a file we open the cropper instead
    * of saving raw — `target` tells us whether we're processing the avatar
    * (square output) or the banner (wide output). */
-  const [crop, setCrop] = useState<{ source: string; target: 'avatar' | 'banner' } | null>(null)
+  const [crop, setCrop] = useState<{ source: string; target: 'avatar' | 'banner'; mime?: string } | null>(null)
   /** Active profile tab — ScanVerse-style sub-navigation. Defaults to
    *  "favorites" to match ScanVerse's landing experience. */
   const [tab, setTab] = useState<ProfileTab>('favorites')
@@ -330,33 +348,40 @@ export default function ProfilePage() {
   async function handlePickAvatar() {
     const file = await imageUpload.pick()
     if (!file) return
-    // GIF / APNG : bypass le cropper (canvas.toDataURL flatten →
-    // perd l'animation). Push direct le data URL → l'animation
-    // survit. Cadrage user sacrifié pour ce format. Parité avec
-    // ScanVerse qui fait la même chose côté web.
-    if (isAnimatedImage(file.mime)) {
-      const ok = await updateAuthProfile({ avatarPath: file.dataUrl })
-      await refreshProfile()
-      toast[ok ? 'success' : 'error'](
-        ok ? 'Avatar animé mis à jour' : "Échec mise à jour de l'avatar",
-      )
-      return
-    }
-    setCrop({ source: file.dataUrl, target: 'avatar' })
+    // Depuis v0.5.1 : on ouvre TOUJOURS le cropper, peu importe le
+    // format. Pour les GIF/APNG, le dialog affiche un bouton
+    // « Garder l'animation » qui bypass le canvas render et push
+    // l'original tel quel. L'user choisit explicitement.
+    setCrop({ source: file.dataUrl, target: 'avatar', mime: file.mime })
   }
 
   async function handlePickBanner() {
     const file = await imageUpload.pick()
     if (!file) return
-    if (isAnimatedImage(file.mime)) {
-      const ok = await updateAuthProfile({ bannerPath: file.dataUrl })
-      await refreshProfile()
-      toast[ok ? 'success' : 'error'](
-        ok ? 'Bannière animée mise à jour' : 'Échec mise à jour de la bannière',
+    setCrop({ source: file.dataUrl, target: 'banner', mime: file.mime })
+  }
+
+  async function handleKeepAnimated(originalDataUrl: string) {
+    if (!crop) return
+    const target = crop.target
+    const ok = await updateAuthProfile(
+      target === 'avatar' ? { avatarPath: originalDataUrl } : { bannerPath: originalDataUrl },
+    )
+    setCrop(null)
+    await refreshProfile()
+    if (ok) {
+      toast.success(
+        target === 'avatar'
+          ? 'Avatar animé mis à jour'
+          : 'Bannière animée mise à jour',
       )
-      return
+    } else {
+      toast.error(
+        target === 'avatar'
+          ? "Échec de la mise à jour de l'avatar"
+          : 'Échec de la mise à jour de la bannière',
+      )
     }
-    setCrop({ source: file.dataUrl, target: 'banner' })
   }
 
   async function handleCropConfirmed(dataUrl: string) {
@@ -485,14 +510,28 @@ export default function ProfilePage() {
           const p = lastLaunch.payload as {
             title?: string
             coverUrl?: string | null
+            sourceGameId?: string | null
+            gameId?: string | null
           }
           if (!p.title) return
+          // Récupère sourceGameId du payload broadcast par le launcher
+          // de l'ami (v0.5.1+). Sans lui, le card sera non-cliquable
+          // (point vers une page vide sinon).
+          const synthSourceGid =
+            typeof p.sourceGameId === 'string' && p.sourceGameId.length > 0
+              ? p.sourceGameId
+              : // Fallback : ancien payload où `gameId` pouvait déjà être
+                // un sourceGameId "json:..." si le poster postait ça.
+                typeof p.gameId === 'string' && p.gameId.startsWith('json:')
+                ? p.gameId
+                : null
           setStats((prev) =>
             prev
               ? {
                   ...prev,
                   recentGame: {
                     libraryGameId: `remote:${userId}`,
+                    sourceGameId: synthSourceGid,
                     title: p.title!,
                     coverUrl: p.coverUrl ?? null,
                     lastPlayedAt: new Date(lastLaunch.createdAt).getTime(),
@@ -1112,7 +1151,7 @@ export default function ProfilePage() {
                     Aucune activité récente.
                   </p>
                 ) : (
-                  <div>
+                  <div className="flex flex-col gap-2">
                     {activity.map((a) => (
                       <ActivityFeedItem key={a.id} item={a} />
                     ))}
@@ -1268,6 +1307,7 @@ export default function ProfilePage() {
       <ImageCropDialog
         open={crop != null}
         sourceDataUrl={crop?.source ?? null}
+        sourceMime={crop?.mime}
         aspect={crop?.target === 'banner' ? 16 / 5 : 1}
         outputSize={
           crop?.target === 'banner' ? { w: 1280, h: 400 } : { w: 512, h: 512 }
@@ -1275,6 +1315,7 @@ export default function ProfilePage() {
         title={crop?.target === 'banner' ? 'Recadrer la bannière' : "Recadrer l'avatar"}
         onCancel={() => setCrop(null)}
         onCrop={(url) => void handleCropConfirmed(url)}
+        onKeepAnimated={(url) => void handleKeepAnimated(url)}
       />
 
       {imageUpload.error && (
@@ -1615,18 +1656,6 @@ function PlayedGamesTab({ userId }: { userId: string }) {
  * and handlePickBanner) so future additions to the animated-format
  * allow-list touch a single spot.
  */
-/**
- * Détecte les formats d'image qui supportent l'animation. Utilisé
- * dans handlePickAvatar / handlePickBanner pour bypass le cropper
- * (qui flatten via canvas.toDataURL). L'image est uploadée telle
- * quelle — l'user perd la possibilité de cadrer mais garde
- * l'animation. Trade-off accepté pour parité ScanVerse.
- */
-function isAnimatedImage(mime: string): boolean {
-  const m = mime.toLowerCase()
-  return m === 'image/gif' || m === 'image/apng'
-}
-
 function TabPlaceholder({
   icon: Icon,
   title,
@@ -1970,26 +1999,34 @@ function FriendCard({ friend }: { friend: FriendListItem }) {
       {/* "A RÉCEMMENT JOUÉ" attachment — affiché quand on a une
           recentGame. Si la game tourne MAINTENANT (in_game presence
           OU isRunning local) on bascule sur "Joue" avec un dot vert
-          pulsé (parité ScanVerse "Lit"). Le OR couvre :
-            - isRunning : friend qui joue à un jeu détecté par notre
-              process watcher local (uniquement si on partage la même
-              install — rare)
-            - presenceStatus === 'in_game' : signal cloud poussé par
-              le launcher du friend via activity:new game_launched.
-              C'est LE cas commun.
-          Info-only (pas de Link) parce que le jeu vit dans la
-          library du friend, pas du viewer — il n'y a pas de
-          destination universelle qui marche pour les ids `json:`,
-          `steam:`, `remote:`. */}
+          pulsé (parité ScanVerse "Lit").
+          v0.5.1 : cliquable si sourceGameId est un "json:..." — route
+          vers la page du jeu chez le viewer. Sinon stay info-only (jeu
+          non-json ou ami sur launcher pré-v0.5.1 qui n'envoyait pas le
+          champ). */}
       {friend.recentGame && (() => {
         const isLive =
           friend.recentGame.isRunning ||
           friend.presenceStatus === 'in_game'
+        const sgid = friend.recentGame.sourceGameId
+        const innerHref =
+          sgid && sgid.startsWith('json:')
+            ? `/json-game/${encodeURIComponent(sgid.slice('json:'.length))}`
+            : null
+        const innerCls = cn(
+          'flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-primary/60 border border-glass-border no-underline',
+          innerHref ? 'hover:border-accent-primary/30 transition-colors' : '',
+        )
+        const InnerWrap = ({ children }: { children: React.ReactNode }) =>
+          innerHref ? (
+            <Link to={innerHref} className={innerCls} onClick={(e) => e.stopPropagation()}>
+              {children}
+            </Link>
+          ) : (
+            <div className={innerCls}>{children}</div>
+          )
         return (
-        <div
-          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-primary/60 border border-glass-border"
-          title={`${isLive ? 'Joue' : 'A récemment joué'} ${friend.recentGame.title}`}
-        >
+        <InnerWrap>
           {friend.recentGame.coverUrl ? (
             <img
               src={friend.recentGame.coverUrl}
@@ -2021,7 +2058,7 @@ function FriendCard({ friend }: { friend: FriendListItem }) {
               {friend.recentGame.title}
             </p>
           </div>
-        </div>
+        </InnerWrap>
         )
       })()}
     </div>

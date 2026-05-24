@@ -22,7 +22,7 @@ import {
   RotateCcw,
   Loader2,
   X,
-} from 'lucide-react'
+} from '@/lib/icons'
 import type { LibraryGame, LibraryStatus, VerifyReport } from '@/types/library.types'
 import { Modal } from '@/components/ui/Modal'
 import { Input } from '@/components/ui/Input'

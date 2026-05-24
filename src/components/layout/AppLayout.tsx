@@ -83,6 +83,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             d'action user (save profil OK / KO, etc.). Différent des
             toasts ci-dessus qui sont des notifs systèmes. */}
         <InAppToastContainer />
+        {/* Les notifs manette connectée/déconnectée vont maintenant
+            dans la toast overlay window native (Steam-style) pas dans
+            ce stack — cf. useGamepadToast qui push via
+            window.nexus.toast.push. */}
         {/* Profile-music mini player — UNIQUEMENT sur les pages de
             profil. Le player se monte/démonte avec la route ; le
             MusicContext (qui vit au-dessus de AppLayout) garde son

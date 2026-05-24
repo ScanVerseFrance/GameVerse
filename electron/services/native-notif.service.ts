@@ -32,6 +32,7 @@ export type NativeNotifKind =
   | 'friend_message'
   | 'friend_launched_game'
   | 'friend_request'
+  | 'overlay_tip'
 
 interface ShowOpts {
   kind: NativeNotifKind
@@ -231,6 +232,7 @@ function isKindEnabled(kind: NativeNotifKind): boolean {
       friend_message: s.friendMessage !== false,
       friend_launched_game: s.friendLaunchedGame !== false,
       friend_request: s.friendRequest !== false,
+      overlay_tip: s.overlayTip !== false,
     }
     return map[kind] !== false
   } catch {

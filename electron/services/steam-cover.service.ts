@@ -57,13 +57,24 @@ interface AppDetailsResponse {
       capsule_image?: string
       name?: string
       categories?: Array<{ id?: number; description?: string }>
+      genres?: Array<{ id?: string; description?: string }>
     }
   }
 }
 
-/** Steam category ids we care about for filtering Trending lists. */
+/** Steam category ids we care about for filtering Trending lists.
+ *  Sources : https://partner.steamgames.com/doc/store/categories
+ *
+ *   1  → Multi-player
+ *   2  → Single-player
+ *   9  → Co-op
+ *  38  → Online Co-op
+ *  39  → Local Co-op
+ *  44  → Remote Play Together  ← what we need for the overlay panel
+ */
 const CATEGORY_SINGLE_PLAYER = 2
 const CATEGORY_MULTI_PLAYER = 1
+const CATEGORY_REMOTE_PLAY_TOGETHER = 44
 
 /** In-flight + recent-miss cache. The DB-cache hop is what's
  *  authoritative; this in-memory layer just avoids hammering the
@@ -127,7 +138,9 @@ export async function resolveCoverUrl(appid: number): Promise<string | null> {
     let isGame = 0
     let isSinglePlayer = 0
     let isMultiPlayer = 0
+    let isRemotePlayTogether = 0
     let metaFetched = false
+    let genres: string[] = []
 
     const ctrl = new AbortController()
     const to = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS)
@@ -151,6 +164,18 @@ export async function resolveCoverUrl(appid: number): Promise<string | null> {
             .filter((id): id is number => typeof id === 'number')
           isSinglePlayer = categoryIds.includes(CATEGORY_SINGLE_PLAYER) ? 1 : 0
           isMultiPlayer = categoryIds.includes(CATEGORY_MULTI_PLAYER) ? 1 : 0
+          isRemotePlayTogether = categoryIds.includes(CATEGORY_REMOTE_PLAY_TOGETHER)
+            ? 1
+            : 0
+          // v0.5.1 — on récupère AUSSI genres pour alimenter le
+          // filtre Catalogue (game_artwork.genres). Sans ça, le
+          // filtre genres était sparse parce que game_artwork
+          // n'était rempli QUE lorsqu'on ouvrait une page de jeu.
+          // Maintenant chaque appid touché par la résolution cover
+          // alimente aussi le filtre.
+          genres = (entry.data.genres ?? [])
+            .map((g) => g.description ?? '')
+            .filter((d) => d.length > 0)
           metaFetched = true
         }
       }
@@ -179,9 +204,18 @@ export async function resolveCoverUrl(appid: number): Promise<string | null> {
                is_game = ?,
                is_single_player = ?,
                is_multi_player = ?,
+               is_remote_play_together = ?,
                meta_fetched_at = ?
            WHERE appid = ?`,
-        ).run(url, isGame, isSinglePlayer, isMultiPlayer, Date.now(), appid)
+        ).run(
+          url,
+          isGame,
+          isSinglePlayer,
+          isMultiPlayer,
+          isRemotePlayTogether,
+          Date.now(),
+          appid,
+        )
       } else if (url) {
         db.prepare(
           'UPDATE steam_catalogue SET cover_url = ? WHERE appid = ?',
@@ -190,6 +224,38 @@ export async function resolveCoverUrl(appid: number): Promise<string | null> {
     } catch {
       /* row may not exist yet (carousel game not in catalogue); the
          cover still renders via the returned URL */
+    }
+
+    // Persist genres dans game_artwork pour alimenter le filtre
+    // Catalogue. INSERT OR REPLACE sur la cache_key `appid:<id>`,
+    // qui est la même que celle utilisée par artwork.service quand
+    // une page de jeu est ouverte → pas de conflit, juste une
+    // population anticipée. v0.5.1.
+    if (metaFetched && genres.length > 0) {
+      try {
+        const now = Date.now()
+        db.prepare(
+          `INSERT INTO game_artwork
+            (cache_key, external_source, external_id, cover_url, hero_url, header_url, logo_url,
+             description, developer, publisher, release_date, genres, screenshots, videos,
+             cached_at, fetched_at)
+           VALUES (?, 'steam', ?, NULL, NULL, NULL, NULL,
+                   NULL, NULL, NULL, NULL, ?, '[]', '[]',
+                   ?, ?)
+           ON CONFLICT(cache_key) DO UPDATE SET
+             external_id = excluded.external_id,
+             genres = excluded.genres,
+             fetched_at = excluded.fetched_at`,
+        ).run(
+          `appid:${appid}`,
+          String(appid),
+          JSON.stringify(genres),
+          now,
+          now,
+        )
+      } catch {
+        /* game_artwork might not exist yet on a very fresh install */
+      }
     }
 
     if (!url) {

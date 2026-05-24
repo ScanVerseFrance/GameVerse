@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Star, Trophy, Plus, X, Gamepad2 } from 'lucide-react'
+import { Star, Trophy, Plus, X, Gamepad2 } from '@/lib/icons'
 import { Modal } from '@/components/ui/Modal'
 import { useLibraryStore } from '@/stores/library.store'
 import { useAuthStore } from '@/stores/auth.store'

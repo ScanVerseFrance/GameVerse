@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Library, Check } from 'lucide-react'
+import { Library, Check } from '@/lib/icons'
 import { Button } from '@/components/ui/Button'
 import { useLibraryStore } from '@/stores/library.store'
 import { useAuthStore } from '@/stores/auth.store'

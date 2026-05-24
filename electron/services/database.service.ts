@@ -157,6 +157,12 @@ function runMigrations(d: Database.Database) {
   ensureColumn('users', 'remote_last_played_title', 'TEXT')
   ensureColumn('users', 'remote_last_played_cover_url', 'TEXT')
   ensureColumn('users', 'remote_last_played_at', 'INTEGER')
+  // Source game ID (e.g. "json:foo-bar") du dernier jeu lancé par
+  // l'ami, persisté quand on reçoit son broadcast d'activité. Sans
+  // cette colonne, le card "A récemment joué Lego Marvel" sur le
+  // profil d'un ami n'a aucun moyen de pointer vers la page du jeu
+  // chez le viewer — clic → page vide. v0.5.1.
+  ensureColumn('users', 'remote_last_played_source_game_id', 'TEXT')
 
   // v0.3.1: comments became reviews — 0-5 star rating column added
   // to game_comments. Existing rows backfill to 0 ("no rating
@@ -193,6 +199,16 @@ function runMigrations(d: Database.Database) {
   ensureColumn('steam_catalogue', 'is_single_player', 'INTEGER')
   ensureColumn('steam_catalogue', 'is_multi_player', 'INTEGER')
   ensureColumn('steam_catalogue', 'meta_fetched_at', 'INTEGER')
+  // v0.5.1 — flag Steam category 44 (Remote Play Together). Le panel
+  // Remote Play de l'overlay n'affiche le bouton "Inviter" que pour
+  // les jeux dont ce flag est à 1.
+  ensureColumn('steam_catalogue', 'is_remote_play_together', 'INTEGER')
+
+  // v0.5.1 — "Inclure Online-Fix" feature : on stocke l'URL du
+  // patch multijoueur associé au téléchargement principal. À la fin
+  // du DL on l'ouvre dans le navigateur + le dossier d'install.
+  ensureColumn('downloads', 'addon_fix_url', 'TEXT')
+  ensureColumn('downloads', 'addon_fix_label', 'TEXT')
 
   // Per-user Top 5 games showcase. Up to 5 rows per user, each pointing at
   // a library_games id. Position is the slot (1..5).
@@ -538,6 +554,13 @@ function createSchema(d: Database.Database) {
       cached_at INTEGER NOT NULL,
       fetched_at INTEGER NOT NULL
     );
+    -- v0.5.1 : index pour le filtre genres de la CataloguePage.
+    -- Sans cet index, l'EXISTS subquery faisait un full-scan sur
+    -- ~2k+ artworks par ligne de steam_catalogue (~80k) → 160M
+    -- comparaisons → freeze de l'app pendant 30s+ ressenti comme
+    -- un crash. Avec l'index la query passe à ~50ms.
+    CREATE INDEX IF NOT EXISTS idx_game_artwork_external
+      ON game_artwork(external_source, external_id);
 
     -- Per-game local comments. game_kind says where the game lives ("json"
     -- for imported catalog games, "addon" for HTTP-addon games, "library"

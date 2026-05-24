@@ -46,7 +46,7 @@ import {
   Navigation,
   Zap,
   Keyboard,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { useLibraryStore } from '@/stores/library.store'
 import { useCloudStore } from '@/stores/cloud.store'
 import { useDebounce } from '@/hooks/useDebounce'

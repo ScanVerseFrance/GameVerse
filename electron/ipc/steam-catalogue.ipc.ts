@@ -20,6 +20,10 @@ import {
   getSteamCatalogueStatus,
   type SearchCatalogueOptions,
 } from '../services/steam-catalogue.service'
+import {
+  startGenreBackfill,
+  getGenreBackfillStatus,
+} from '../services/genre-backfill.service'
 import { getConcurrentPlayers } from '../services/steam-players.service'
 import { resolveCoverUrlsBulk } from '../services/steam-cover.service'
 import {
@@ -113,6 +117,28 @@ export function registerSteamCatalogueIpc(): void {
           limit: Math.min(200, Math.max(1, Math.floor(Number(opts?.limit ?? 60)))),
           offset: Math.max(0, Math.floor(Number(opts?.offset ?? 0))),
           sort: opts?.sort === 'name' ? 'name' : 'popularity',
+          // Genres filter — cap à 20 pour éviter qu'un caller explose
+          // la chaîne LIKE en SQL. Strings sanitized.
+          genres: Array.isArray(opts?.genres)
+            ? opts.genres
+                .filter((g): g is string => typeof g === 'string')
+                .slice(0, 20)
+                .map((g) => sanitizeStr(g, 64))
+            : undefined,
+          // Bornes taille — clamp pour éviter qu'un mauvais caller
+          // passe NaN ou des valeurs négatives.
+          minSizeBytes:
+            typeof opts?.minSizeBytes === 'number' &&
+            Number.isFinite(opts.minSizeBytes) &&
+            opts.minSizeBytes > 0
+              ? Math.floor(opts.minSizeBytes)
+              : undefined,
+          maxSizeBytes:
+            typeof opts?.maxSizeBytes === 'number' &&
+            Number.isFinite(opts.maxSizeBytes) &&
+            opts.maxSizeBytes > 0
+              ? Math.ceil(opts.maxSizeBytes)
+              : undefined,
         }
         const res = searchSteamCatalogue(safe)
         return { ok: true, ...res }
@@ -141,6 +167,34 @@ export function registerSteamCatalogueIpc(): void {
       return { ok: true, ...getSteamCatalogueStatus() }
     } catch (err) {
       return { ok: false, error: (err as Error).message, total: 0, lastFetchedAt: null }
+    }
+  })
+
+  // Backfill genres pour le filtre Catalogue. Déclenché à l'ouverture
+  // de la page si on détecte une cache sparse. Retourne immédiatement,
+  // la progression remonte via l'event `genres:backfill`.
+  ipcMain.handle(
+    'steamCatalogue:backfillGenres',
+    async (_e, opts: unknown) => {
+      try {
+        const o = opts as { limit?: number } | undefined
+        const lim = Math.min(
+          2000,
+          Math.max(50, Math.floor(Number(o?.limit ?? 500))),
+        )
+        const res = await startGenreBackfill(lim)
+        return { ok: true, ...res }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
+
+  ipcMain.handle('steamCatalogue:backfillStatus', async () => {
+    try {
+      return { ok: true, ...getGenreBackfillStatus() }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
     }
   })
 

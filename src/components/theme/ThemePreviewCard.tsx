@@ -1,4 +1,4 @@
-import { Check, Edit3, Trash2, Download as DownloadIcon } from 'lucide-react'
+import { Check, Edit3, Trash2, Download as DownloadIcon } from '@/lib/icons'
 import { motion } from 'framer-motion'
 import type { Theme } from '@/types/theme.types'
 import { cn } from '@/utils/cn'

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Trophy, Gamepad2, Loader2 } from 'lucide-react'
+import { Trophy, Gamepad2, Loader2 } from '@/lib/icons'
 import { Card } from '@/components/ui/Card'
 
 interface GameSummary {

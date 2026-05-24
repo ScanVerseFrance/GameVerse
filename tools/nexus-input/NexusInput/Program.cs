@@ -77,10 +77,29 @@ internal static class Program
     // live in the hot HID loop. Initialisé à un default permissif.
     private static BridgeConfig _config = BridgeConfig.Default();
 
+    // Remote Play mode — quand l'arg --remote-play est passé, le helper
+    // saute toute la partie HID (pas de manette physique à lire) et se
+    // contente d'attendre des reports JSON sur stdin qu'il pousse au
+    // virtual pad ViGEm. C'est ce mode qui est utilisé par le pipeline
+    // P2P streaming Phase B : la manette du guest est lue côté guest
+    // via navigator.getGamepads(), les reports sont envoyés au host par
+    // RTCDataChannel, le host les forward via IPC à ce helper qui les
+    // injecte dans un virtual Xbox 360 pad — le jeu host pense voir
+    // une vraie 2e manette branchée.
+    private static bool _remotePlayMode;
+
     public static async Task<int> Main(string[] args)
     {
         Console.OutputEncoding = new UTF8Encoding(false);
-        Emit("ready", new { });
+        _remotePlayMode = args.Any(a => a == "--remote-play");
+        if (_remotePlayMode)
+        {
+            // En remote-play, on auto-start le virtual pad au lancement
+            // (pas d'attente de cmd "start" — le helper est spawn quand
+            // une session est déjà décidée, pas besoin d'étape config).
+            StartRemotePlayVpad();
+        }
+        Emit("ready", new { remotePlay = _remotePlayMode });
 
         try { await ReadStdinLoop(); }
         catch (Exception ex)
@@ -90,6 +109,33 @@ internal static class Program
         }
         Shutdown();
         return 0;
+    }
+
+    // Init ViGEm uniquement (pas de HID, pas de HidHide). Le report sera
+    // poussé par chaque cmd "input" reçue sur stdin.
+    private static void StartRemotePlayVpad()
+    {
+        try { _vigem = new ViGEmClient(); }
+        catch (Exception ex)
+        {
+            Emit("error", new
+            {
+                code = "VIGEM_MISSING",
+                msg = "Driver ViGEmBus introuvable.",
+                detail = ex.Message,
+            });
+            return;
+        }
+        try
+        {
+            _vpad = _vigem.CreateXbox360Controller();
+            _vpad.Connect();
+            Emit("log", new { level = "info", msg = "remote-play virtual pad connected" });
+        }
+        catch (Exception ex)
+        {
+            Emit("error", new { code = "VIGEM_VPAD_FAILED", msg = ex.Message });
+        }
     }
 
     private static async Task ReadStdinLoop()
@@ -117,6 +163,14 @@ internal static class Program
                             ApplyConfig(cfgEl);
                         break;
                     case "ping": Emit("pong", new { }); break;
+                    // Remote Play — un report XInput compact arrive depuis
+                    // le host renderer (qui le reçoit du guest via WebRTC
+                    // data channel). On unpack le bit-mask buttons + les
+                    // axes/triggers et on pousse au virtual pad.
+                    case "input":
+                        if (doc.RootElement.TryGetProperty("report", out var repEl))
+                            HandleRemotePlayInput(repEl);
+                        break;
                 }
             }
             catch (JsonException)
@@ -137,6 +191,71 @@ internal static class Program
         catch (Exception ex)
         {
             Emit("log", new { level = "warn", msg = $"config parse failed: {ex.Message}" });
+        }
+    }
+
+    // Remote Play input — décode le report compact reçu sur stdin et
+    // pousse au virtual pad. Format attendu (cf src/remote-play/RemotePlayGuest.tsx
+    // function gamepadToReport) :
+    //   {
+    //     buttons: number  (14-bit mask, ordre Xbox 360 + DPad bits 10-13)
+    //     lt: number       (0..255, trigger gauche)
+    //     rt: number       (0..255, trigger droit)
+    //     lx, ly, rx, ry: number  (-32768..32767, axes signed short Xbox)
+    //   }
+    private static long _remotePlayReportCount;
+    private static void HandleRemotePlayInput(JsonElement el)
+    {
+        if (_vpad == null) return;
+        try
+        {
+            int buttons = el.TryGetProperty("buttons", out var bp) ? bp.GetInt32() : 0;
+            int lt = el.TryGetProperty("lt", out var ltp) ? ltp.GetInt32() : 0;
+            int rt = el.TryGetProperty("rt", out var rtp) ? rtp.GetInt32() : 0;
+            int lx = el.TryGetProperty("lx", out var lxp) ? lxp.GetInt32() : 0;
+            int ly = el.TryGetProperty("ly", out var lyp) ? lyp.GetInt32() : 0;
+            int rx = el.TryGetProperty("rx", out var rxp) ? rxp.GetInt32() : 0;
+            int ry = el.TryGetProperty("ry", out var ryp) ? ryp.GetInt32() : 0;
+
+            var r = new Xbox360Report
+            {
+                A         = (buttons & (1 << 0))  != 0,
+                B         = (buttons & (1 << 1))  != 0,
+                X         = (buttons & (1 << 2))  != 0,
+                Y         = (buttons & (1 << 3))  != 0,
+                LB        = (buttons & (1 << 4))  != 0,
+                RB        = (buttons & (1 << 5))  != 0,
+                Back      = (buttons & (1 << 6))  != 0,
+                Start     = (buttons & (1 << 7))  != 0,
+                LStick    = (buttons & (1 << 8))  != 0,
+                RStick    = (buttons & (1 << 9))  != 0,
+                DpadUp    = (buttons & (1 << 10)) != 0,
+                DpadDown  = (buttons & (1 << 11)) != 0,
+                DpadLeft  = (buttons & (1 << 12)) != 0,
+                DpadRight = (buttons & (1 << 13)) != 0,
+                LT = (byte)Math.Clamp(lt, 0, 255),
+                RT = (byte)Math.Clamp(rt, 0, 255),
+                LX = (short)Math.Clamp(lx, -32768, 32767),
+                LY = (short)Math.Clamp(ly, -32768, 32767),
+                RX = (short)Math.Clamp(rx, -32768, 32767),
+                RY = (short)Math.Clamp(ry, -32768, 32767),
+            };
+            EmitToVpad(r);
+
+            // Log les 5 premiers reports pour confirmer le pipeline,
+            // puis tous les 600 (≈ 10s à 60Hz) pour heartbeat.
+            var n = Interlocked.Increment(ref _remotePlayReportCount);
+            if (n <= 5 || n % 600 == 0)
+            {
+                Emit("log", new {
+                    level = "info",
+                    msg = $"remote-play report #{n} buttons=0x{buttons:X4} LT={lt} RT={rt} L=({lx},{ly}) R=({rx},{ry})",
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Emit("log", new { level = "warn", msg = $"remote-play input parse failed: {ex.Message}" });
         }
     }
 

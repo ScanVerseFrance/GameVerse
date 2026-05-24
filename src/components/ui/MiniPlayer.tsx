@@ -24,7 +24,7 @@
  * l'ExtendedPlayer.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Play, Pause, Volume2, VolumeX, X, Music } from 'lucide-react'
+import { Play, Pause, Volume2, VolumeX, X, Music } from '@/lib/icons'
 import { useMusic } from '@/context/MusicContext'
 import { NAMEPLATES_BY_ID } from '@/config/profileCosmetics'
 

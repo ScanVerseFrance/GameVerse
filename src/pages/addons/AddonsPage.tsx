@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Puzzle, Plus, Trash, FileJson, Upload } from 'lucide-react'
+import { Puzzle, Plus, Trash, FileJson, Upload } from '@/lib/icons'
 import { useAddonStore } from '@/stores/addon.store'
 import { useJsonSourceStore } from '@/stores/json-source.store'
 import { Button } from '@/components/ui/Button'

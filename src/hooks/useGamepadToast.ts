@@ -2,59 +2,38 @@
  * Hook global qui écoute les events `gamepadconnected` /
  * `gamepaddisconnected` du navigateur ET poll `navigator.getGamepads()`
  * au montage pour catcher les manettes déjà branchées avant le
- * démarrage de l'app. Push un toast in-app pour notifier l'user.
+ * démarrage de l'app.
+ *
+ * Les notifs sont push vers la **toast overlay window** native
+ * (Steam-style, BrowserWindow séparé toujours-au-dessus) via
+ * `window.nexus.toast.push({...})` — exactement comme les notifs
+ * « ami a lancé un jeu ». Pas de toast in-app. La notif apparaît
+ * donc même si le launcher est minimisé ou caché derrière un autre
+ * window.
  *
  * Comportement :
- *   - Au mount : scan `getGamepads()` toutes les 600 ms pendant 6 s
- *     pour catcher les pads qui n'ont pas encore reçu d'user gesture
- *     (Gamepad API W3C ne fire `gamepadconnected` qu'après une input
- *     pad → un pad branché silencieux passerait sans toast sinon).
- *   - À la connexion d'un nouveau pad : toast "🎮 [Marque] [Modèle] connectée"
- *   - À la déconnexion : toast info "[Modèle] déconnectée"
- *   - Filtre les casques audio (HyperX Cloud, Logitech G-headset...)
- *     qui exposent un endpoint HID misdetected comme gamepad.
- *   - **Suppress les virtual pads ViGEm** quand le bridge Nexus Input
- *     tourne : le helper C# spawne un virtual Xbox 360 controller qui
- *     apparaît dans Gamepad API sous le nom "Xbox 360 Controller for
- *     Windows". Sans filtre, l'user qui branche une PS5 voyait
- *     "🟢 Xbox 360 Controller connectée" parce qu'on toaste sur la
- *     présence du virtual pad au lieu du physique (qui lui est cloaké
- *     par HidHide donc n'apparaît plus dans Gamepad API). Le bridge
- *     émet son propre toast "Nexus Input actif sur DualSense" qui est
- *     l'info utile, donc on skip le toast Gamepad-API pour les pads
- *     xbox quand le bridge est actif.
- *   - Dédup par id+index : un pad déjà annoncé n'est pas re-toasté
- *     même si `gamepadconnected` fire après le poll.
+ *   - Au mount : scan `getGamepads()` toutes les 600 ms pendant 6 s.
+ *     La Gamepad API ne fire `gamepadconnected` qu'après un user
+ *     gesture pad-side ; un pad branché silencieusement n'arriverait
+ *     jamais sans ce poll.
+ *   - À la connexion → toast "Contrôleur connecté" avec image manette
+ *   - À la déconnexion → toast "Contrôleur déconnecté" avec image
+ *   - Filtre les casques audio (HyperX Cloud, etc.).
+ *   - Suppress les virtual pads ViGEm quand le bridge tourne (sinon
+ *     on toaste sur notre propre virtual pad).
+ *   - Dédup par id+index pour éviter double-toast (poll + event).
  *
  * Branché dans AppLayout pour s'exécuter une seule fois au montage.
  */
 import { useEffect } from 'react'
-import { toast } from '@/stores/inAppToast.store'
+import { pickControllerImage } from '@/stores/controllerToast.store'
 import {
   detectVendor,
   shortControllerName,
-  type ControllerVendor,
 } from '@/types/controller.types'
 
 const AUDIO_KEYWORDS =
   /headset|cloud|audio|headphone|stinger|spectre|wireless audio|casque/i
-
-/** Emoji vendor — gardé court parce que le modèle est déjà très
- *  explicite (`Xbox 360 Controller`, `DualSense Wireless Controller`,
- *  `Pro Controller`). Préfixer en plus avec "Xbox " donnait
- *  "🟢 Xbox Xbox 360 Controller connectée" — doublon disgracieux. */
-function vendorEmoji(vendor: ControllerVendor): string {
-  switch (vendor) {
-    case 'xbox':
-      return '🟢'
-    case 'playstation':
-      return '🔵'
-    case 'nintendo':
-      return '🔴'
-    default:
-      return '🎮'
-  }
-}
 
 function padKey(id: string, index: number): string {
   return `${index}::${id}`
@@ -63,28 +42,47 @@ function padKey(id: string, index: number): string {
 export function useGamepadToast(): void {
   useEffect(() => {
     // Dédup : on garde la liste des pads déjà annoncés pour éviter
-    // qu'un même pad fasse 2 toasts (1 du poll initial + 1 du
-    // `gamepadconnected` qui peut fire plus tard).
+    // qu'un même pad fasse 2 toasts (1 du poll + 1 du `gamepadconnected`).
     const announced = new Set<string>()
 
-    // Track si le bridge Nexus Input tourne — sync au mount + suit
-    // les events bridge. Quand bridgeActive=true, on assume que TOUT
-    // pad vendor xbox détecté est notre virtual ViGEm (le bridge a
-    // cloaké le pad physique via HidHide, ne reste que le virtual).
-    // L'user PEUT avoir une vraie manette Xbox en plus, mais c'est
-    // un edge case ultra-rare (PS5 + Xbox en même temps). Le bridge
-    // émet déjà son propre toast "Nexus Input actif sur [modèle]"
-    // qui est l'info utile.
+    // Track si le bridge Nexus Input tourne — quand actif, le virtual
+    // ViGEm Xbox 360 se présente comme un pad Xbox dans Gamepad API.
+    // On suppress son toast (le bridge a son propre toast "Nexus Input
+    // actif sur DualSense" via inAppToast).
     let bridgeActive = false
 
     function isLikelyViGEmVirtual(id: string): boolean {
-      // ViGEm Xbox 360 virtual pad se présente exactement comme un
-      // vrai pad Xbox 360 dans la Gamepad API :
-      //   "Xbox 360 Controller for Windows (STANDARD GAMEPAD Vendor: 045e Product: 028e)"
-      // Pas moyen de distinguer "vraie Xbox 360" vs "virtual ViGEm".
-      // Heuristique : si le bridge tourne ET vendor=xbox, c'est notre
-      // virtual avec 99% de probabilité.
       return bridgeActive && detectVendor(id) === 'xbox'
+    }
+
+    /** Push une notif dans l'overlay window Steam-style. Le payload
+     *  matche le shape ToastPayload côté main. iconUrl résout
+     *  l'image manette correspondante depuis /public/controller-images/.
+     *  Comme l'overlay window est en file:// en prod, le path absolu
+     *  est intercepté par main.ts file:// asset interceptor + nexus://
+     *  handler (ASSET_PREFIXES inclut "controller-images"). */
+    function pushControllerToast(
+      status: 'connected' | 'disconnected',
+      id: string,
+    ): void {
+      const vendor = detectVendor(id)
+      const name = shortControllerName(id)
+      // En dev le path /controller-images/X.png résout sur le Vite
+      // dev server localhost:5173 → impossible depuis le toast
+      // overlay window (origine différente). En prod c'est un path
+      // file:// servi par l'asset interceptor. Donc on garde le
+      // path absolu — résolu par le navigateur en URL absolue à
+      // partir de l'origine du toast window (même origin que la
+      // main window, donc OK).
+      void window.nexus.toast?.push({
+        kind:
+          status === 'connected'
+            ? 'controller_connected'
+            : 'controller_disconnected',
+        title: name,
+        iconUrl: pickControllerImage(vendor, id),
+        durationMs: 5000,
+      })
     }
 
     function announceConnect(id: string, index: number) {
@@ -94,9 +92,7 @@ export function useGamepadToast(): void {
       const key = padKey(id, index)
       if (announced.has(key)) return
       announced.add(key)
-      const vendor = detectVendor(id)
-      const name = shortControllerName(id)
-      toast.success(`${vendorEmoji(vendor)} ${name} connectée`)
+      pushControllerToast('connected', id)
     }
 
     function announceDisconnect(id: string, index: number) {
@@ -105,8 +101,7 @@ export function useGamepadToast(): void {
       if (isLikelyViGEmVirtual(id)) return
       const key = padKey(id, index)
       announced.delete(key)
-      const name = shortControllerName(id)
-      toast.info(`${name} déconnectée`)
+      pushControllerToast('disconnected', id)
     }
 
     function onConnect(e: GamepadEvent) {
@@ -116,14 +111,10 @@ export function useGamepadToast(): void {
       announceDisconnect(e.gamepad?.id ?? '', e.gamepad?.index ?? -1)
     }
 
-    // Poll initial — la Gamepad API ne fire `gamepadconnected` que
-    // si l'user a appuyé sur un bouton DEPUIS l'ouverture de la page
-    // (sécurité fingerprinting Chrome). Donc un user qui branche sa
-    // manette AVANT de lancer le launcher voit son pad dans
-    // `navigator.getGamepads()` mais ne reçoit JAMAIS l'event.
-    // Solution : on poll au mount jusqu'à ce qu'on voit au moins 1
-    // pad, puis pendant 6 s pour ramasser les pads qui se sont
-    // énumérés tardivement (Bluetooth lent à pair, etc.).
+    // Poll initial — la Gamepad API ne fire `gamepadconnected` que si
+    // l'user a interagi avec le pad depuis l'ouverture de la page.
+    // Donc un user qui branche sa manette AVANT de lancer le launcher
+    // voit son pad dans `getGamepads()` mais ne reçoit jamais l'event.
     let pollCount = 0
     const MAX_POLLS = 10 // 10 × 600 ms = 6 s
     function poll() {
@@ -145,9 +136,8 @@ export function useGamepadToast(): void {
     window.addEventListener('gamepadconnected', onConnect)
     window.addEventListener('gamepaddisconnected', onDisconnect)
 
-    // Sync initial du status bridge + écoute les events bridge pour
-    // que isLikelyViGEmVirtual() ait la bonne info au moment où la
-    // Gamepad API émet un connect pour le virtual pad.
+    // Sync bridge status — quand actif, le toast pour les pads xbox
+    // est suppress (cf. isLikelyViGEmVirtual).
     let offBridge: (() => void) | null = null
     try {
       void window.nexus.controller.bridgeStatus().then((res) => {
@@ -157,13 +147,17 @@ export function useGamepadToast(): void {
         const evt = payload.event as string
         if (evt === 'connected') {
           bridgeActive = true
-        } else if (evt === 'disconnected' || evt === 'exited' || evt === 'stopped') {
+        } else if (
+          evt === 'disconnected' ||
+          evt === 'exited' ||
+          evt === 'stopped'
+        ) {
           bridgeActive = false
         }
       })
     } catch {
       /* nexus IPC indisponible (toast overlay, etc.) — pas de bridge
-         de toute façon dans ces contexts, donc safe d'ignorer */
+         de toute façon dans ces contextes */
     }
 
     return () => {

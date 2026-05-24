@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CheckCircle2, AlertCircle, CloudOff, CloudUpload } from 'lucide-react'
+import { CheckCircle2, AlertCircle, CloudOff, CloudUpload } from '@/lib/icons'
 import { useLibraryStore } from '@/stores/library.store'
 import { cn } from '@/utils/cn'
 

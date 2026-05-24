@@ -19,6 +19,17 @@
  */
 import type { SteamCategory } from '@/types/steam-meta.types'
 import { cn } from '@/utils/cn'
+// v0.5.1 — bascule des SVG inline custom (lucide-style line) vers les
+// icônes Heroicons + Bootstrap via le shim. Cohérence visuelle avec
+// le reste de l'app après migration lucide-react → heroicons.
+import {
+  BarChart3,
+  Gem,
+  Layers,
+  MessageSquare,
+  Trophy,
+  Wrench,
+} from '@/lib/icons'
 
 // Eager-import every PNG in the folder. Vite ships the URLs in the
 // final bundle (hashed for cache-busting) so this collapses to a
@@ -282,68 +293,21 @@ function labelFor(c: SteamCategory): string {
  * directly without dangerouslySetInnerHTML.
  */
 const FALLBACK_SVGS: Record<number, JSX.Element> = {
-  // Stats (11, 15) — bar chart
-  11: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <path d="M3 3v18h18" />
-      <rect x="7" y="13" width="3" height="5" />
-      <rect x="12" y="9" width="3" height="9" />
-      <rect x="17" y="5" width="3" height="13" />
-    </svg>
-  ),
-  15: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <path d="M3 3v18h18" />
-      <rect x="7" y="13" width="3" height="5" />
-      <rect x="12" y="9" width="3" height="9" />
-      <rect x="17" y="5" width="3" height="13" />
-    </svg>
-  ),
-  // SDK (16) — code brackets
-  16: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <polyline points="16 18 22 12 16 6" />
-      <polyline points="8 6 2 12 8 18" />
-    </svg>
-  ),
-  // Mods (19) — wrench
-  19: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-    </svg>
-  ),
-  // Leaderboards (25) — trophy podium
-  25: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <rect x="9" y="11" width="6" height="10" />
-      <rect x="3" y="14" width="6" height="7" />
-      <rect x="15" y="8" width="6" height="13" />
-      <path d="M12 8V3" />
-      <path d="M9 5h6" />
-    </svg>
-  ),
-  // Commentary (26) — message square
-  26: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      <path d="M8 9h8M8 13h5" />
-    </svg>
-  ),
-  // Trading Cards (29) — pair of overlapping cards
-  29: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <rect x="3" y="5" width="11" height="15" rx="1.5" transform="rotate(-8 8.5 12.5)" />
-      <rect x="10" y="4" width="11" height="15" rx="1.5" transform="rotate(6 15.5 11.5)" />
-    </svg>
-  ),
-  // SteamVR Collectibles (34) — gem
-  34: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-      <path d="M6 3h12l4 6-10 13L2 9z" />
-      <path d="M11 3 8 9l4 13 4-13-3-6" />
-      <path d="M2 9h20" />
-    </svg>
-  ),
+  // Stats (11, 15) — bar chart Heroicons
+  11: <BarChart3 className="w-full h-full" />,
+  15: <BarChart3 className="w-full h-full" />,
+  // SDK (16) — Heroicons WrenchScrewdriver (pas de CodeBracket dans le shim)
+  16: <Wrench className="w-full h-full" />,
+  // Mods (19) — Wrench Heroicons
+  19: <Wrench className="w-full h-full" />,
+  // Leaderboards (25) — Trophy Heroicons
+  25: <Trophy className="w-full h-full" />,
+  // Commentary (26) — MessageSquare Heroicons
+  26: <MessageSquare className="w-full h-full" />,
+  // Trading Cards (29) — Layers (cards empilées) Heroicons
+  29: <Layers className="w-full h-full" />,
+  // SteamVR Collectibles (34) — Gem Bootstrap Icons
+  34: <Gem className="w-full h-full" />,
 }
 
 interface SteamCategoryStripProps {

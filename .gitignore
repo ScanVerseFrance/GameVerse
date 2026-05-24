@@ -54,3 +54,16 @@ tools/nexus-input/dist/
 # Pas commité pour éviter de redistribuer un binaire third-party
 # dans le repo source — on le bundle UNIQUEMENT dans l'installer final.
 installer-extras/*.exe
+
+# Phase 2 overlay dev scratch — local IPC test client + offline frame dump
+__test_overlay.cjs
+scripts/test-overlay-flow.cjs
+scripts/test-overlay-flow.last.json
+test-yt-iframe/
+
+# nexus-overlay CMake build artifacts (régénérés par scripts/build-installer.mjs
+# avant electron-builder ; chaque build-<arch>/ pèse ~200 MB et contient des
+# embedded git repos pour imgui/minhook qui polluent le tree).
+tools/nexus-overlay/build/
+tools/nexus-overlay/build-x64/
+tools/nexus-overlay/build-x86/

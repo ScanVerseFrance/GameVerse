@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
-import { Play, Settings, Star, Clock, Gamepad2, Download, FolderCog, Package, Pin } from 'lucide-react'
+import { Play, Settings, Star, Clock, Download, FolderCog, Package, Pin } from '@/lib/icons'
 import { SteamLogo } from '@/components/library/PcScanWizard'
 import type { LibraryGame } from '@/types/library.types'
 import { Card } from '@/components/ui/Card'
 import { usePinnedStore } from '@/stores/pinned.store'
 import { cn } from '@/utils/cn'
+
+/** Cache module-level des Steam appids résolus depuis un titre de jeu.
+ *  Évite le flash 0.5s "portrait → header wide" quand on revient sur
+ *  la lib : la 2ème fois qu'on voit un jeu, l'appid est en cache, le
+ *  bon header est servi au premier render. Persiste pour la durée
+ *  de la session (purgé au reload de l'app). */
+const TITLE_APPID_CACHE = new Map<string, number>()
 
 interface LibraryCardProps {
   game: LibraryGame
@@ -16,6 +23,10 @@ interface LibraryCardProps {
    * — we just changed how it's surfaced in the UI. */
   onEdit: () => void
   onToggleFavorite: () => void
+  /** Disposition de la card. 'grid' = portrait 2:3 (Steam library_600x900,
+   *  par défaut). 'list' = capsule horizontale 460×215 (Steam header.jpg)
+   *  alignée avec le rendu catalogue. */
+  layout?: 'grid' | 'list'
 }
 
 /** Four states a library entry can be in regarding installability. The
@@ -112,7 +123,69 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
 }
 
-export function LibraryCard({ game, onPlay, onEdit, onToggleFavorite }: LibraryCardProps) {
+/**
+ * Hash déterministe d'un titre → couleur stable. Évite d'utiliser une
+ * couleur aléatoire qui changerait d'un render à l'autre, tout en
+ * donnant à chaque jeu sans cover une "identité visuelle" persistante.
+ * djb2-like, 32-bit, modulo 360 → angle hue.
+ */
+function titleHue(title: string): number {
+  let h = 5381
+  for (let i = 0; i < title.length; i++) {
+    h = ((h << 5) + h + title.charCodeAt(i)) | 0
+  }
+  return Math.abs(h) % 360
+}
+
+/**
+ * "Carte titre" placeholder rendue quand AUCUNE cover n'a pu être
+ * résolue (jeu unreleased, source sans coverUrl et résolveur Steam
+ * vide). Plus informatif qu'un Gamepad anonyme : gradient personnalisé
+ * + le titre lisible. Aligné sur Steam qui rend un capsule auto-généré
+ * quand un dev n'a pas uploadé d'art.
+ */
+function TitleCardPlaceholder({ title }: { title: string }): JSX.Element {
+  const hue = titleHue(title)
+  const hue2 = (hue + 35) % 360
+  // Découpe en lignes pour respirer dans la cover portrait. Coupe par
+  // mots quand possible ; pour les titres très longs, scale-down par CSS.
+  return (
+    <div
+      className="w-full h-full flex flex-col items-center justify-center relative overflow-hidden"
+      style={{
+        background: `linear-gradient(135deg, hsl(${hue}, 60%, 25%) 0%, hsl(${hue2}, 65%, 15%) 100%)`,
+      }}
+    >
+      {/* Pattern grid subtil pour éviter le "flat color" trop plat. */}
+      <div
+        aria-hidden
+        className="absolute inset-0 opacity-[0.07]"
+        style={{
+          backgroundImage:
+            'radial-gradient(circle at 1px 1px, white 1px, transparent 0)',
+          backgroundSize: '14px 14px',
+        }}
+      />
+      <p
+        className="relative z-10 px-3 text-center font-display font-bold text-white text-lg leading-tight tracking-tight"
+        style={{
+          textShadow: '0 2px 8px rgba(0,0,0,0.4)',
+          wordBreak: 'break-word',
+        }}
+      >
+        {title}
+      </p>
+    </div>
+  )
+}
+
+export function LibraryCard({
+  game,
+  onPlay,
+  onEdit,
+  onToggleFavorite,
+  layout = 'grid',
+}: LibraryCardProps) {
   const href = detailHref(game)
   const navigate = useNavigate()
   const isPinned = usePinnedStore((s) => s.pinned.has(game.id))
@@ -204,19 +277,63 @@ export function LibraryCard({ game, onPlay, onEdit, onToggleFavorite }: LibraryC
           : 'hover:border-accent-primary/30 hover:-translate-y-0.5'
       )}
     >
-      <div className="aspect-[3/4] relative bg-bg-tertiary overflow-hidden">
-        {game.coverUrl ? (
-          <img
-            src={game.coverUrl}
-            alt=""
-            className="w-full h-full object-cover transition-transform duration-500 ease-out-expo group-hover:scale-[1.06]"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-bg-tertiary to-bg-secondary">
-            <Gamepad2 className="w-10 h-10 text-fg-faint" />
-          </div>
-        )}
+      {/* aspect 2/3 = ratio Steam library_600x900 (600×900). Avant on
+          était à 3/4 (plus court) → top + bottom des covers Steam
+          étaient coupés. Le 2/3 fait que toute la cover rentre dans
+          le tile sans crop. */}
+      <div className="aspect-[2/3] relative bg-bg-tertiary overflow-hidden">
+        {(() => {
+          // Priorité du cover dans la lib (alignée avec JsonGamePage
+          // pour que la lib + la detail page affichent exactement le
+          // même art) :
+          //   1. userCoverUrl  → override manuel user (jamais écrasé)
+          //   2. Steam library_600x900.jpg via steamAppId → art officiel
+          //      Steam avec logo + branding (parité visuelle avec la
+          //      page detail qui utilise la même URL)
+          //   3. coverUrl → fallback json source / SGDB
+          //   4. placeholder gradient
+          // L'<img onError> walk la chaîne : si library_600x900 404
+          // (jeu non-Steam ou pas encore release) on retombe direct
+          // sur coverUrl.
+          const steamCover =
+            game.steamAppId && game.steamAppId > 0
+              ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${game.steamAppId}/library_600x900.jpg`
+              : null
+          const primary = game.userCoverUrl ?? steamCover ?? game.coverUrl
+          const fallback =
+            game.userCoverUrl && (steamCover ?? game.coverUrl)
+              ? steamCover ?? game.coverUrl
+              : steamCover && game.coverUrl
+                ? game.coverUrl
+                : null
+          if (!primary) {
+            // Aucune cover disponible (jeu unreleased type Battlefield 6,
+            // ou source sans cover). On rend une "carte titre" auto-
+            // générée : gradient déterministe selon le hash du titre +
+            // le titre du jeu en gros. Plus informatif qu'un gamepad
+            // anonyme, et chaque jeu garde une identité visuelle
+            // stable d'un re-render à l'autre.
+            return (
+              <TitleCardPlaceholder title={game.title} />
+            )
+          }
+          return (
+            <img
+              src={primary}
+              alt=""
+              className="w-full h-full object-cover transition-transform duration-500 ease-out-expo group-hover:scale-[1.06]"
+              loading="lazy"
+              onError={(e) => {
+                // Walk one step down the chain. Pas de loop infinie
+                // grâce au check src === fallback.
+                const img = e.currentTarget
+                if (fallback && img.src !== fallback) {
+                  img.src = fallback
+                }
+              }}
+            />
+          )
+        })()}
         <div className="absolute inset-0 bg-gradient-to-t from-bg-primary via-bg-primary/30 to-transparent opacity-50 group-hover:opacity-90 transition-opacity duration-300" />
 
         <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
@@ -350,14 +467,194 @@ export function LibraryCard({ game, onPlay, onEdit, onToggleFavorite }: LibraryC
     </Card>
   )
 
+  // ── Mode liste (capsule horizontale Steam header.jpg) ───────────
+  // Layout : cover wide à gauche (ratio 460×215 = 92:43) + bloc info
+  // à droite (titre + meta + bouton primaire). Parité visuelle avec
+  // le catalogue (cf. components/game/SteamCatalogueTile.tsx qui
+  // utilise un 230×107 — ici on prend un peu plus large pour avoir
+  // de la place pour les actions).
+  //
+  // Résolution du steamAppid en 2 passes — comme CurrentDownloadBanner :
+  //   1. game.steamAppId direct (déjà résolu côté backend pour la
+  //      plupart des entrées via le steam-apps backfill)
+  //   2. fallback search par titre via steamCatalogue (couvre les
+  //      vieilles entrées dont le backfill n'a pas encore tourné)
+  // Sans le step 2, des jeux comme Geometry Dash / Megabonk affichaient
+  // leur cover JSON (portrait) stretched en horizontal → moche.
+  // Priorité résolution appid → minimise le flash 0.5s :
+  //   1. game.steamAppId direct (résolu côté backend)
+  //   2. TITLE_APPID_CACHE module-level (résolu dans une session
+  //      précédente — pas de fetch nécessaire)
+  //   3. fallback async via steamCatalogue.search (introduit le flash
+  //      uniquement la 1ère fois qu'on voit ce titre)
+  const [resolvedAppid, setResolvedAppid] = useState<number | null>(() => {
+    if (game.steamAppId && game.steamAppId > 0) return game.steamAppId
+    const cached = TITLE_APPID_CACHE.get(game.title)
+    return cached ?? null
+  })
+  useEffect(() => {
+    if (layout !== 'list') return
+    if (game.steamAppId && game.steamAppId > 0) {
+      setResolvedAppid(game.steamAppId)
+      return
+    }
+    if (!game.title) return
+    // Cache hit → set sync, pas de fetch.
+    const cached = TITLE_APPID_CACHE.get(game.title)
+    if (cached) {
+      setResolvedAppid(cached)
+      return
+    }
+    let cancelled = false
+    void window.nexus.steamCatalogue
+      ?.search({ query: game.title, limit: 1 })
+      .then((res) => {
+        if (cancelled) return
+        if (res?.ok && res.rows.length > 0 && res.rows[0]) {
+          const appid = res.rows[0].appid
+          TITLE_APPID_CACHE.set(game.title, appid)
+          setResolvedAppid(appid)
+        }
+      })
+      .catch(() => {
+        /* fallback coverUrl */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [layout, game.steamAppId, game.title])
+  const steamHeader =
+    resolvedAppid && resolvedAppid > 0
+      ? `https://cdn.cloudflare.steamstatic.com/steam/apps/${resolvedAppid}/header.jpg`
+      : null
+  const listPrimary = game.userCoverUrl ?? steamHeader ?? game.coverUrl
+  const listFallback =
+    game.userCoverUrl && (steamHeader ?? game.coverUrl)
+      ? steamHeader ?? game.coverUrl
+      : steamHeader && game.coverUrl
+        ? game.coverUrl
+        : null
+
+  const cardInnerList = (
+    <Card
+      padding="none"
+      variant="glass"
+      className={cn(
+        'overflow-hidden group flex items-stretch gap-4 rounded-xl border border-glass-border transition-colors',
+        href
+          ? 'hover:border-accent-primary/50 hover:bg-[var(--surface-soft)] cursor-pointer'
+          : 'hover:border-accent-primary/30',
+      )}
+    >
+      <div className="relative shrink-0 w-[230px] aspect-[230/107] bg-bg-tertiary overflow-hidden">
+        {listPrimary ? (
+          <img
+            src={listPrimary}
+            alt=""
+            loading="lazy"
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={(e) => {
+              const img = e.currentTarget
+              if (listFallback && img.src !== listFallback) img.src = listFallback
+            }}
+          />
+        ) : (
+          <div className="absolute inset-0">
+            <TitleCardPlaceholder title={game.title} />
+          </div>
+        )}
+        {/* Pin badge top-right comme en grid mode */}
+        {isPinned && (
+          <div className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-accent-gradient flex items-center justify-center shadow-[0_2px_8px_-2px_rgba(124,92,255,0.6)]">
+            <Pin className="w-3 h-3 fill-current text-white" />
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0 flex items-center gap-3 pr-3 py-2.5">
+        <div className="flex-1 min-w-0">
+          <h3
+            className="font-display font-semibold text-sm text-fg-primary truncate"
+            title={game.title}
+          >
+            {game.title}
+          </h3>
+          <div className="flex items-center gap-2 text-[11px] text-fg-muted mt-0.5">
+            <Clock className="w-3 h-3" />
+            <span>{formatPlaytime(game.totalPlaytimeSeconds, game.lastPlayedAt)}</span>
+            {game.sizeBytes && game.sizeBytes > 0 && (
+              <>
+                <span>·</span>
+                <span className="font-mono">{formatBytes(game.sizeBytes)}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onToggleFavorite()
+            }}
+            className={cn(
+              'p-1.5 rounded-md transition-colors',
+              game.isFavorite
+                ? 'text-warning'
+                : 'text-fg-muted hover:text-fg-secondary',
+            )}
+            title={game.isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+            aria-label={game.isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+          >
+            <Star className={cn('w-4 h-4', game.isFavorite && 'fill-current')} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onEdit()
+            }}
+            className="p-1.5 rounded-md text-fg-muted hover:text-fg-secondary transition-colors"
+            title="Propriétés"
+            aria-label="Propriétés"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          <button
+            onClick={(e) => void handlePrimaryAction(e)}
+            disabled={game.isRunning}
+            className={cn(
+              'h-8 px-3 rounded-md text-xs font-semibold inline-flex items-center gap-1.5 transition-shadow',
+              game.isRunning
+                ? 'bg-success/15 text-success cursor-not-allowed'
+                : 'bg-accent-gradient text-white hover:shadow-glow',
+            )}
+          >
+            <PrimaryIcon className="w-3.5 h-3.5" />
+            {primaryLabel}
+          </button>
+        </div>
+      </div>
+    </Card>
+  )
+
+  const renderedInner = layout === 'list' ? cardInnerList : cardInner
+
   return (
-    <motion.div layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+    // `layout` prop retiré v0.5.1 : déclenche framer-motion FLIP layout
+    // recompute sur chaque changement de filter/sort → saccade visible
+    // sur la liste (7+ cards = ~7 recomputes parallèles). On garde juste
+    // un fade-in opacity rapide, qui ne touche pas au layout.
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.15 }}
+    >
       {href ? (
         <Link to={href} className="block" title={`Voir la page de ${game.title}`}>
-          {cardInner}
+          {renderedInner}
         </Link>
       ) : (
-        cardInner
+        renderedInner
       )}
     </motion.div>
   )

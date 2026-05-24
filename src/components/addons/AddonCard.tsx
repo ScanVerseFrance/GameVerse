@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Puzzle, RefreshCw, Trash2, Globe, Database } from 'lucide-react'
+import { Puzzle, RefreshCw, Trash2, Globe, Database } from '@/lib/icons'
 import type { InstalledAddon } from '@/types/addon.types'
 import { Card } from '@/components/ui/Card'
 import { Toggle } from '@/components/ui/Toggle'

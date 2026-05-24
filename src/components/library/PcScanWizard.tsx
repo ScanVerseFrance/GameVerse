@@ -10,7 +10,7 @@ import {
   ScanLine,
   Wand2,
   X,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { cn } from '@/utils/cn'
 import { useAuthStore } from '@/stores/auth.store'
 import { useLibraryStore } from '@/stores/library.store'

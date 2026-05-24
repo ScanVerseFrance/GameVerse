@@ -22,7 +22,7 @@
  * (1×1 ScanVerse, qui utilise indigo en dur ; on mappe sur le token
  * accent du thème actif pour respecter les 13 builtins Nexus).
  */
-import { Plus } from 'lucide-react'
+import { Plus } from '@/lib/icons'
 import { Card } from '@/components/ui/Card'
 import { useAuthStore } from '@/stores/auth.store'
 import {

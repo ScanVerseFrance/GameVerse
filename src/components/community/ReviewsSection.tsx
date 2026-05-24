@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Star, ChevronUp, ChevronDown, Trash2, Edit3, MessageSquare, Languages, Loader2 } from 'lucide-react'
+import { Star, ChevronUp, ChevronDown, Trash2, Edit3, MessageSquare, Languages, Loader2 } from '@/lib/icons'
 import type { Review } from '@/types/social.types'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'

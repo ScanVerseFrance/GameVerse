@@ -20,7 +20,17 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['better-sqlite3', 'webtorrent', 'electron'],
+              external: [
+                'better-sqlite3',
+                'webtorrent',
+                'electron',
+                // electron-overlay-window utilise node-gyp-build pour
+                // résoudre son .node natif via un walk-up depuis le
+                // fichier source. Si bundlé par Vite/Rollup, le walk
+                // part de dist-electron/ et ne trouve pas le prebuild
+                // dans node_modules → "No native build was found".
+                'electron-overlay-window',
+              ],
             },
           },
         },

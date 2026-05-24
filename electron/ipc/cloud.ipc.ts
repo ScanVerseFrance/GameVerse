@@ -503,6 +503,197 @@ export function registerCloudIpc(): void {
     }
   })
 
+  // ── Remote Play Together ─────────────────────────────────────────
+  // POST /v1/remote-play/invite : envoie une invitation Remote Play
+  // à un ami. Le backend cloud relay via WS au destinataire
+  // (envelope `remote_play:invite`). v0.5.1 Phase A — pas encore de
+  // streaming, juste l'UI + le signaling.
+  ipcMain.handle('cloud:remotePlayInvite', async (_e, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') {
+      return { ok: false, error: 'payload required' }
+    }
+    const p = payload as Record<string, unknown>
+    const toUserId = safeStr(p.toUserId, 64)
+    const gameTitle = safeStr(p.gameTitle, 256)
+    const gameId = safeStr(p.gameId, 256)
+    if (!toUserId || !gameTitle) {
+      return { ok: false, error: 'toUserId + gameTitle required' }
+    }
+    try {
+      return {
+        ok: true,
+        ...(await svc.passthroughJson('/v1/remote-play/invite', {
+          method: 'POST',
+          body: {
+            toUserId,
+            gameTitle,
+            gameId,
+            steamAppId:
+              typeof p.steamAppId === 'number' ? p.steamAppId : null,
+            coverUrl:
+              typeof p.coverUrl === 'string' ? safeStr(p.coverUrl, 1000) : null,
+          },
+        })),
+      }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
+  // Accept / decline une invitation Remote Play reçue. Cloud relay
+  // au sender via WS envelope `remote_play:response`.
+  ipcMain.handle(
+    'cloud:remotePlayRespond',
+    async (_e, fromUserId: unknown, accepted: unknown) => {
+      const uid = safeStr(fromUserId, 64)
+      if (!uid) return { ok: false, error: 'fromUserId required' }
+      try {
+        return {
+          ok: true,
+          ...(await svc.passthroughJson('/v1/remote-play/respond', {
+            method: 'POST',
+            body: { fromUserId: uid, accepted: !!accepted },
+          })),
+        }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
+    },
+  )
+
+  // ── Phase B — WebRTC signaling relay ──────────────────────────
+  // POST /v1/remote-play/signal : relay an offer / answer / ICE
+  // candidate payload to the target user. Cloud forwards as
+  // `remote_play:signal` WS envelope. Both peers exchange these
+  // until ICE completes and the RTCPeerConnection enters
+  // 'connected' state, then video starts flowing over P2P.
+  //
+  // Free-form payload — we don't try to validate SDP/candidate
+  // shape, just forward. Worst case a bogus payload breaks the
+  // negotiation and clients retry.
+  ipcMain.handle(
+    'cloud:remotePlaySignal',
+    async (_e, payload: unknown) => {
+      if (!payload || typeof payload !== 'object') {
+        return { ok: false, error: 'payload required' }
+      }
+      const p = payload as Record<string, unknown>
+      const toUserId   = safeStr(p.toUserId, 64)
+      const signalType = safeStr(p.signalType, 32)
+      if (!toUserId || !signalType) {
+        return { ok: false, error: 'toUserId + signalType required' }
+      }
+
+      // Solo Phase B test — local loopback. Both host+guest windows
+      // are spawned on the same machine ; signaling bypasses the
+      // cloud and is broadcast locally with swapped fromUserId so
+      // each PeerSession sees the "other peer's" messages.
+      //
+      // peerId convention :
+      //   host's peerId  = '__self_test_guest__'
+      //   guest's peerId = '__self_test_host__'
+      // Signal to '__self_test_guest__' must arrive with
+      // fromUserId='__self_test_host__' (the sender = host).
+      if (toUserId === '__self_test_host__' || toUserId === '__self_test_guest__') {
+        const fromUserId =
+          toUserId === '__self_test_host__'
+            ? '__self_test_guest__'
+            : '__self_test_host__'
+        svc.broadcastCloudEvent({
+          type: 'remote_play:signal',
+          data: {
+            fromUserId,
+            signalType,
+            payload: p.payload ?? null,
+          },
+        })
+        return { ok: true, loopback: true }
+      }
+
+      try {
+        return {
+          ok: true,
+          ...(await svc.passthroughJson('/v1/remote-play/signal', {
+            method: 'POST',
+            body: {
+              toUserId,
+              signalType,
+              payload: p.payload ?? null,
+            },
+          })),
+        }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message }
+      }
+    },
+  )
+
+  // Self-loopback pour tester Remote Play en solo (sans second compte).
+  // Émet les MÊMES envelopes `remote_play:invite` puis `remote_play:response`
+  // que le cloud broadcasterait, mais purement local. Ça permet de
+  // valider toute la chaîne UI (toast bell, panel state machine, etc.)
+  // sans avoir besoin qu'un ami soit en jeu côté serveur.
+  //
+  // Payload attendu : { fromUserId, fromName, gameTitle, gameId,
+  //                     steamAppId, coverUrl, accept, delayMs }
+  //   - fromUserId / fromName : identité simulée du sender (= moi)
+  //   - accept : si true, simule l'acceptation après delayMs (sinon
+  //     decline)
+  //   - delayMs : délai avant la réponse simulée (par défaut 1500)
+  ipcMain.handle(
+    'cloud:remotePlaySimulateLoopback',
+    async (_e, payload: unknown) => {
+      if (!payload || typeof payload !== 'object') {
+        return { ok: false, error: 'payload required' }
+      }
+      const p = payload as Record<string, unknown>
+      const fromUserId = safeStr(p.fromUserId, 64)
+      const fromName = safeStr(p.fromName, 64) ?? 'Moi (test)'
+      const gameTitle = safeStr(p.gameTitle, 256)
+      const gameId = safeStr(p.gameId, 256)
+      if (!fromUserId || !gameTitle) {
+        return { ok: false, error: 'fromUserId + gameTitle required' }
+      }
+      const accept = p.accept !== false
+      const delayMs =
+        typeof p.delayMs === 'number' && p.delayMs >= 0 && p.delayMs <= 30_000
+          ? Math.round(p.delayMs)
+          : 1500
+
+      // 1) Broadcast l'invite — App.tsx push un toast bell ; le panel
+      //    reste en `sending` (on n'a pas envoyé via le vrai backend).
+      svc.broadcastCloudEvent({
+        type: 'remote_play:invite',
+        data: {
+          fromUserId,
+          fromName,
+          gameTitle,
+          gameId,
+          steamAppId:
+            typeof p.steamAppId === 'number' ? p.steamAppId : null,
+          coverUrl:
+            typeof p.coverUrl === 'string' ? safeStr(p.coverUrl, 1000) : null,
+          loopback: true,
+        },
+      })
+
+      // 2) Après le délai, broadcast la réponse — le panel passe à
+      //    `accepted` / `declined`.
+      setTimeout(() => {
+        svc.broadcastCloudEvent({
+          type: 'remote_play:response',
+          data: {
+            fromUserId,
+            accepted: accept,
+            loopback: true,
+          },
+        })
+      }, delayMs)
+
+      return { ok: true, loopback: true, delayMs, accept }
+    },
+  )
+
   // ── Saves (HTTP-only routes — upload uses cloud-save.service.ts) ─
   ipcMain.handle('cloud:saveQuota', async () => {
     try {

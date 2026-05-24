@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Gamepad2, Users, CloudOff } from 'lucide-react'
+import { Gamepad2, Users, CloudOff } from '@/lib/icons'
 import { useCloudStore } from '@/stores/cloud.store'
 import { cn } from '@/utils/cn'
+import type { CloudActivity } from '@/types/cloud.types'
 
 /**
  * "Mes amis en jeu" — horizontal strip showing every friend whose
@@ -23,15 +24,81 @@ export function FriendsNowPlaying({
   const friends = useCloudStore((s) => s.friends)
   const presences = useCloudStore((s) => s.presences)
 
+  // Fallback : si la presence WS ne remonte pas (server > launcher
+  // version mismatch, ou richPresence loupé), on dérive le "now
+  // playing" depuis le fil d'activité — la dernière `game_launched`
+  // d'un ami dans les 30 dernières minutes compte comme "joue
+  // actuellement". Sans ça, Fahim qui joue Lego Marvel n'apparaît
+  // jamais dans la strip alors que ses events sont bien là.
+  const RECENT_PLAYING_WINDOW_MS = 30 * 60 * 1000
+  const [recentLaunches, setRecentLaunches] = useState<
+    Record<string, { gameTitle: string; coverUrl: string | null; ts: number }>
+  >({})
+
+  useEffect(() => {
+    if (status !== 'connected') return
+    let cancelled = false
+    void window.nexus.cloud.activityFeed(50).then((res) => {
+      if (cancelled) return
+      if (!res?.ok || !Array.isArray(res.items)) return
+      const out: Record<
+        string,
+        { gameTitle: string; coverUrl: string | null; ts: number }
+      > = {}
+      const cutoff = Date.now() - RECENT_PLAYING_WINDOW_MS
+      for (const a of res.items as CloudActivity[]) {
+        if (a.kind !== 'game_launched') continue
+        const ts = Date.parse(a.createdAt) || 0
+        if (ts < cutoff) continue
+        const p = (a.payload ?? {}) as Record<string, unknown>
+        const title = typeof p.title === 'string' ? p.title : null
+        if (!title) continue
+        const coverUrl =
+          typeof p.coverUrl === 'string' ? p.coverUrl : null
+        const existing = out[a.userId]
+        if (!existing || ts > existing.ts) {
+          out[a.userId] = { gameTitle: title, coverUrl, ts }
+        }
+      }
+      setRecentLaunches(out)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [status, friends.length])
+
   const playing = useMemo(() => {
-    return friends
-      .map((f) => ({ friend: f, presence: presences[f.id] ?? null }))
-      .filter(
-        (e) =>
-          e.presence?.status === 'in_game' &&
-          e.presence.richPresence?.gameTitle
-      )
-  }, [friends, presences])
+    const rows: Array<{
+      friend: (typeof friends)[number]
+      gameTitle: string
+      coverUrl: string | null
+    }> = []
+    for (const f of friends) {
+      const presence = presences[f.id] ?? null
+      // Source 1 : presence WS avec richPresence — chemin canonique.
+      if (
+        presence?.status === 'in_game' &&
+        presence.richPresence?.gameTitle
+      ) {
+        rows.push({
+          friend: f,
+          gameTitle: presence.richPresence.gameTitle,
+          coverUrl: presence.richPresence.coverUrl ?? null,
+        })
+        continue
+      }
+      // Source 2 : fallback activity feed — `game_launched` récent.
+      const recent = recentLaunches[f.id]
+      if (recent) {
+        rows.push({
+          friend: f,
+          gameTitle: recent.gameTitle,
+          coverUrl: recent.coverUrl,
+        })
+      }
+    }
+    return rows
+  }, [friends, presences, recentLaunches])
 
   if (status !== 'connected') {
     if (variant === 'compact') return null
@@ -64,8 +131,7 @@ export function FriendsNowPlaying({
         variant === 'horizontal' ? 'snap-x snap-mandatory' : ''
       )}
     >
-      {playing.map(({ friend, presence }) => {
-        const rp = presence!.richPresence!
+      {playing.map(({ friend, gameTitle, coverUrl }) => {
         return (
           <motion.div
             key={friend.id}
@@ -112,12 +178,12 @@ export function FriendsNowPlaying({
                 </p>
                 <p className="text-[11px] text-accent-secondary truncate inline-flex items-center gap-1">
                   <Gamepad2 className="w-3 h-3" />
-                  {rp.gameTitle}
+                  {gameTitle}
                 </p>
               </div>
-              {rp.coverUrl && (
+              {coverUrl && (
                 <img
-                  src={rp.coverUrl}
+                  src={coverUrl}
                   alt=""
                   className="shrink-0 w-9 h-12 rounded-sm object-cover border border-glass-border"
                 />

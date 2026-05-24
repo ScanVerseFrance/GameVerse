@@ -1,4 +1,4 @@
-import { Star } from 'lucide-react'
+import { Star } from '@/lib/icons'
 import { cn } from '@/utils/cn'
 
 interface StarRatingProps {

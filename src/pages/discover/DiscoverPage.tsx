@@ -7,7 +7,7 @@
  */
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Flame } from 'lucide-react'
+import { Sparkles, Flame } from '@/lib/icons'
 import { HeroSlideshow } from '@/components/discover/HeroSlideshow'
 import { CategoryButtons } from '@/components/discover/CategoryButtons'
 import { Steam250RowList } from '@/components/discover/Steam250RowList'

@@ -240,46 +240,60 @@ function loadYTApi(): Promise<YTNamespace> {
 }
 
 /**
- * Détecte si on est en runtime production (scheme custom `nexus://`)
- * ou en dev (http(s) — Vite). Le scheme détermine quel chemin de
- * lecture YouTube on utilise :
+ * Toujours true depuis v0.5.1 — le raw iframe avec postMessage offre
+ * exactement les mêmes capacités que la YT IFrame API JS (state events,
+ * volume granulaire, mute/unmute, seek, time tracking) SANS charger de
+ * script externe et SANS dépendre de l'origine du parent. Marche
+ * identique en dev (http://localhost) et en prod (nexus://).
  *
- *   - http(s)  → YT IFrame API JS (state events + volume granulaire)
- *   - nexus:// → raw iframe (les postMessage de la YT IFrame API
- *                échouent dans les deux sens à cause de
- *                l'asymétrie origin embed/parent : si on passe
- *                origin=http(s)://youtube, le browser drop les
- *                messages embed→parent parce que target origin
- *                ne match pas le parent réel (nexus://). Si on
- *                passe origin=nexus://, l'embed refuse le
- *                handshake parce que c'est pas http(s).)
+ * Anciennement on basculait entre YT.Player JS (dev) et raw iframe
+ * (prod) à cause de l'asymétrie origin de la YT JS API. Le nouveau
+ * raw iframe utilise des postMessage avec targetOrigin '*' donc ne
+ * dépend plus de l'origine.
  */
 function shouldUseRawIframe(): boolean {
-  if (typeof location === 'undefined') return false
-  return !/^https?:$/.test(location.protocol)
+  return true
 }
 
 /**
  * Crée un adapter qui mime l'interface YT.Player en utilisant un raw
- * iframe `<iframe src="https://www.youtube.com/embed/...?autoplay=1">`.
+ * iframe + postMessage commands (sans charger la YT IFrame API JS).
  *
- * Trade-offs vs YT IFrame API :
- *   + Marche en prod (scheme nexus://) sans postMessage handshake
- *   + Pas besoin de loader le JS YT (économie réseau)
- *   - Pas de contrôle granulaire du volume cross-origin → setVolume
- *     est no-op (Mute/unmute via Windows mixer ou volume slider de
- *     l'app qui n'affecte que les autres sons)
- *   - Pas de state events réels (PLAYING/PAUSED) → on simule
- *     "playing" tant que l'iframe est attaché au DOM
- *   - Pas de getCurrentTime/getDuration réels → on compte
- *     manuellement depuis le mount (suffisant pour le clip loop +
- *     l'affichage de la progress bar)
- *   - Mute toggle rebuild l'iframe (= restart de la lecture). Pas
- *     idéal mais l'user mute rarement.
+ * ── Stratégie clé : bulletproof autoplay ─────────────────────────
  *
- * onReady est résolu après 400 ms (laisse le temps à l'iframe de
- * commencer à charger). Le métadata est fetched via oEmbed
- * (`https://www.youtube.com/oembed`) qui ne nécessite pas d'API key.
+ * L'iframe est mounté avec `mute=1&autoplay=1&enablejsapi=1`. Le mute
+ * initial est CRUCIAL : Chrome autorise toujours l'autoplay muted (les
+ * vidéos sans son ne dérangent personne), mais bloque souvent
+ * l'autoplay avec son si l'user n'a pas interagi avec la page. En
+ * démarrant muted on garantit que la lecture commence ; ensuite on
+ * envoie `unMute` + `setVolume` via postMessage dès que l'iframe émet
+ * `onReady` ou `initialDelivery`. Résultat : la musique joue avec son
+ * en ~200 ms après le mount, sans demander un clic.
+ *
+ * Vérifié en boucle dans Chrome (test-yt-iframe/index.html) :
+ *   mount → MUTED 🔇 → onReady → postMessage unMute → UNMUTED 🔊 → playing
+ *
+ * ── postMessage API (au lieu de YT IFrame API JS) ────────────────
+ *
+ * Le YT embed expose une API via window.postMessage. Le protocole :
+ *   • Parent envoie : `{event:"listening",id:"X",channel:"widget"}`
+ *     pour s'enregistrer comme listener.
+ *   • Embed envoie : `{event:"onReady",...}`, `{event:"infoDelivery",
+ *     info:{playerState,muted,volume,currentTime,duration,...}}`, etc.
+ *   • Parent envoie commandes : `{event:"command",func:"playVideo",
+ *     args:""}`, `{event:"command",func:"setVolume",args:[80]}`, etc.
+ *
+ * targetOrigin est `*` côté embed → marche peu importe l'origine du
+ * parent (nexus:// inclus). Pas besoin de YT.Player JS du tout.
+ *
+ * ── Capacités ────────────────────────────────────────────────────
+ *   ✅ Autoplay garanti (muted → unmute auto)
+ *   ✅ Volume granulaire via postMessage setVolume
+ *   ✅ Mute/unMute via postMessage (pas de rebuild)
+ *   ✅ State events réels (playerState=1 → onPlaying, etc.)
+ *   ✅ Time tracking réel via infoDelivery
+ *   ⚠️ Seek = rebuild iframe (200 ms gap)
+ *   ⚠️ Pause = rebuild (YT pas de pause cross-origin sans JS API)
  */
 function createRawIframePlayer(
   container: HTMLElement,
@@ -287,16 +301,35 @@ function createRawIframePlayer(
   options: {
     clipStart: number
     clipEnd: number | null
+    /** Mute initial demandé par l'app (slider à 0 ou flag isMuted). */
     muted: boolean
+    /** Volume 0..100 cible une fois l'iframe ready (post-unmute). */
+    initialVolume: number
     onReady: (player: YTPlayer) => void
     onMetadata: (data: { title: string; author: string }) => void
+    /** Notifie le parent quand l'iframe entre vraiment en lecture. */
+    onPlaying: () => void
+    /** Notifie le parent quand l'iframe se pause / ENDED. */
+    onPaused: () => void
   },
 ): YTPlayer {
-  let { clipStart, clipEnd, muted } = options
+  let { clipStart, clipEnd } = options
+  // L'iframe démarre toujours mute=1 pour bypass autoplay block.
+  // Le mute "réel" demandé par l'user est dans userWantsMute — si false,
+  // on unmute via postMessage dès qu'on reçoit onReady.
+  let userWantsMute = options.muted
+  let currentVolume = Math.max(0, Math.min(100, Math.round(options.initialVolume)))
   let iframe: HTMLIFrameElement | null = null
-  let mountTimestamp = Date.now() / 1000
-  let elapsedAtMount = clipStart
   let userPaused = false
+  /** Dernier time/duration reçus via infoDelivery. Vrais valeurs YT,
+   *  pas estimées. Permet à getCurrentTime/getDuration de retourner
+   *  des vrais chiffres pour la progress bar. */
+  let lastTime = clipStart
+  let lastDuration = 0
+  /** Setté true après réception du 1er `onReady`. Bloque les commandes
+   *  postMessage avant que l'iframe soit ready (sinon elles sont
+   *  perdues). */
+  let isReady = false
 
   function buildSrc(): string {
     const params = new URLSearchParams({
@@ -307,18 +340,93 @@ function createRawIframePlayer(
       playsinline: '1',
       disablekb: '1',
       iv_load_policy: '3', // hide annotations
+      enablejsapi: '1',
+      // CRITIQUE : mute=1 initial → Chrome accepte l'autoplay.
+      // On unmute après onReady via postMessage si userWantsMute=false.
+      mute: '1',
       // Loop : YT exige `playlist={videoId}` pour activer loop sur
       // un seul track. Sans ça, loop=1 est ignoré.
       loop: '1',
       playlist: videoId,
-      mute: muted ? '1' : '0',
     })
     if (clipStart > 0) params.set('start', String(clipStart))
     if (clipEnd != null) params.set('end', String(clipEnd))
-    return `https://www.youtube-nocookie.com/embed/${videoId}?${params}`
+    // youtube.com (pas nocookie) — plus stable côté postMessage events
+    // et identique côté autoplay policy.
+    return `https://www.youtube.com/embed/${videoId}?${params}`
   }
 
-  function attach() {
+  function postCommand(func: string, args: unknown = ''): void {
+    if (!iframe?.contentWindow) return
+    try {
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func, args }),
+        '*',
+      )
+    } catch {
+      /* swallow — iframe peut être en train de naviguer */
+    }
+  }
+
+  function sendListening(): void {
+    if (!iframe?.contentWindow) return
+    try {
+      iframe.contentWindow.postMessage(
+        JSON.stringify({ event: 'listening', id: videoId, channel: 'widget' }),
+        '*',
+      )
+    } catch {
+      /* swallow */
+    }
+  }
+
+  function onYTMessage(e: MessageEvent): void {
+    if (!iframe || e.source !== iframe.contentWindow) return
+    const origin = e.origin || ''
+    if (!origin.includes('youtube')) return
+    let data: { event?: string; info?: Record<string, unknown> } | null = null
+    try {
+      data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
+    } catch {
+      return
+    }
+    if (!data || typeof data !== 'object') return
+    const evt = data.event
+    if (evt === 'onReady' || evt === 'initialDelivery') {
+      // L'iframe est ready → applique le state user (volume, unmute si
+      // demandé). Le mute par défaut était 1 pour passer l'autoplay
+      // block, maintenant on peut unmute.
+      if (!isReady) {
+        isReady = true
+        if (!userWantsMute) {
+          postCommand('unMute')
+        }
+        postCommand('setVolume', [currentVolume])
+        options.onReady(player)
+      }
+    } else if (evt === 'infoDelivery' && data.info) {
+      const info = data.info as {
+        playerState?: number
+        currentTime?: number
+        duration?: number
+        muted?: boolean
+        volume?: number
+      }
+      if (typeof info.currentTime === 'number') lastTime = info.currentTime
+      if (typeof info.duration === 'number' && info.duration > 0) {
+        lastDuration = info.duration
+      }
+      if (info.playerState === 1) {
+        // PLAYING
+        options.onPlaying()
+      } else if (info.playerState === 2 || info.playerState === 0) {
+        // PAUSED ou ENDED
+        options.onPaused()
+      }
+    }
+  }
+
+  function attach(): void {
     if (iframe) return
     iframe = document.createElement('iframe')
     iframe.allow = 'autoplay; encrypted-media'
@@ -333,10 +441,15 @@ function createRawIframePlayer(
     iframe.style.border = '0'
     iframe.src = buildSrc()
     container.appendChild(iframe)
-    mountTimestamp = Date.now() / 1000
+    isReady = false
+    // Le listening handshake peut être envoyé même avant onload — YT
+    // bufferise. On l'envoie plusieurs fois pour la robustesse.
+    window.setTimeout(() => sendListening(), 200)
+    window.setTimeout(() => sendListening(), 800)
+    window.setTimeout(() => sendListening(), 2000)
   }
 
-  function detach() {
+  function detach(): void {
     if (!iframe) return
     try {
       if (iframe.parentElement) iframe.parentElement.removeChild(iframe)
@@ -344,14 +457,17 @@ function createRawIframePlayer(
       /* swallow */
     }
     iframe = null
+    isReady = false
   }
 
-  // Mount immédiat avec autoplay → la musique commence à jouer.
+  // Listen GLOBALLY pour les messages YT. Bind une seule fois par
+  // adapter (cleanup dans destroy()).
+  window.addEventListener('message', onYTMessage)
+
+  // Mount immédiat.
   attach()
 
   // Fetch metadata via oEmbed (pas d'API key requise).
-  // www.youtube.com/oembed accepte l'origine nexus:// (corsEnabled
-  // sur notre scheme + corsAllowed côté YT).
   try {
     void fetch(
       `https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${encodeURIComponent(
@@ -369,76 +485,84 @@ function createRawIframePlayer(
         }
       })
       .catch(() => {
-        /* oEmbed CDN down ou bloqué — on garde le placeholder */
+        /* oEmbed bloqué — on garde le placeholder */
       })
   } catch {
     /* swallow */
   }
 
-  // Implémente l'interface YT.Player. Les méthodes sont best-effort
-  // — on rebuild l'iframe pour les changements qui nécessitent un
-  // nouveau src (clipStart/clipEnd/mute), et on no-op pour ce qu'on
-  // peut pas faire cross-origin (setVolume).
+  // Safety net : si l'iframe n'a jamais émis onReady (handshake bloqué
+  // par CSP, network slow, etc.) on appelle onReady avec un délai pour
+  // ne pas laisser le caller bloqué dans son `await new Promise`.
+  // Le player marche en lecture-seule à ce moment, mais au moins on
+  // ne bloque pas la UI.
+  window.setTimeout(() => {
+    if (!isReady) {
+      isReady = true
+      options.onReady(player)
+    }
+  }, 3000)
+
   const player: YTPlayer = {
     playVideo() {
       userPaused = false
-      attach()
+      if (isReady) {
+        postCommand('playVideo')
+      } else {
+        attach()
+      }
     },
     pauseVideo() {
       userPaused = true
-      // Sauve l'elapsed local avant de détacher pour que le resume
-      // continue à peu près au bon endroit (best-effort).
-      elapsedAtMount =
-        elapsedAtMount + (Date.now() / 1000 - mountTimestamp)
-      detach()
+      if (isReady) {
+        postCommand('pauseVideo')
+      }
     },
     stopVideo() {
       userPaused = true
-      elapsedAtMount = clipStart
       detach()
     },
     seekTo(seconds: number) {
-      // Pour seek, on rebuild l'iframe avec start=seconds. Pas idéal
-      // (interruption de 100-300 ms) mais c'est la seule option
-      // cross-origin.
       const target = Math.max(0, Math.floor(seconds))
-      clipStart = target
-      elapsedAtMount = target
-      detach()
-      if (!userPaused) attach()
+      lastTime = target
+      if (isReady) {
+        postCommand('seekTo', [target, true])
+      } else {
+        clipStart = target
+        detach()
+        if (!userPaused) attach()
+      }
     },
-    setVolume() {
-      // Cross-origin iframe : on peut pas régler le volume sans
-      // postMessage handshake. No-op silencieux. L'user peut
-      // ajuster via le Windows volume mixer ou couper avec mute.
+    setVolume(v: number) {
+      const clamped = Math.max(0, Math.min(100, Math.round(v)))
+      currentVolume = clamped
+      if (isReady) {
+        postCommand('setVolume', [clamped])
+        if (clamped === 0 && !userWantsMute) {
+          userWantsMute = true
+          postCommand('mute')
+        } else if (clamped > 0 && userWantsMute) {
+          userWantsMute = false
+          postCommand('unMute')
+        }
+      }
     },
     mute() {
-      if (muted) return
-      muted = true
-      // Save elapsed before rebuilding
-      const elapsed = elapsedAtMount + (Date.now() / 1000 - mountTimestamp)
-      clipStart = Math.floor(elapsed)
-      elapsedAtMount = clipStart
-      detach()
-      if (!userPaused) attach()
+      userWantsMute = true
+      if (isReady) postCommand('mute')
     },
     unMute() {
-      if (!muted) return
-      muted = false
-      const elapsed = elapsedAtMount + (Date.now() / 1000 - mountTimestamp)
-      clipStart = Math.floor(elapsed)
-      elapsedAtMount = clipStart
-      detach()
-      if (!userPaused) attach()
+      userWantsMute = false
+      if (isReady) {
+        postCommand('unMute')
+        postCommand('setVolume', [currentVolume])
+      }
     },
     getCurrentTime() {
-      if (userPaused) return elapsedAtMount
-      return elapsedAtMount + (Date.now() / 1000 - mountTimestamp)
+      return lastTime
     },
     getDuration() {
-      // Pas accessible cross-origin. On retourne 0 → la progress bar
-      // tombera en mode "infini" mais ne crashera pas. Le clip end
-      // (si défini) sert de duration fictive pour la barre.
+      if (lastDuration > 0) return lastDuration
       if (clipEnd != null) return clipEnd
       return 0
     },
@@ -446,15 +570,10 @@ function createRawIframePlayer(
       return { title: 'YouTube', author: '', video_id: videoId }
     },
     destroy() {
+      window.removeEventListener('message', onYTMessage)
       detach()
     },
   }
-
-  // Fire onReady après un court délai → laisse le temps à l'iframe
-  // de commencer à charger, et au state du parent de finir son set.
-  // Sans ce délai, le caller pourrait essayer d'appeler playVideo()
-  // pendant qu'on attach déjà l'iframe (no-op mais bruyant).
-  window.setTimeout(() => options.onReady(player), 400)
 
   return player
 }
@@ -757,14 +876,18 @@ export function MusicProvider({ children }: { children: ReactNode }) {
             clipStart,
             clipEnd,
             muted: isMuted,
+            // Volume cible une fois l'iframe ready (le mute=1 initial
+            // est interne au raw player pour bypass autoplay block).
+            initialVolume: Math.round(volume * 100),
             onReady: () => {
-              // L'iframe est attaché, on assume "playing" — pas de
-              // state event réel cross-origin, donc on signale au
-              // consumer (MiniPlayer) que la musique tourne pour qu'il
-              // affiche le bouton Pause + commence le ticker.
-              setIsPlaying(true)
+              // Resolve la promise du caller. L'event onPlaying
+              // ci-dessous mettra setIsPlaying(true) quand YT confirme
+              // vraiment qu'il joue. Ne PAS set true ici sinon on
+              // affiche "playing" alors qu'on est encore en buffering.
               resolve()
             },
+            onPlaying: () => setIsPlaying(true),
+            onPaused: () => setIsPlaying(false),
             onMetadata: (data) => {
               if (data.title) {
                 setCurrentTrack((prev) =>

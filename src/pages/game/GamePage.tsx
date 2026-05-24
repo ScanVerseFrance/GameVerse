@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, AlertCircle, Globe } from 'lucide-react'
+import { ArrowLeft, AlertCircle, Globe } from '@/lib/icons'
 import { useAddonStore } from '@/stores/addon.store'
 import { Card } from '@/components/ui/Card'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'

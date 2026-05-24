@@ -34,7 +34,7 @@ import {
   Wifi,
   Users,
   Package,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { motion } from 'framer-motion'
 import { useArtworkStore } from '@/stores/artwork.store'
 import { parseGameTitle } from '@/utils/title-parse'

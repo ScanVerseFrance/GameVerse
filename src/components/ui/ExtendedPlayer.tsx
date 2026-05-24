@@ -31,7 +31,7 @@
  */
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Play, Pause, Volume2, VolumeX, X, Music } from 'lucide-react'
+import { Play, Pause, Volume2, VolumeX, X, Music } from '@/lib/icons'
 import { useMusic } from '@/context/MusicContext'
 import { PROFILE_EFFECTS_BY_ID, type ProfileEffect } from '@/config/profileCosmetics'
 

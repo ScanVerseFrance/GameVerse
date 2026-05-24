@@ -8,7 +8,7 @@ import {
   CheckCircle2,
   UserPlus,
   LogIn,
-} from 'lucide-react'
+} from '@/lib/icons'
 import { useCloudStore } from '@/stores/cloud.store'
 import { cn } from '@/utils/cn'
 

@@ -17,7 +17,7 @@
  */
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Sparkles, Wrench, Paintbrush, AlertTriangle, X } from 'lucide-react'
+import { Sparkles, Wrench, Paintbrush, AlertTriangle, X } from '@/lib/icons'
 import {
   CHANGELOG,
   getUnseenEntries,
