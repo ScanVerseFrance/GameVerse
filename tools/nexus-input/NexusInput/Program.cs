@@ -34,6 +34,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -170,6 +171,18 @@ internal static class Program
                     case "input":
                         if (doc.RootElement.TryGetProperty("report", out var repEl))
                             HandleRemotePlayInput(repEl);
+                        break;
+                    // v0.5.3 — Remote Play keyboard + mouse routing.
+                    // Same WebRTC pipeline as gamepad : guest captures
+                    // KeyboardEvent / MouseEvent, sends via data channel,
+                    // host forwards to this helper via stdin. We inject
+                    // through Win32 SendInput so it lands in whatever
+                    // window currently has focus.
+                    case "key":
+                        HandleRemotePlayKey(doc.RootElement);
+                        break;
+                    case "mouse":
+                        HandleRemotePlayMouse(doc.RootElement);
                         break;
                 }
             }
@@ -979,6 +992,203 @@ internal static class Program
         Console.WriteLine(json);
         Console.Out.Flush();
     }
+
+    // ── v0.5.3 — Remote Play keyboard + mouse routing ────────────────
+    //
+    // Expects JSON shape :
+    //   key   : { cmd:"key",   code:<int VK>, down:<bool>, ext:<bool?> }
+    //   mouse : { cmd:"mouse", kind:"move|button|wheel",
+    //             dx:<int?>, dy:<int?>, button:<"left|right|middle|x1|x2"?>,
+    //             down:<bool?>, delta:<int?> }
+    //
+    // We use Win32 SendInput (user32.dll). For keys we pass the
+    // virtual-key code from the guest renderer (already mapped on the
+    // JS side from KeyboardEvent.code → VK_*). For mouse we use
+    // MOUSEEVENTF_MOVE relative deltas (works in pointer-locked games
+    // which is the common case for FPS / driving games during Remote
+    // Play).
+    //
+    // SECURITY note : SendInput injects into the foreground window. If
+    // the host has the launcher in foreground (e.g. before tabbing into
+    // the game), guest input could affect launcher UI. The host
+    // renderer only enables the K+M forwarder after the user explicitly
+    // confirmed they're back in the game — but we still gate via the
+    // remotePlay.enableKbm setting at the IPC layer as a second fence.
+    private static void HandleRemotePlayKey(JsonElement el)
+    {
+        try
+        {
+            ushort code = el.TryGetProperty("code", out var c) ? (ushort)c.GetInt32() : (ushort)0;
+            bool down = el.TryGetProperty("down", out var d) && d.ValueKind == JsonValueKind.True;
+            bool ext = el.TryGetProperty("ext", out var e) && e.ValueKind == JsonValueKind.True;
+            if (code == 0) return;
+
+            uint flags = 0;
+            if (!down) flags |= KEYEVENTF_KEYUP;
+            if (ext) flags |= KEYEVENTF_EXTENDEDKEY;
+
+            var input = new INPUT
+            {
+                type = INPUT_KEYBOARD,
+                U = new InputUnion
+                {
+                    ki = new KEYBDINPUT
+                    {
+                        wVk = code,
+                        wScan = 0,
+                        dwFlags = flags,
+                        time = 0,
+                        dwExtraInfo = IntPtr.Zero,
+                    }
+                }
+            };
+            var inputs = new[] { input };
+            SendInput(1, inputs, Marshal.SizeOf<INPUT>());
+        }
+        catch (Exception ex)
+        {
+            Emit("log", new { level = "warn", msg = $"key inject failed: {ex.Message}" });
+        }
+    }
+
+    private static void HandleRemotePlayMouse(JsonElement el)
+    {
+        try
+        {
+            string kind = el.TryGetProperty("kind", out var k) ? (k.GetString() ?? "") : "";
+            var mi = new MOUSEINPUT
+            {
+                dx = 0,
+                dy = 0,
+                mouseData = 0,
+                dwFlags = 0,
+                time = 0,
+                dwExtraInfo = IntPtr.Zero,
+            };
+            switch (kind)
+            {
+                case "move":
+                    mi.dx = el.TryGetProperty("dx", out var dxp) ? dxp.GetInt32() : 0;
+                    mi.dy = el.TryGetProperty("dy", out var dyp) ? dyp.GetInt32() : 0;
+                    mi.dwFlags = MOUSEEVENTF_MOVE;
+                    break;
+                case "button":
+                    bool down = el.TryGetProperty("down", out var db) && db.ValueKind == JsonValueKind.True;
+                    string btn = el.TryGetProperty("button", out var bp) ? (bp.GetString() ?? "") : "";
+                    switch (btn)
+                    {
+                        case "left":
+                            mi.dwFlags = down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
+                            break;
+                        case "right":
+                            mi.dwFlags = down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP;
+                            break;
+                        case "middle":
+                            mi.dwFlags = down ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_MIDDLEUP;
+                            break;
+                        case "x1":
+                            mi.dwFlags = down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP;
+                            mi.mouseData = XBUTTON1;
+                            break;
+                        case "x2":
+                            mi.dwFlags = down ? MOUSEEVENTF_XDOWN : MOUSEEVENTF_XUP;
+                            mi.mouseData = XBUTTON2;
+                            break;
+                        default: return;
+                    }
+                    break;
+                case "wheel":
+                    int delta = el.TryGetProperty("delta", out var dp) ? dp.GetInt32() : 0;
+                    if (delta == 0) return;
+                    mi.dwFlags = MOUSEEVENTF_WHEEL;
+                    // Convention : positive = wheel forward (away from
+                    // user). Browsers use opposite sign for deltaY (down
+                    // = positive), so the JS side flips before sending.
+                    mi.mouseData = (uint)delta;
+                    break;
+                default: return;
+            }
+            var input = new INPUT
+            {
+                type = INPUT_MOUSE,
+                U = new InputUnion { mi = mi },
+            };
+            var inputs = new[] { input };
+            SendInput(1, inputs, Marshal.SizeOf<INPUT>());
+        }
+        catch (Exception ex)
+        {
+            Emit("log", new { level = "warn", msg = $"mouse inject failed: {ex.Message}" });
+        }
+    }
+
+    // ── Win32 P/Invoke for SendInput ────────────────────────────────
+    private const int INPUT_MOUSE = 0;
+    private const int INPUT_KEYBOARD = 1;
+
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+    private const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+
+    private const uint MOUSEEVENTF_MOVE = 0x0001;
+    private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+    private const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
+    private const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
+    private const uint MOUSEEVENTF_XDOWN = 0x0080;
+    private const uint MOUSEEVENTF_XUP = 0x0100;
+    private const uint MOUSEEVENTF_WHEEL = 0x0800;
+
+    private const uint XBUTTON1 = 0x0001;
+    private const uint XBUTTON2 = 0x0002;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HARDWAREINPUT
+    {
+        public uint uMsg;
+        public ushort wParamL;
+        public ushort wParamH;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [FieldOffset(0)] public MOUSEINPUT mi;
+        [FieldOffset(0)] public KEYBDINPUT ki;
+        [FieldOffset(0)] public HARDWAREINPUT hi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public int type;
+        public InputUnion U;
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 }
 
 /// Mirror du ControllerConfig côté renderer. Tout l'état que le

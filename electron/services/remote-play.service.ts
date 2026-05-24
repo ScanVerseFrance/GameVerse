@@ -35,6 +35,7 @@ import { BrowserWindow, screen } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { debugLog } from './debug-log.service'
+import { getAppSettings } from './app-settings.service'
 
 // Pipe all console messages from a remote-play window into the main
 // debug log so we can diagnose WebRTC handshake issues without
@@ -129,13 +130,25 @@ export function openHostWindow(
   })
   pipeConsoleToDebugLog(hostWindow, 'remote-play-host')
 
+  // Snapshot user prefs at session-start so the host gets a stable
+  // configuration for its whole lifetime. The user can change quality
+  // for the NEXT session via settings ; live re-negotiation would
+  // require a renegotiate round-trip and isn't worth the complexity.
+  const s = getAppSettings()
+  const quality = s.remotePlay?.quality ?? 'medium'
+  const enableKbm = s.remotePlay?.enableKbm === true ? '1' : '0'
+  const enableMic = s.remotePlay?.enableMic === true ? '1' : '0'
+
   const url = buildUrl('remote-play-host', {
     peerId: peerUserId,
     gameId: game.gameId,
     gameTitle: game.gameTitle,
     steamAppId: String(game.steamAppId ?? ''),
+    quality,
+    kbm: enableKbm,
+    mic: enableMic,
   })
-  debugLog('remote-play', 'opening host window', { peerUserId, url })
+  debugLog('remote-play', 'opening host window', { peerUserId, url, quality })
   void hostWindow.loadURL(url)
 }
 
@@ -194,11 +207,14 @@ export function openGuestWindow(
   })
   pipeConsoleToDebugLog(guestWindow, 'remote-play-guest')
 
+  const sg = getAppSettings()
   const url = buildUrl('remote-play-guest', {
     peerId: peerUserId,
     gameId: game.gameId,
     gameTitle: game.gameTitle,
     steamAppId: String(game.steamAppId ?? ''),
+    kbm: sg.remotePlay?.enableKbm === true ? '1' : '0',
+    mic: sg.remotePlay?.enableMic === true ? '1' : '0',
   })
   debugLog('remote-play', 'opening guest window', { peerUserId, url })
   void guestWindow.loadURL(url)

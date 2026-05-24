@@ -2030,6 +2030,58 @@ function GameLaunchSection() {
         onToggle={(v) => void updateApp({ nexusInput: { disableHidHide: v } })}
       />
 
+      {/* ── Overlay in-game (v0.5.3) ──────────────────────────────── */}
+      <div className="mt-8 mb-3">
+        <h3 className="text-sm font-semibold uppercase tracking-widest text-fg-secondary">
+          Overlay in-game
+        </h3>
+      </div>
+
+      <OverlayHotkeyCard
+        currentChord={appSettings?.overlay?.hotkey ?? 'Shift+Tab'}
+        onChange={(chord) => void updateApp({ overlay: { hotkey: chord } })}
+      />
+
+      <GameOptionCard
+        title="Skip auto sur jeux anti-cheat (recommandé)"
+        description="Détecte EasyAntiCheat / BattlEye / Vanguard / Ricochet dans le dossier du jeu et n'injecte PAS l'overlay sur ces titres. Décoche à tes risques — l'injection sur jeu compétitif peut déclencher un ban kernel."
+        enabled={appSettings?.overlay?.skipAntiCheat !== false}
+        onToggle={(v) => void updateApp({ overlay: { skipAntiCheat: v } })}
+      />
+
+      <GameOptionCard
+        title="Compteur FPS in-game"
+        description="Affiche un petit FPS counter dans un coin pendant le jeu (nécessite l'overlay DLL injecté). Wired pour v0.5.4 — l'option est sauvegardée mais le rendu HUD natif arrive avec le prochain build DLL."
+        enabled={appSettings?.overlay?.showFps === true}
+        onToggle={(v) => void updateApp({ overlay: { showFps: v } })}
+      />
+
+      {/* ── Remote Play Together (v0.5.3) ────────────────────────── */}
+      <div className="mt-8 mb-3">
+        <h3 className="text-sm font-semibold uppercase tracking-widest text-fg-secondary">
+          Remote Play Together
+        </h3>
+      </div>
+
+      <RemotePlayQualityCard
+        current={appSettings?.remotePlay?.quality ?? 'medium'}
+        onChange={(q) => void updateApp({ remotePlay: { quality: q } })}
+      />
+
+      <GameOptionCard
+        title="Transmettre clavier + souris à l'hôte"
+        description="L'invité peut utiliser clavier + souris en plus de la manette. Utile pour les jeux couch coop qui imposent clavier en P2 (Stardew, Don't Starve…). Ferme + relance la session Remote Play après changement."
+        enabled={appSettings?.remotePlay?.enableKbm === true}
+        onToggle={(v) => void updateApp({ remotePlay: { enableKbm: v } })}
+      />
+
+      <GameOptionCard
+        title="Activer le micro de l'invité"
+        description="L'invité partage son micro avec l'hôte — voix grand-public via le pipeline WebRTC, sans Discord. L'invité doit l'autoriser de son côté quand on ouvre la session."
+        enabled={appSettings?.remotePlay?.enableMic === true}
+        onToggle={(v) => void updateApp({ remotePlay: { enableMic: v } })}
+      />
+
       {/* Astuces — équivalent du panneau bleu en bas du tab Lecteur
           ScanVerse. */}
       <Card padding="md" className="mt-6">
@@ -2093,6 +2145,123 @@ function GameOptionCard({
           </span>
           {enabled ? 'Activé' : 'Désactivé'}
         </button>
+      </div>
+    </Card>
+  )
+}
+
+// ── v0.5.3 — Settings helpers : overlay hotkey + RP quality ──────────
+
+/** Card with a single input for the overlay hotkey chord.
+ *  Validates against Electron's accelerator format on blur and falls
+ *  back to the previous value if the entry is malformed. */
+function OverlayHotkeyCard({
+  currentChord,
+  onChange,
+}: {
+  currentChord: string
+  onChange: (chord: string) => void
+}) {
+  const [draft, setDraft] = useState(currentChord)
+  useEffect(() => { setDraft(currentChord) }, [currentChord])
+  const valid = isValidAccelerator(draft)
+  return (
+    <Card padding="md" className="mt-2">
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-semibold text-fg-primary">
+          Raccourci overlay
+        </span>
+        <span className="text-xs text-fg-secondary">
+          Combinaison clavier qui ouvre/ferme l'overlay in-game. Format
+          Electron accelerator : <code>Shift+Tab</code>, <code>Ctrl+Alt+O</code>,
+          <code>F11</code>… Si la combo est déjà prise par une autre
+          app, l'overlay tombe automatiquement sur <code>Shift+F11</code>.
+        </span>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            if (valid && draft !== currentChord) onChange(draft)
+            else setDraft(currentChord)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            if (e.key === 'Escape') { setDraft(currentChord); (e.target as HTMLInputElement).blur() }
+          }}
+          spellCheck={false}
+          className="rounded-md border border-border bg-bg-secondary px-3 py-2 text-sm font-mono text-fg-primary outline-none focus:border-accent-primary"
+          style={{ minWidth: 200 }}
+        />
+        {!valid && (
+          <span className="text-xs text-rose-400">Format invalide</span>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+/** Returns true if `s` looks like a plausible Electron accelerator.
+ *  We don't try to fully validate (Electron's parser is the source of
+ *  truth) — just reject obviously broken inputs. */
+function isValidAccelerator(s: string): boolean {
+  if (!s || s.length > 40) return false
+  // Must contain only the modifier keywords, single chars, or function
+  // keys, joined by "+". Loose grammar — Electron does its own parse.
+  return /^([A-Za-z0-9]+\+)*[A-Za-z0-9]+$/.test(s.trim())
+}
+
+/** 3-button segmented control for Remote Play quality preset. */
+function RemotePlayQualityCard({
+  current,
+  onChange,
+}: {
+  current: 'low' | 'medium' | 'high'
+  onChange: (q: 'low' | 'medium' | 'high') => void
+}) {
+  const options: Array<{
+    key: 'low' | 'medium' | 'high'
+    label: string
+    detail: string
+  }> = [
+    { key: 'low',    label: 'Bas',     detail: '480p · 24fps · 1.2 Mbps' },
+    { key: 'medium', label: 'Moyen',   detail: '720p · 30fps · 3 Mbps' },
+    { key: 'high',   label: 'Élevé',   detail: '1080p · 60fps · 8 Mbps' },
+  ]
+  return (
+    <Card padding="md" className="mt-2">
+      <div className="flex flex-col gap-1">
+        <span className="text-sm font-semibold text-fg-primary">
+          Qualité de streaming
+        </span>
+        <span className="text-xs text-fg-secondary">
+          Preset appliqué à la prochaine session Remote Play. L'encodeur
+          s'ajuste ensuite automatiquement dans la fenêtre du preset
+          selon la bande passante mesurée. Bas = mobile/hotspot, Moyen
+          = recommandé, Élevé = LAN uniquement.
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {options.map((o) => {
+          const active = current === o.key
+          return (
+            <button
+              key={o.key}
+              onClick={() => onChange(o.key)}
+              className={
+                'rounded-md border px-3 py-3 text-left transition ' +
+                (active
+                  ? 'border-accent-primary bg-accent-primary/10 text-fg-primary'
+                  : 'border-border bg-bg-secondary text-fg-secondary hover:border-accent-primary/40')
+              }
+            >
+              <div className="text-sm font-semibold">{o.label}</div>
+              <div className="mt-1 text-[11px] text-fg-secondary">{o.detail}</div>
+            </button>
+          )
+        })}
       </div>
     </Card>
   )

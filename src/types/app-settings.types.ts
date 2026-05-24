@@ -79,6 +79,44 @@ export interface AppSettings {
      *  expérience optimale). */
     disableHidHide?: boolean
   }
+  /** In-game overlay tunings. */
+  overlay?: {
+    /** Electron-accelerator string for the toggle hotkey (e.g.
+     *  "Shift+Tab", "F11", "Ctrl+Alt+O"). Default: "Shift+Tab".
+     *  Conflict resolution : if globalShortcut.register fails (another
+     *  app/game owns the chord) we fall back to "Shift+F11" silently. */
+    hotkey?: string
+    /** Game-IDs the user has explicitly disabled the overlay for. The
+     *  DLL is never injected into these processes. Use case : the user
+     *  reports a crash on a specific title or the game is anti-cheat-
+     *  sensitive and they don't want even an attempt. */
+    disabledGameIds?: string[]
+    /** When true, the injector probes the target process for known
+     *  anti-cheat modules (EasyAntiCheat, BattlEye, Vanguard, Denuvo
+     *  Anti-Tamper) before injecting and skips automatically. Default:
+     *  true — better safe than ban. Users can disable for testing. */
+    skipAntiCheat?: boolean
+    /** Show a small FPS counter HUD in the corner of every game even
+     *  when the overlay menu is closed. Default: false. */
+    showFps?: boolean
+  }
+  /** Remote Play Together — quality preset + experimental flags. */
+  remotePlay?: {
+    /** Encoder preset applied to the host video track.
+     *  - low    : 854×480 @ 24fps, 1.2 Mbps  (slow connection, mobile hotspot)
+     *  - medium : 1280×720 @ 30fps, 3 Mbps   (default — balanced)
+     *  - high   : 1920×1080 @ 60fps, 8 Mbps  (LAN-quality only)
+     */
+    quality?: 'low' | 'medium' | 'high'
+    /** Send keyboard + mouse events from guest to host alongside the
+     *  gamepad data. Disabled by default because the host-side input
+     *  injection uses NexusInput.exe extras which may not be installed.
+     *  Auto-disabled at runtime if the bridge reports unavailable. */
+    enableKbm?: boolean
+    /** Forward the guest microphone to the host (push-to-talk style).
+     *  Off by default — the user must opt in to share their mic. */
+    enableMic?: boolean
+  }
 }
 
 export interface SystemMetrics {

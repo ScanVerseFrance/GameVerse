@@ -1188,6 +1188,12 @@ export interface NexusAPI {
       signalType: 'offer' | 'answer' | 'ice-candidate' | string
       payload: unknown
     }) => Promise<{ ok: boolean; error?: string }>
+    /** v0.5.3 — fetch backend-signed TURN credentials. */
+    remotePlayIceServers: () => Promise<{
+      ok: boolean
+      iceServers?: RTCIceServer[]
+      error?: string
+    }>
     /**
      * Self-loopback — émet localement les envelopes invite + response
      * comme si elles venaient du cloud. Permet de tester la chaîne UI
@@ -1460,6 +1466,12 @@ export interface NexusAPI {
     startGamepadBridge: () => Promise<{ ok: boolean; error?: string }>
     stopGamepadBridge: () => Promise<{ ok: boolean }>
     injectGamepadState: (state: unknown) =>
+      Promise<{ ok: boolean; error?: string }>
+    /** v0.5.3 — keyboard injection from guest via host bridge. */
+    injectKey: (payload: { code: number; down: boolean; ext?: boolean }) =>
+      Promise<{ ok: boolean; error?: string }>
+    /** v0.5.3 — mouse injection from guest via host bridge. */
+    injectMouse: (payload: Record<string, unknown>) =>
       Promise<{ ok: boolean; error?: string }>
   }
   update: {

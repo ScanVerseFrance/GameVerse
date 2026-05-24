@@ -18,6 +18,7 @@ function defaultSettings(): AppSettings {
       friendMessage: true,
       friendLaunchedGame: true,
       friendRequest: true,
+      overlayTip: true,
       snoozeUntil: null,
     },
     steamGridDbApiKey: '',
@@ -55,6 +56,20 @@ function defaultSettings(): AppSettings {
     // PersonalisationSection's Tier 2). Default = the dark scanverse
     // theme that every screenshot in this thread uses.
     themePreset: 'scanverse-dark',
+    nexusInput: {
+      disableHidHide: false,
+    },
+    overlay: {
+      hotkey: 'Shift+Tab',
+      disabledGameIds: [],
+      skipAntiCheat: true,
+      showFps: false,
+    },
+    remotePlay: {
+      quality: 'medium',
+      enableKbm: false,
+      enableMic: false,
+    },
   }
 }
 
@@ -76,6 +91,7 @@ function loadSettings(): void {
         friendMessage: parsed.notifications?.friendMessage !== false,
         friendLaunchedGame: parsed.notifications?.friendLaunchedGame !== false,
         friendRequest: parsed.notifications?.friendRequest !== false,
+        overlayTip: parsed.notifications?.overlayTip !== false,
         snoozeUntil:
           typeof parsed.notifications?.snoozeUntil === 'number'
             ? parsed.notifications.snoozeUntil
@@ -112,6 +128,33 @@ function loadSettings(): void {
         typeof parsed.themePreset === 'string' && parsed.themePreset
           ? parsed.themePreset
           : 'scanverse-dark',
+      // Pre-existing miss : nexusInput wasn't restored across restarts.
+      // Backfill with the same shape defaultSettings() produces.
+      nexusInput: {
+        disableHidHide: parsed.nexusInput?.disableHidHide === true,
+      },
+      overlay: {
+        hotkey:
+          typeof parsed.overlay?.hotkey === 'string' && parsed.overlay.hotkey.trim()
+            ? parsed.overlay.hotkey.trim().slice(0, 40)
+            : 'Shift+Tab',
+        disabledGameIds: Array.isArray(parsed.overlay?.disabledGameIds)
+          ? parsed.overlay.disabledGameIds
+              .filter((g): g is string => typeof g === 'string' && !!g)
+              .slice(0, 500)
+          : [],
+        skipAntiCheat: parsed.overlay?.skipAntiCheat !== false,
+        showFps: parsed.overlay?.showFps === true,
+      },
+      remotePlay: {
+        quality:
+          parsed.remotePlay?.quality === 'low' ||
+          parsed.remotePlay?.quality === 'high'
+            ? parsed.remotePlay.quality
+            : 'medium',
+        enableKbm: parsed.remotePlay?.enableKbm === true,
+        enableMic: parsed.remotePlay?.enableMic === true,
+      },
     }
   } catch {
     settings = defaultSettings()
@@ -229,6 +272,27 @@ export function updateAppSettings(patch: Partial<AppSettings>): AppSettings {
     settings.nexusInput = {
       ...(settings.nexusInput ?? {}),
       ...patch.nexusInput,
+    }
+  }
+  if (patch.overlay) {
+    settings.overlay = {
+      ...(settings.overlay ?? {}),
+      ...patch.overlay,
+    }
+    // Clamp hotkey + dedupe disabledGameIds defensively.
+    if (typeof settings.overlay.hotkey === 'string') {
+      settings.overlay.hotkey = settings.overlay.hotkey.trim().slice(0, 40)
+    }
+    if (Array.isArray(settings.overlay.disabledGameIds)) {
+      settings.overlay.disabledGameIds = Array.from(new Set(settings.overlay.disabledGameIds))
+        .filter((g): g is string => typeof g === 'string' && !!g)
+        .slice(0, 500)
+    }
+  }
+  if (patch.remotePlay) {
+    settings.remotePlay = {
+      ...(settings.remotePlay ?? {}),
+      ...patch.remotePlay,
     }
   }
   saveSettings()

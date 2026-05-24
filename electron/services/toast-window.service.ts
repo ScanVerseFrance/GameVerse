@@ -84,6 +84,7 @@ export type ToastKind =
   | 'controller_connected'
   | 'controller_disconnected'
   | 'overlay_tip'
+  | 'screenshot_saved'
   | 'test'
 
 export interface ToastPayload {
@@ -135,6 +136,9 @@ function isKindEnabled(kind: ToastKind): boolean {
       controller_connected: true,
       controller_disconnected: true,
       overlay_tip: s.overlayTip !== false,
+      // Screenshot feedback : no dedicated toggle, always on (it's a
+      // direct response to a deliberate user action — F12 press).
+      screenshot_saved: true,
     }
     return map[kind as Exclude<ToastKind, 'test'>] !== false
   } catch {

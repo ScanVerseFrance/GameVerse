@@ -508,6 +508,25 @@ export function registerCloudIpc(): void {
   // à un ami. Le backend cloud relay via WS au destinataire
   // (envelope `remote_play:invite`). v0.5.1 Phase A — pas encore de
   // streaming, juste l'UI + le signaling.
+  // v0.5.3 — fetch short-lived TURN credentials signed by the backend
+  // (Coturn static-auth-secret model). Falls back to the OpenRelay free
+  // tier ICE list if the backend isn't reachable or hasn't configured
+  // TURN — that's the dev-without-coturn case.
+  ipcMain.handle('cloud:remotePlayIceServers', async () => {
+    try {
+      const res = await svc.passthroughJson<{
+        ok: boolean
+        iceServers?: RTCIceServer[]
+      }>('/v1/remote-play/ice-servers', { method: 'GET' })
+      if (res?.ok && Array.isArray(res.iceServers)) {
+        return { ok: true, iceServers: res.iceServers }
+      }
+      return { ok: false, iceServers: [] }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, iceServers: [] }
+    }
+  })
+
   ipcMain.handle('cloud:remotePlayInvite', async (_e, payload: unknown) => {
     if (!payload || typeof payload !== 'object') {
       return { ok: false, error: 'payload required' }

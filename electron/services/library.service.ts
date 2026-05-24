@@ -1177,10 +1177,24 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
         // mais à ce point dans launchGame il a forcément été spawn
         // depuis cette valeur — donc non-null. Cast safe.
         if (game.executablePath) {
-          injectOverlay(child.pid ?? 0, game.executablePath)
+          // v0.5.3 — pass gameId so the inject service can check the
+          // per-game disable list + skip-anti-cheat user prefs.
+          injectOverlay(child.pid ?? 0, game.executablePath, game.id)
         }
       } catch {
         /* artefacts missing — non-fatal */
+      }
+    })()
+
+    // v0.5.3 — arm F12 screenshot capture while this game runs. Best-
+    // effort : if the screenshot service can't load (e.g. bundle
+    // missing the file in a partial dev build) we just skip.
+    void (async () => {
+      try {
+        const { startScreenshotCaptureForGame } = await import('./screenshot.service')
+        startScreenshotCaptureForGame(id, game.title)
+      } catch {
+        /* skip */
       }
     })()
 
@@ -1210,6 +1224,17 @@ export function launchGame(id: string): { ok: boolean; error?: string } {
       }
       emit('library:running', { id, running: false, sessionSeconds: seconds })
       void notifyWatcherGameStopped(id)
+      // v0.5.3 — release F12 screenshot hotkey at game exit so other
+      // apps can claim it. Only if this was the last running game ;
+      // multi-launch users may still want F12 for the next active.
+      if (running.size === 0) {
+        void (async () => {
+          try {
+            const { stopScreenshotCaptureForGame } = await import('./screenshot.service')
+            stopScreenshotCaptureForGame()
+          } catch { /* skip */ }
+        })()
+      }
       // v0.5.1 — clear overlay current game on exit. Si un autre
       // jeu est encore actif `running.size > 0`, on push le 1er
       // restant comme nouveau current.

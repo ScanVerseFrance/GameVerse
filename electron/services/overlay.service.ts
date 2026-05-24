@@ -90,10 +90,31 @@ let currentGamePid: number | null = null
  *  sur un autre app". Rempli au boot dans `initOverlay`. */
 const nexusPids = new Set<number>([process.pid])
 
-/** Combo configurable plus tard via settings. Par défaut Shift+Tab
- *  comme Steam. v0.5.1 stocké en const ; l'user pourra le changer
- *  via paramètres dans une future itération. */
-const OVERLAY_HOTKEY = 'Shift+Tab'
+/** Default overlay hotkey — Steam-style Shift+Tab. The actual value is
+ *  read from app-settings.overlay.hotkey each time we (re)register, so
+ *  the user can change it live via Paramètres. Fallback chord on
+ *  register-failure : Shift+F11 (rarely claimed by other apps).
+ *  v0.5.3 stores the currently-active chord here so unregister knows
+ *  which one to release. */
+const DEFAULT_OVERLAY_HOTKEY = 'Shift+Tab'
+const FALLBACK_OVERLAY_HOTKEY = 'Shift+F11'
+let currentOverlayHotkey: string = DEFAULT_OVERLAY_HOTKEY
+
+function readConfiguredHotkey(): string {
+  // Lazy-import the settings service to dodge the circular-ish
+  // dependency chain (settings → … → overlay during init).
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getAppSettings } = require('./app-settings.service') as {
+      getAppSettings: () => { overlay?: { hotkey?: string } }
+    }
+    const chord = getAppSettings().overlay?.hotkey
+    if (typeof chord === 'string' && chord.trim()) return chord.trim()
+  } catch {
+    /* fall through to default */
+  }
+  return DEFAULT_OVERLAY_HOTKEY
+}
 
 export function initOverlay(_getMain: () => BrowserWindow | null): void {
   // v0.5.1 — précache le PID du process Electron renderer principal
@@ -163,7 +184,7 @@ export function initOverlay(_getMain: () => BrowserWindow | null): void {
   onDllConnected(() => {
     debugLog('overlay', 'DLL connected → unregister Electron Shift+Tab (DLL drives it)')
     try {
-      globalShortcut.unregister(OVERLAY_HOTKEY)
+      globalShortcut.unregister(currentOverlayHotkey)
     } catch { /* skip */ }
     if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
       overlayWindow.hide()
@@ -713,42 +734,59 @@ export function toggleOverlay(): void {
   showOverlay()
 }
 
-/** Enregistre le shortcut Shift+Tab global. Doit être appelé après
- *  `app.on('ready')` — on l'invoque depuis main.ts. */
+/** Enregistre le shortcut overlay global. Doit être appelé après
+ *  `app.on('ready')` — on l'invoque depuis main.ts. Le chord utilisé
+ *  est lu depuis app-settings.overlay.hotkey ; fallback Shift+F11 si
+ *  le chord configuré est déjà claim par une autre app. */
 export function registerOverlayShortcut(): void {
-  try {
-    const ok = globalShortcut.register(OVERLAY_HOTKEY, () => {
-      debugLog('overlay', 'globalShortcut FIRED', { hotkey: OVERLAY_HOTKEY })
-      toggleOverlay()
-    })
-    debugLog('overlay', 'globalShortcut.register returned', { ok, hotkey: OVERLAY_HOTKEY })
-    // Sanity check : confirme que le hotkey est bien enregistré côté
-    // OS (Electron renvoie true à register même si une autre app a
-    // déjà claim ce hotkey sur Windows). isRegistered nous dit la
-    // vraie réponse.
-    const isReg = globalShortcut.isRegistered(OVERLAY_HOTKEY)
-    debugLog('overlay', 'globalShortcut.isRegistered →', { isReg })
-    if (!isReg) {
-      debugLog(
-        'overlay',
-        'WARNING: Shift+Tab not actually registered (probably claimed by Steam or another app)',
-      )
+  // Always release any previously-registered chord first — otherwise
+  // changing the hotkey leaves both bound until next app restart.
+  unregisterOverlayShortcut()
+  const desired = readConfiguredHotkey()
+  const tryRegister = (chord: string): boolean => {
+    try {
+      globalShortcut.register(chord, () => {
+        debugLog('overlay', 'globalShortcut FIRED', { hotkey: chord })
+        toggleOverlay()
+      })
+    } catch (e) {
+      debugLog('overlay', 'globalShortcut.register threw', {
+        chord,
+        error: (e as Error).message,
+      })
+      return false
     }
-  } catch (e) {
-    console.warn(
-      '[overlay] failed to register hotkey',
-      OVERLAY_HOTKEY,
-      (e as Error).message,
-    )
+    return globalShortcut.isRegistered(chord)
   }
+  if (tryRegister(desired)) {
+    currentOverlayHotkey = desired
+    debugLog('overlay', 'globalShortcut registered', { hotkey: desired })
+    return
+  }
+  debugLog(
+    'overlay',
+    'desired hotkey not registered (claimed by another app), trying fallback',
+    { desired, fallback: FALLBACK_OVERLAY_HOTKEY },
+  )
+  if (desired !== FALLBACK_OVERLAY_HOTKEY && tryRegister(FALLBACK_OVERLAY_HOTKEY)) {
+    currentOverlayHotkey = FALLBACK_OVERLAY_HOTKEY
+    return
+  }
+  console.warn('[overlay] could not register any overlay hotkey')
 }
 
 export function unregisterOverlayShortcut(): void {
   try {
-    globalShortcut.unregister(OVERLAY_HOTKEY)
+    globalShortcut.unregister(currentOverlayHotkey)
   } catch {
     /* idempotent */
   }
+}
+
+/** Public re-entry — called from app-settings IPC when the user
+ *  changes the hotkey in Paramètres. Rebinds atomically. */
+export function reloadOverlayShortcut(): void {
+  registerOverlayShortcut()
 }
 
 /** Demande le focus clavier pour l'overlay (pour les zones de texte

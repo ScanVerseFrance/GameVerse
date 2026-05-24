@@ -164,4 +164,47 @@ export function registerRemotePlayIpc(): void {
       return { ok: false, error: (e as Error).message }
     }
   })
+
+  // v0.5.3 — Remote Play keyboard + mouse routing. The host renderer
+  // receives K+M events from the guest via WebRTC data channel and
+  // forwards them here ; we relay to NexusInput.exe which calls Win32
+  // SendInput in the host's session.
+  //
+  // Gate at the IPC layer : check the app-settings.remotePlay.enableKbm
+  // flag here as a second fence. The guest only sends if the host
+  // advertised support, but a malicious or buggy peer shouldn't be
+  // able to bypass that.
+  ipcMain.handle('remote-play:injectKey', async (_e, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return { ok: false }
+    try {
+      const { getAppSettings } = await import('../services/app-settings.service')
+      if (getAppSettings().remotePlay?.enableKbm !== true) {
+        return { ok: false, error: 'kbm disabled' }
+      }
+      const p = payload as { code?: number; down?: boolean; ext?: boolean }
+      if (typeof p.code !== 'number' || typeof p.down !== 'boolean') {
+        return { ok: false, error: 'invalid key payload' }
+      }
+      const { sendKey } = await import('../services/remote-play-vigem.service')
+      sendKey({ code: p.code, down: p.down, ext: p.ext })
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('remote-play:injectMouse', async (_e, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return { ok: false }
+    try {
+      const { getAppSettings } = await import('../services/app-settings.service')
+      if (getAppSettings().remotePlay?.enableKbm !== true) {
+        return { ok: false, error: 'kbm disabled' }
+      }
+      const { sendMouse } = await import('../services/remote-play-vigem.service')
+      sendMouse(payload as Record<string, unknown>)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
 }

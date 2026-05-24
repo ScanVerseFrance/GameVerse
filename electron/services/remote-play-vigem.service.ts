@@ -159,6 +159,40 @@ export function sendGamepadReport(report: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Forward a remote keyboard event from the guest to the host's
+ * NexusInput helper. The helper calls Win32 SendInput which lands
+ * the event in whatever window currently has focus.
+ *
+ * Payload :
+ *   code : Windows VK code (mapped from KeyboardEvent.code on the JS
+ *          side ; see src/remote-play/lib/InputCodec.ts)
+ *   down : true on keydown, false on keyup
+ *   ext  : true for "extended" keys (right Ctrl/Alt, arrow keys, etc.)
+ */
+export function sendKey(payload: { code: number; down: boolean; ext?: boolean }): void {
+  if (!proc?.stdin || proc.stdin.destroyed) return
+  try {
+    proc.stdin.write(JSON.stringify({ cmd: 'key', ...payload }) + '\n')
+  } catch (e) {
+    debugLog('remote-play-vigem', 'key stdin write failed', {
+      error: (e as Error).message,
+    })
+  }
+}
+
+/** Forward a remote mouse event (move / button / wheel). */
+export function sendMouse(payload: Record<string, unknown>): void {
+  if (!proc?.stdin || proc.stdin.destroyed) return
+  try {
+    proc.stdin.write(JSON.stringify({ cmd: 'mouse', ...payload }) + '\n')
+  } catch (e) {
+    debugLog('remote-play-vigem', 'mouse stdin write failed', {
+      error: (e as Error).message,
+    })
+  }
+}
+
 // Diagnostic counter for the no-bridge case. Reset on each startBridge
 // call so a fresh session gets fresh diagnostic logs.
 let logCounter = 0

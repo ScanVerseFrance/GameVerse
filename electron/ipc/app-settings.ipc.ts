@@ -10,7 +10,20 @@ export function registerAppSettingsIpc() {
 
   ipcMain.handle('app:updateSettings', async (_e, patch: unknown) => {
     if (!patch || typeof patch !== 'object') return { ok: false, error: 'Invalid patch' }
-    return { ok: true, settings: svc.updateAppSettings(patch as Partial<AppSettings>) }
+    const next = svc.updateAppSettings(patch as Partial<AppSettings>)
+    // v0.5.3 — if the overlay hotkey changed, rebind globalShortcut
+    // live so the user doesn't have to restart. Lazy-import to avoid
+    // pulling the overlay service into modules that don't need it.
+    const p = patch as Partial<AppSettings>
+    if (p.overlay && Object.prototype.hasOwnProperty.call(p.overlay, 'hotkey')) {
+      try {
+        const { reloadOverlayShortcut } = await import('../services/overlay.service')
+        reloadOverlayShortcut()
+      } catch {
+        /* overlay service not loaded yet — no-op */
+      }
+    }
+    return { ok: true, settings: next }
   })
 
   ipcMain.handle('app:getMetrics', async () => {

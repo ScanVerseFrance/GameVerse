@@ -511,6 +511,15 @@ const api = {
     activityFeed: (limit?: number) =>
       ipcRenderer.invoke('cloud:activityFeed', limit),
     // ── Remote Play Together (Phase A — signaling only, no stream) ─
+    /** v0.5.3 — fetch backend-signed TURN credentials for Remote Play.
+     *  Returns fallback list (STUN-only or OpenRelay) if backend has
+     *  no TURN configured. */
+    remotePlayIceServers: () =>
+      ipcRenderer.invoke('cloud:remotePlayIceServers') as Promise<{
+        ok: boolean
+        iceServers?: RTCIceServer[]
+        error?: string
+      }>,
     remotePlayInvite: (payload: {
       toUserId: string
       gameTitle: string
@@ -801,6 +810,12 @@ const api = {
     stopGamepadBridge: () => ipcRenderer.invoke('remote-play:stopGamepadBridge'),
     injectGamepadState: (state: unknown) =>
       ipcRenderer.invoke('remote-play:injectGamepadState', state),
+    // v0.5.3 — keyboard + mouse routing from guest. Gated host-side by
+    // settings.remotePlay.enableKbm so a malicious peer can't bypass.
+    injectKey: (payload: { code: number; down: boolean; ext?: boolean }) =>
+      ipcRenderer.invoke('remote-play:injectKey', payload),
+    injectMouse: (payload: Record<string, unknown>) =>
+      ipcRenderer.invoke('remote-play:injectMouse', payload),
   },
   update: {
     // Manual check — fires the same logic as the 4h timer but bypasses

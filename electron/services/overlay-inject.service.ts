@@ -146,6 +146,60 @@ function resolveOverlayPaths(
 }
 
 /**
+ * Substrings that strongly suggest the target ships an active
+ * anti-cheat. We probe these against the exe path, the parent
+ * directory, and any sibling files. Matching titles get a skip with
+ * a debug-log entry — better to silently disable the overlay than
+ * trigger a ban on the user's account.
+ *
+ * Sources : the user-visible filename patterns of these anti-cheats
+ * are remarkably stable over the past decade.
+ *
+ *   • EasyAntiCheat  → EasyAntiCheat.exe, EasyAntiCheat_EOS.exe,
+ *                       EasyAntiCheat_Launcher.exe
+ *   • BattlEye        → BEService.exe, BEClient.dll
+ *   • Vanguard        → vgc.exe, vgk.sys (kernel driver)
+ *   • Ricochet/Warzone→ ricochet.dll
+ *   • Denuvo Anti-Tamper isn't really a kicker, so we don't bother.
+ */
+const ANTI_CHEAT_HINTS = [
+  'easyanticheat',
+  'beservice',
+  'beclient',
+  'battleye',
+  'vanguard',
+  'vgc.exe',
+  'vgk.sys',
+  'ricochet',
+  'fairfight',
+  'punkbuster',
+  'equ8',
+]
+
+function looksLikeAntiCheat(exePath: string): boolean {
+  try {
+    const lower = exePath.toLowerCase()
+    if (ANTI_CHEAT_HINTS.some((h) => lower.includes(h))) return true
+    // Probe the parent directory + one level up (eg. /Game/Binaries/EAC/EasyAntiCheat.exe).
+    const dir = path.dirname(exePath)
+    for (const root of [dir, path.dirname(dir)]) {
+      try {
+        const entries = fs.readdirSync(root)
+        for (const e of entries) {
+          const el = e.toLowerCase()
+          if (ANTI_CHEAT_HINTS.some((h) => el.includes(h))) return true
+        }
+      } catch {
+        /* unreadable folder — skip */
+      }
+    }
+  } catch {
+    /* malformed path — assume clean */
+  }
+  return false
+}
+
+/**
  * Inject nexus-overlay.dll into the given game pid.
  *
  * Fire-and-forget — never throws into the caller. Logs progress
@@ -157,9 +211,38 @@ function resolveOverlayPaths(
  * @param exePath - Absolute path to the launched executable. Used to
  *                  detect target architecture via PE header, so we can
  *                  pick the matching bitness pair (x64 or x86).
+ * @param gameId  - Library game ID. Used to check per-game disable
+ *                  toggle in settings.overlay.disabledGameIds.
  */
-export function injectOverlay(gamePid: number, exePath: string): void {
+export function injectOverlay(gamePid: number, exePath: string, gameId?: string): void {
   if (process.platform !== 'win32') return  // DLL injection is Windows-only
+
+  // ── User-controlled gates (v0.5.3) ────────────────────────────────
+  // Lazy-import settings to dodge potential circular dep at boot.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getAppSettings } = require('./app-settings.service') as {
+      getAppSettings: () => {
+        overlay?: { disabledGameIds?: string[]; skipAntiCheat?: boolean }
+      }
+    }
+    const ov = getAppSettings().overlay
+    if (gameId && ov?.disabledGameIds?.includes(gameId)) {
+      debugLog('overlay-inject', 'skipped — game explicitly disabled by user', {
+        gameId, exePath,
+      })
+      return
+    }
+    if (ov?.skipAntiCheat !== false && looksLikeAntiCheat(exePath)) {
+      debugLog('overlay-inject', 'skipped — anti-cheat detected', {
+        gameId, exePath,
+        hint: 'set overlay.skipAntiCheat=false in settings to override (at your own risk)',
+      })
+      return
+    }
+  } catch {
+    /* settings not loaded yet — proceed as before */
+  }
 
   // Detect bitness from the PE header. Falls back to 'x64' when we
   // can't determine it (rare — only if file is unreadable). Worst
