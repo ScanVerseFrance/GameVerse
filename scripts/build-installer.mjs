@@ -101,7 +101,22 @@ function iconsStale() {
       console.error(`✗ overlay build script missing: ${OVERLAY_BAT}`);
       process.exit(1);
     }
-    run(OVERLAY_BAT, [], { cwd: OVERLAY_DIR });
+    // Invoke build.bat WITHOUT le path absolu — on cd dans OVERLAY_DIR
+    // et on lance juste `build.bat`. Les parenthèses dans le path
+    // projet (ex. "C:\Dev\SVU-(ScanVerseUnivers)\…") cassent le parsing
+    // de cmd quand le path est passé en argv ; en mode cwd-relatif
+    // c'est cmd qui résout via le cwd, donc plus de problème.
+    {
+      const r = spawnSync('cmd.exe', ['/d', '/s', '/c', '.\\build.bat'], {
+        stdio: 'inherit',
+        cwd: OVERLAY_DIR,
+        shell: false,
+      });
+      if (r.status !== 0) {
+        console.error(`✗ overlay build.bat (exit ${r.status})`);
+        process.exit(r.status || 1);
+      }
+    }
     for (const arch of ['x64', 'x86']) {
       const dll = path.join(OVERLAY_DIST, arch, 'nexus-overlay.dll');
       const inj = path.join(OVERLAY_DIST, arch, 'nexus-overlay-injector.exe');

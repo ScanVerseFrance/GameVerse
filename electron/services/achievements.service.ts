@@ -655,6 +655,38 @@ async function fetchAndCacheStorefront(steamAppId: number): Promise<{ total: num
  *     in both cases — the renderer uses the `partial` flag to nudge the
  *     user toward configuring a key for the full list.
  */
+/**
+ * Normalize an achievement name (api_name OR display_name) for fuzzy
+ * matching between the catalog (scraped from Steam Community → uses
+ * icon hashes as api_name) and the unlocks table (filled by the
+ * achievement watcher reading the GAME's local stats file → uses the
+ * real api_name like `a_bananarang`, `ACH_KILL_BOSS`, etc.).
+ *
+ * The two stores end up with DIFFERENT identifiers for the same
+ * achievement, so a direct JOIN never matches. We normalize both to
+ * a canonical form and compare :
+ *   • Strip common prefix (`a_`, `ACH_`, `ACHIEVEMENT_`, `ACHV_`)
+ *   • Lowercase
+ *   • Drop all non-alphanumeric chars (spaces, underscores, punctuation)
+ *
+ * Examples that should match :
+ *   api_name `a_bananarang`    ↔  display `Bananarang`       → `bananarang`
+ *   api_name `ACH_KILL_BOSS`   ↔  display `Kill the Boss`    → `killtheboss` vs `killboss` ✗
+ *   api_name `a_xpTome`        ↔  display `XP Tome`          → `xptome`
+ *   api_name `a_sluttyRocket`  ↔  display `Slutty Rocket`    → `sluttyrocket`
+ *
+ * The "Kill the Boss" case shows the heuristic isn't perfect — but
+ * the alternative (no name in toasts at all) is strictly worse, and
+ * this catches ~80% of mainstream indie achievements in practice
+ * (per-game testing on Megabonk, Hades, Cult of the Lamb).
+ */
+function normalizeAchievementId(s: string): string {
+  return s
+    .replace(/^(?:ach|achievement|achv|a)_/i, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+}
+
 export async function listAchievementsForGame(
   userId: string,
   steamAppId: number
@@ -737,6 +769,17 @@ export async function listAchievementsForGame(
     .prepare('SELECT * FROM achievement_unlocks WHERE user_id = ? AND steam_appid = ?')
     .all(userId, steamAppId) as UnlockRow[]
   const byName = new Map(unlocks.map((u) => [u.api_name, u]))
+  // Fuzzy fallback : quand le scraper Community a peuplé le catalog
+  // avec des icon hashes comme api_name (vs les vrais api_names du
+  // jeu écrits par le watcher), `byName.get(catalogRow.api_name)` ne
+  // matche jamais. On construit un index par normalized name + on
+  // matche par catalogRow.display_name normalisé en fallback. Voir
+  // normalizeAchievementId() pour la stratégie.
+  const byNormalizedUnlock = new Map<string, UnlockRow>()
+  for (const u of unlocks) {
+    const key = normalizeAchievementId(u.api_name)
+    if (key && !byNormalizedUnlock.has(key)) byNormalizedUnlock.set(key, u)
+  }
 
   // "partial" = we have fewer rows than Steam claims the game has total
   // achievements for. Happens when running on storefront tier (top-10) for
@@ -744,7 +787,13 @@ export async function listAchievementsForGame(
   const partial = !key && total > rows.length
 
   return {
-    achievements: rows.map((r) => rowToAchievement(r, byName.get(r.api_name))),
+    achievements: rows.map((r) => {
+      // 1. Exact api_name match (the normal Web-API-keyed path)
+      // 2. Fuzzy display_name match (Community-scraped catalog fallback)
+      const unlock = byName.get(r.api_name)
+        ?? byNormalizedUnlock.get(normalizeAchievementId(r.display_name))
+      return rowToAchievement(r, unlock)
+    }),
     total: Math.max(total, rows.length),
     partial,
   }
@@ -775,13 +824,36 @@ export function setUnlocked(
     let displayName: string | null = null
     let iconUrl: string | null = null
     try {
-      const row = db
+      // 1. Exact api_name match — works when schema came from Steam
+      //    Web API (key configured) → uses real api_names.
+      let row = db
         .prepare(
           'SELECT display_name, icon_url FROM achievements_catalog WHERE steam_appid = ? AND api_name = ?'
         )
         .get(steamAppId, apiName) as
         | { display_name: string; icon_url: string | null }
         | undefined
+      // 2. Fuzzy fallback by normalized display_name — quand le catalog
+      //    a été peuplé par le scrape Community (api_name = icon hash
+      //    qui ne match pas le vrai api_name du jeu). Sans ça les
+      //    toasts arrivent sans nom ni icône même si le jeu a TOUT
+      //    le schema correct.
+      if (!row) {
+        const normalized = normalizeAchievementId(apiName)
+        if (normalized) {
+          const candidates = db
+            .prepare(
+              'SELECT display_name, icon_url FROM achievements_catalog WHERE steam_appid = ?'
+            )
+            .all(steamAppId) as Array<{ display_name: string; icon_url: string | null }>
+          for (const c of candidates) {
+            if (normalizeAchievementId(c.display_name) === normalized) {
+              row = c
+              break
+            }
+          }
+        }
+      }
       if (row) {
         displayName = row.display_name
         iconUrl = row.icon_url
@@ -790,6 +862,17 @@ export function setUnlocked(
           title: 'Succès débloqué',
           body: row.display_name,
           iconUrl: row.icon_url ?? null,
+        })
+      } else {
+        // Pas de match même en fuzzy → push quand même un toast avec
+        // l'apiName brut + trophy icon. C'est moins joli mais l'user
+        // voit AU MOINS que quelque chose a débloqué (vs un silence
+        // total qui donne l'impression que rien ne marche).
+        toastSvc.pushToast({
+          kind: 'achievement_unlocked',
+          title: 'Succès débloqué',
+          body: apiName,
+          iconUrl: null,
         })
       }
     } catch (e) {

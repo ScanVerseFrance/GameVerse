@@ -43,6 +43,7 @@
 #include "frame_pipe.h"
 #include "renderer.h"
 #include "nlog.h"
+#include "borderless.h"
 #include "hooks/hook_dxgi.h"
 #include "hooks/hook_d3d9.h"
 #include "hooks/hook_opengl.h"
@@ -59,6 +60,7 @@ std::thread g_ipc_thread;
 std::thread g_frame_thread;
 std::thread g_key_hook_thread;
 std::thread g_key_poll_thread;
+std::thread g_borderless_thread;
 HHOOK       g_keyboard_hook = nullptr;
 DWORD       g_key_hook_thread_id = 0;
 
@@ -502,6 +504,15 @@ DWORD WINAPI worker_thread(LPVOID) {
     // ou les hooks tiers.
     g_key_poll_thread = std::thread(key_poll_thread_proc);
 
+    // Borderless watcher thread — force le jeu en borderless windowed
+    // dès qu'on a une HWND, pour éviter le pause-on-alt-tab et permettre
+    // au scenario Remote Play (overlay/guest window vole le focus) de
+    // marcher sans freezer le jeu. Adapté de Codeusa/Borderless-Gaming
+    // (MIT). Disable via env var NEXUS_DISABLE_BORDERLESS=1.
+    g_borderless_thread = std::thread([]() {
+        nexus::borderless::run_watcher(g_shutdown);
+    });
+
     // Park the worker thread until shutdown is signalled. We could
     // exit here (the hook + IPC threads survive) but keeping the
     // worker alive gives us a clean handle to join() at detach.
@@ -533,6 +544,7 @@ void on_detach() {
     if (g_frame_thread.joinable())    g_frame_thread.join();
     if (g_key_hook_thread.joinable()) g_key_hook_thread.join();
     if (g_key_poll_thread.joinable()) g_key_poll_thread.join();
+    if (g_borderless_thread.joinable()) g_borderless_thread.join();
     nexus::renderer::shutdown();
     uninstall_all_hooks();
     OutputDebugStringW(L"[nexus-overlay] DLL detached\n");

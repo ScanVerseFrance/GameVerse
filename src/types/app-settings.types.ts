@@ -68,6 +68,17 @@ export interface AppSettings {
   /** UI theme preset id (built-in themes only for now). Custom CSS
    *  themes ride on top via the PersonalisationSection upload box. */
   themePreset: string
+  /** Nexus Input (gamepad bridge ViGEm) options. Tous les sub-fields
+   *  sont optionnels — service-side defaults backfill missing keys. */
+  nexusInput?: {
+    /** Skip le cloak HidHide quand le bridge démarre. Cocher si Nexus
+     *  Input fait crash / reboot ton PC à l'activation. Le bridge ViGEm
+     *  marche toujours mais le jeu peut voir ta manette physique en
+     *  plus du virtual pad (bug "2 joueurs" sur certains jeux qui lisent
+     *  Windows.Gaming.Input direct). Default: false (cloak activé =
+     *  expérience optimale). */
+    disableHidHide?: boolean
+  }
 }
 
 export interface SystemMetrics {

@@ -1971,6 +1971,22 @@ function GameLaunchSection() {
   const fullscreen = useSettingsStore((s) => s.defaultFullscreen)
   const setFullscreen = useSettingsStore((s) => s.setDefaultFullscreen)
 
+  // appSettings — pour le toggle "Désactiver HidHide" (safety flag
+  // après que Fahim ait BSOD à l'activation Nexus Input). Lecture +
+  // update via IPC appSettings.get / .update — pattern partagé avec
+  // NotificationsSection.
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null)
+  useEffect(() => {
+    void window.nexus.appSettings.get().then((res) => {
+      if (res.ok && res.settings) setAppSettings(res.settings)
+    })
+  }, [])
+  async function updateApp(patch: Partial<AppSettings>) {
+    const res = await window.nexus.appSettings.update(patch)
+    if (res.ok && res.settings) setAppSettings(res.settings)
+  }
+  const disableHidHide = appSettings?.nexusInput?.disableHidHide ?? false
+
   return (
     <div>
       <SectionHeader
@@ -2005,6 +2021,13 @@ function GameLaunchSection() {
         description="Ajoute -fullscreen aux options de lancement quand un jeu supporte ce switch. N'affecte pas les jeux qui ont déjà des launch options custom."
         enabled={fullscreen}
         onToggle={setFullscreen}
+      />
+
+      <GameOptionCard
+        title="Désactiver HidHide (mode sécurité)"
+        description="Coche si Nexus Input fait crash / reboot ton PC à l'activation. HidHide est le driver kernel qui cache ta manette physique aux jeux pour éviter le bug 'P1+P2 contrôlent le même perso'. Sur certains systèmes (DualSense Bluetooth, antivirus EDR, drivers fraîchement installés), il déclenche un BSOD. Quand désactivé, Nexus Input reste fonctionnel mais le jeu peut voir ta manette physique en plus du virtual pad."
+        enabled={disableHidHide}
+        onToggle={(v) => void updateApp({ nexusInput: { disableHidHide: v } })}
       />
 
       {/* Astuces — équivalent du panneau bleu en bas du tab Lecteur

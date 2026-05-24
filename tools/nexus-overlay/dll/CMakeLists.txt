@@ -5,6 +5,7 @@ set(NEXUS_DLL_SOURCES
     src/ipc.cpp
     src/frame_pipe.cpp
     src/renderer.cpp
+    src/borderless.cpp
     src/hooks/hook_dxgi.cpp
     src/hooks/hook_d3d9.cpp
     src/hooks/hook_opengl.cpp

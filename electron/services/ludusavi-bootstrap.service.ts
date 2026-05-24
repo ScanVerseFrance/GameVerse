@@ -338,16 +338,33 @@ export async function runRestore(
 ): Promise<unknown> {
   const inst = await ensureLudusaviInstalled()
   if (!inst.ok) throw new Error(inst.error ?? 'Ludusavi bootstrap failed')
-  return runJson([
+
+  // Même fuzzy fallback que runBackup — Ludusavi est case-sensitive
+  // contre son manifest, donc "LEGO MARVEL Super Heroes" (le titre
+  // depuis nos JSON sources / AnkerGames) n'attrape PAS l'entrée
+  // canonique "LEGO Marvel Super Heroes" → erreur "no info for these
+  // games" alors que le jeu est PARFAITEMENT supporté. Sans ce
+  // fallback, "Garder le cloud" plante sur tous les jeux dont notre
+  // titre diffère du PCGamingWiki canonical par la casse.
+  const buildArgs = (name: string): string[] => [
     '--config',
     configDir(),
     'restore',
-    objectId,
+    name,
     '--api',
     '--force',
     '--path',
     backupPath,
-  ])
+  ]
+  try {
+    return await runJson(buildArgs(objectId))
+  } catch (e) {
+    const msg = (e as Error).message
+    if (!/no info for these games/i.test(msg)) throw e
+    const canonical = await runFindCanonicalName(objectId)
+    if (!canonical || canonical === objectId) throw e
+    return runJson(buildArgs(canonical))
+  }
 }
 
 function runJson<T = unknown>(args: string[]): Promise<T> {

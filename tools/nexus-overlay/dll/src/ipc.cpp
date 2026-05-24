@@ -132,7 +132,14 @@ std::wstring read_launcher_pid_hint() {
     DWORD got = 0;
     ReadFile(h, buf, sizeof(buf) - 1, &got, nullptr);
     CloseHandle(h);
-    DeleteFileW(path); // one-shot — we don't want it sitting in temp
+    // NE PAS supprimer le hint file — frame_pipe.cpp en a besoin AUSSI
+    // (il lit le même fichier pour résoudre le launcher pid de son
+    // côté). Race condition : ipc thread peut connecter et delete AVANT
+    // que frame_pipe ait fini son init → frame_pipe trouve plus le
+    // fichier → ne se connecte jamais → Phase 2 jamais active →
+    // l'overlay tombe en Phase 1 (vieux ImGui interne) au lieu du
+    // React composite. Le fichier fait 5 bytes ; Windows clean TEMP
+    // au reboot, on a pas besoin de le faire nous-mêmes ici.
     wchar_t wbuf[32]{};
     MultiByteToWideChar(CP_ACP, 0, buf, -1, wbuf, sizeof(wbuf)/sizeof(wbuf[0]));
     return wbuf[0] ? std::wstring(wbuf) : std::wstring(L"0");

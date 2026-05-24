@@ -17,7 +17,7 @@
  * arrivera dans une session dédiée.
  */
 import { useEffect, useState } from 'react'
-import { Play, Send, Loader2, AlertTriangle, Ban, Sparkles } from '@/lib/icons'
+import { Play, Send, Loader2, AlertTriangle, Sparkles } from '@/lib/icons'
 import type { LibraryGame } from '@/types/library.types'
 import { useCloudStore } from '@/stores/cloud.store'
 import { useAuthStore } from '@/stores/auth.store'
@@ -41,36 +41,9 @@ export function OverlayRemotePlayPanel({ game }: { game: LibraryGame | null }) {
   const friends = useCloudStore((s) => s.friends)
   const presences = useCloudStore((s) => s.presences)
   const [invites, setInvites] = useState<Record<string, InviteState>>({})
-  // v0.5.1 fix — Remote Play Together n'est dispo QUE pour les jeux
-  // dont la category Steam 44 est positive. On query le flag depuis
-  // game_artwork / steam_catalogue (résolu via Steam appdetails).
-  const [compat, setCompat] = useState<{
-    checking: boolean
-    compatible: boolean
-    resolved: boolean
-  }>({ checking: false, compatible: false, resolved: false })
-  useEffect(() => {
-    if (!game?.steamAppId || game.steamAppId <= 0) {
-      setCompat({ checking: false, compatible: false, resolved: true })
-      return
-    }
-    setCompat({ checking: true, compatible: false, resolved: false })
-    void window.nexus.overlay
-      .isRemotePlayCompatible(game.steamAppId)
-      .then((res) => {
-        setCompat({
-          checking: false,
-          compatible: !!res.compatible,
-          resolved: !!res.resolved,
-        })
-      })
-      .catch(() => {
-        // IPC rejette = handler down (rare en prod, possible pendant
-        // HMR dev). On bascule en "ne supporte pas" gracieusement
-        // plutôt que de laisser le panel coincé sur le spinner.
-        setCompat({ checking: false, compatible: false, resolved: true })
-      })
-  }, [game?.steamAppId])
+  // Compat check removed — voir le commentaire du return JSX plus bas.
+  // Steam category 44 trop restrictive (bloquait LEGO Marvel chez Samy
+  // par ex.) ; notre pipeline P2P marche pour tout jeu avec local co-op.
 
   // Subscribe aux réponses d'invitation (accept/decline) qui arrivent
   // via cloud WS envelope remote_play:response.
@@ -263,46 +236,16 @@ export function OverlayRemotePlayPanel({ game }: { game: LibraryGame | null }) {
     )
   }
 
-  // Gate compat Steam category 44 — Remote Play Together n'est pas
-  // supporté par tous les jeux. Steam expose une category dédiée que
-  // chaque dev coche s'il a configuré le streaming co-op via leur SDK.
-  // Si le jeu n'a pas ce flag, on ne montre PAS le bouton "Inviter".
-  if (compat.checking) {
-    return (
-      <PanelShell title="Remote Play Together" icon={<Play className="w-5 h-5" />}>
-        <div className="flex-1 flex items-center justify-center text-fg-muted text-sm py-12 gap-2">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Vérification de la compatibilité…
-        </div>
-      </PanelShell>
-    )
-  }
-  if (!compat.compatible) {
-    return (
-      <PanelShell title="Remote Play Together" icon={<Play className="w-5 h-5" />}>
-        <div className="flex-1 flex flex-col items-center justify-center text-fg-muted text-sm py-12 gap-3 px-8 text-center">
-          <Ban className="w-10 h-10 text-fg-faint" />
-          <div>
-            <p className="text-fg-secondary font-semibold mb-1">
-              {game.title} ne supporte pas Remote Play Together
-            </p>
-            <p className="text-xs text-fg-muted leading-relaxed">
-              Seuls les jeux Steam avec la catégorie « Remote Play Together »
-              (configurée par le développeur) peuvent être joués en
-              streaming co-op. Pour la liste officielle, va sur la page
-              Steam des « Jeux compatibles Remote Play Together ».
-            </p>
-            {!compat.resolved && (
-              <p className="text-[10px] text-fg-muted/70 mt-3 italic">
-                Métadonnées Steam pas encore résolues pour ce jeu.
-                Réessaie dans quelques secondes (le fetch tourne en arrière-plan).
-              </p>
-            )}
-          </div>
-        </div>
-      </PanelShell>
-    )
-  }
+  // Gate compat REMOVED. Steam's "Remote Play Together" category 44
+  // était initialement requise pour utiliser leur feature, mais :
+  //   1. Steam a ajouté "Remote Play Together Anywhere" qui marche
+  //      pour TOUS les jeux local co-op
+  //   2. NOTRE pipeline P2P streaming (Phase B) ne dépend pas du
+  //      SDK Steam → on peut techniquement stream N'IMPORTE quel jeu
+  //   3. Le check bloquait des jeux PARFAITEMENT jouables en co-op
+  //      (LEGO Marvel chez Samy par exemple — incompat dans son catalog
+  //      malgré que ce soit un classique 2-joueurs)
+  // → toujours afficher l'invite, l'user décide.
 
   // On affiche TOUS les amis — l'user invite qui il veut, l'ami reçoit
   // une toast quoi qu'il fasse. Steam fait pareil (la liste n'est pas

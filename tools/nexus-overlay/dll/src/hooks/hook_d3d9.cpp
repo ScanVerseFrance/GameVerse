@@ -33,6 +33,7 @@
 #include "../nlog.h"
 #include "../ipc.h"
 #include "../frame_pipe.h"
+#include "../borderless.h"
 
 #include <windows.h>
 #include <d3d9.h>
@@ -194,6 +195,15 @@ LRESULT CALLBACK overlay_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     const bool overlay_visible = nexus::OverlayState::instance().visible();
     const bool phase2_active   = nexus::frame_pipe::is_connected();
 
+    // Anti pause-on-focus-loss SURGICAL — voir hook_dxgi.cpp pour la
+    // doc complète. Seul WM_ACTIVATEAPP=FALSE est forgé en TRUE pour
+    // que la game loop ne pause pas. Le reste (WM_ACTIVATE,
+    // WM_NCACTIVATE, WM_KILLFOCUS) passe normalement pour ne pas
+    // casser l'alt-tab au niveau OS.
+    if (msg == WM_ACTIVATEAPP && wp == FALSE) {
+        return CallWindowProcW(g_orig_wndproc, hwnd, msg, TRUE, lp);
+    }
+
     // Phase 1 : laisser ImGui consommer les inputs avant le jeu.
     if (!phase2_active) {
         if (ImGui::GetCurrentContext() != nullptr) {
@@ -239,6 +249,10 @@ void install_wndproc_hook(HWND hwnd) {
         SetWindowLongPtrW(hwnd, GWLP_WNDPROC,
                           reinterpret_cast<LONG_PTR>(overlay_wndproc)));
     nexus::nlog::log("[d3d9] WndProc subclassed on HWND %p", (void*)hwnd);
+    // Active le force-borderless dès qu'on a une HWND. Le watcher
+    // appliquera le style change au prochain tick. Pas d'effet si
+    // NEXUS_DISABLE_BORDERLESS=1 dans l'env du jeu.
+    nexus::borderless::set_target_hwnd(hwnd);
 }
 
 void init_imgui(HWND hwnd, IDirect3DDevice9* device) {
@@ -354,6 +368,14 @@ HRESULT WINAPI present_detour(IDirect3DDevice9* device, const RECT* src, const R
                               HWND override_hwnd, const RGNDATA* dirty_region) {
     g_d9_frame_counter.fetch_add(1);
 
+    // [REMOVED] D3D9 Reset(Windowed=TRUE) trigger — trop risqué.
+    // Forcer un Reset depuis notre thread cassait les resources
+    // D3DPOOL_DEFAULT du jeu (LEGO Marvel crash silencieusement après
+    // le Reset, plus jamais de Present). Le pause-on-focus-loss est
+    // maintenant géré via WM_ACTIVATE/WM_KILLFOCUS swallow dans
+    // overlay_wndproc — beaucoup plus safe et fonctionne pour TOUS
+    // les jeux peu importe l'API graphique.
+
     // Diagnostic log toutes les 60 frames pour qu'on sache que le hook
     // tourne (et qu'on voie passer les changements visible).
     const uint64_t frame = g_d9_frame_counter.load();
@@ -382,6 +404,10 @@ HRESULT WINAPI present_detour(IDirect3DDevice9* device, const RECT* src, const R
             init_imgui(hwnd, device);
             g_device = device;
         }
+        // Expose le device au module borderless — il s'en sert pour
+        // déclencher un Reset(Windowed=TRUE) sur le rendering thread
+        // si le jeu a démarré en exclusive fullscreen.
+        nexus::borderless::set_target_d3d9_device(device);
     }
 
     capture_viewport(device);
@@ -426,6 +452,13 @@ HRESULT WINAPI present_detour(IDirect3DDevice9* device, const RECT* src, const R
 }
 
 HRESULT WINAPI reset_detour(IDirect3DDevice9* device, D3DPRESENT_PARAMETERS* params) {
+    // Force-borderless : mutate params->Windowed = TRUE AVANT de
+    // forward au device. C'est le seul moyen propre de switcher un
+    // device D3D9 en windowed (le device a été créé en exclusive,
+    // on intercepte le Reset pour le passer en windowed sans crash).
+    // No-op si NEXUS_DISABLE_BORDERLESS=1.
+    nexus::borderless::maybe_force_d3d9_windowed(params);
+
     // Reset invalide TOUTES les ressources D3DPOOL_DEFAULT — notre
     // texture React aussi. On la release ici, le prochain Present la
     // recrée from scratch via update_react_texture().

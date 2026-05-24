@@ -137,29 +137,22 @@ export function Toast({ item }: { item: ToastItem }) {
           {item.kind === 'controller_connected' ||
           item.kind === 'controller_disconnected' ? (
             item.iconUrl ? (
-              // CSS mask-image transforme la PNG en pure silhouette
-              // monochrome : l'alpha channel du PNG devient le mask,
-              // on remplit avec un grey solide. Match exactement le
-              // rendu Steam (capture user) qui affiche une silhouette
-              // grise plate du modèle de manette — pas de photo
-              // détaillée, juste l'outline du body.
-              //
-              // backgroundColor = #b8b8b8 cohérent avec le rendu Steam
-              // sur fond sombre (gris-clair contrasté).
-              <div
-                className="w-14 h-14"
-                style={{
-                  backgroundColor: '#b8b8b8',
-                  WebkitMaskImage: `url(${item.iconUrl})`,
-                  maskImage: `url(${item.iconUrl})`,
-                  WebkitMaskSize: 'contain',
-                  maskSize: 'contain',
-                  WebkitMaskRepeat: 'no-repeat',
-                  maskRepeat: 'no-repeat',
-                  WebkitMaskPosition: 'center',
-                  maskPosition: 'center',
+              // V2 — rendu direct via <img>. La V1 utilisait CSS mask-image
+              // pour faire une silhouette grise style Steam, mais ça
+              // requiert un PNG avec alpha PROPRE (fond fully transparent
+              // + controller opaque). Si le PNG a un fond blanc-opaque
+              // (cas du ps5.png importé brut depuis Steam), le mask
+              // s'applique sur TOUTE la rectangle → invisible (le grey
+              // covered par le fond du toast) → user voit "rien" à la
+              // place du logo. Avec <img> direct on rend l'image telle
+              // quelle, peu importe la transparence du PNG.
+              <img
+                src={item.iconUrl}
+                alt=""
+                className="w-14 h-14 object-contain"
+                onError={(e) => {
+                  ;(e.currentTarget as HTMLImageElement).style.display = 'none'
                 }}
-                aria-hidden
               />
             ) : (
               <div

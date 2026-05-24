@@ -108,6 +108,15 @@ export function detectVendor(id: string): ControllerVendor {
     return 'playstation'
   if (lower.includes('057e') || /nintendo|switch pro|joy-?con/i.test(id))
     return 'nintendo'
+  // Default heuristic pour les noms génériques "Contrôleur de jeu HID"
+  // / "HID-compliant game controller" / "HID Gamepad" — Windows utilise
+  // ces labels quand le driver HID sous-jacent n'expose pas le VID/PID
+  // à l'API Gamepad de Chrome. Par expérience c'est ÉCRASANT majoritaire
+  // une DualSense ou DS4 dont DS4Windows / Steam Input a pris le HID
+  // exclusif (qui hide les vendor strings à Chrome). Xbox est toujours
+  // exposé proprement via XInput donc jamais générique. → on tag PS
+  // pour avoir l'icône PS5 au lieu d'un blob "générique" anonyme.
+  if (/\bhid\b|contr[ôo]leur de jeu/i.test(id)) return 'playstation'
   return 'generic'
 }
 

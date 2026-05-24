@@ -44,9 +44,30 @@ export interface PeerSessionCallbacks {
   onLog?: (msg: string, data?: unknown) => void
 }
 
+// ICE servers — STUN (gratuit Google) pour discover public IP en
+// full-cone NAT, + TURN d'OpenRelay (Metered.ca, free tier — fait pour
+// les tests WebRTC) en fallback pour les NAT symétriques où STUN seul
+// ne suffit pas (FAI mobile, certains FTTH carrier-grade NAT, firewalls
+// d'entreprise). En production on remplacera par notre propre coturn
+// hébergé sur la Coolify VPS — l'OpenRelay free tier a des limites de
+// bande passante mais largement suffisant pour le testing.
+//
+// Format TURN URL : `turn:host:port?transport=...`
+// - turn:openrelay.metered.ca:80 — UDP/TCP standard
+// - turn:openrelay.metered.ca:443 — TCP (passe certains firewalls bloquant UDP)
+// - turns:openrelay.metered.ca:443 — TLS (passe les firewalls DPI les plus stricts)
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
 ]
 
 export class PeerSession {

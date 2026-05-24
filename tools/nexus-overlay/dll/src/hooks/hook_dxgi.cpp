@@ -53,6 +53,7 @@
 #include "../renderers/texture_renderer_dx11.h"
 #include "../nlog.h"
 #include "../ipc.h"
+#include "../borderless.h"
 #include <cstdio>
 
 #include <windows.h>
@@ -234,6 +235,27 @@ LRESULT CALLBACK overlay_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     const bool overlay_visible = nexus::OverlayState::instance().visible();
     const bool phase2_active = nexus::frame_pipe::is_connected();
 
+    // Anti pause-on-focus-loss — version SURGICALE.
+    //
+    // V1 swallowait WM_KILLFOCUS et forgeait WM_NCACTIVATE/ACTIVATE,
+    // mais ça bloquait l'alt-tab au niveau OS (le jeu gardait ses
+    // input grabs, Windows ne pouvait plus switcher proprement).
+    //
+    // V2 (cette version) : on forge UNIQUEMENT WM_ACTIVATEAPP — c'est
+    // LE seul message que la plupart des jeux utilisent pour décider
+    // de pauser leur game logic. WM_ACTIVATE et WM_NCACTIVATE passent
+    // normalement (Windows les utilise pour les transitions visuelles
+    // standards + le focus reassignment au task switcher). WM_KILLFOCUS
+    // passe aussi (le jeu doit relâcher ses input grabs).
+    //
+    // Résultat : alt-tab fonctionne (OS peut switcher), task switcher
+    // s'affiche correctement, le jeu peut perdre/regagner le focus
+    // clavier sans drama, MAIS WM_ACTIVATEAPP ne signale jamais "FALSE"
+    // au jeu → la game loop ne se met pas en pause.
+    if (msg == WM_ACTIVATEAPP && wp == FALSE) {
+        return CallWindowProcW(g_orig_wndproc, hwnd, msg, TRUE, lp);
+    }
+
     // Phase 1 (ImGui interne) : route à ImGui d'abord.
     if (!phase2_active) {
         LRESULT r = nexus::renderer::wndproc_handler(hwnd, msg, wp, lp);
@@ -277,6 +299,10 @@ void install_wndproc_hook(HWND hwnd) {
     g_orig_wndproc = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrW(hwnd, GWLP_WNDPROC,
                           reinterpret_cast<LONG_PTR>(overlay_wndproc)));
+    // Notifie le watcher borderless qu'on a une HWND — il va l'apply
+    // au prochain tick (250ms max). Pas d'effet si le DLL a démarré
+    // avec NEXUS_DISABLE_BORDERLESS=1.
+    nexus::borderless::set_target_hwnd(hwnd);
 }
 
 void init_imgui_common(HWND hwnd) {
@@ -397,6 +423,9 @@ HRESULT do_present_rendering(IDXGISwapChain* swap_chain) {
             install_wndproc_hook(desc.OutputWindow);
             init_imgui_common(desc.OutputWindow);
         }
+        // Expose le swap chain au module borderless — il s'en sert pour
+        // appeler SetFullscreenState(FALSE) si le jeu était en exclusive.
+        nexus::borderless::set_target_swap_chain(swap_chain);
         if (init_d3d11_backend(swap_chain)) {
             g_imgui_initialized = true;
             nexus::nlog::log("dxgi: D3D11 backend initialized successfully");

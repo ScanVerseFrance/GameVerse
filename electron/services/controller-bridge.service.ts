@@ -363,6 +363,46 @@ export async function startBridge(): Promise<{ ok: boolean; error?: string }> {
     broadcastStatus({ event: 'error', code: 'SPAWN_FAILED', msg: err.message })
   })
 
+  // Push la config initiale AVANT le cmd "start" — sinon HandleStart
+  // run avec _config = BridgeConfig.Default() et notre flag DisableHidHide
+  // n'est jamais appliqué → le cloak HidHide se déclenche quand même
+  // → BSOD potentiel pour les users où HidHide pose problème.
+  //
+  // SAFETY post-install : si HidHide vient d'être installé dans CETTE
+  // session (alreadyInstalled === false), on force-skip le cloak même
+  // si l'user n'a pas activé le toggle. Le driver kernel n'est pas
+  // stable juste après install — il faut généralement un reboot avant
+  // que le filter chain soit safe pour cloak. Activer le cloak
+  // immédiatement = BSOD garanti sur la plupart des configs (cas
+  // signalé : Fahim, reboot instantané dès "Activer Nexus Input").
+  // L'user pourra re-essayer après un reboot — au prochain startBridge,
+  // hidHideCheck.alreadyInstalled sera true → cloak respecte le toggle.
+  const justInstalledHidHide =
+    hidHideCheck.ok && hidHideCheck.alreadyInstalled === false
+  try {
+    const { getAppSettings } = await import('./app-settings.service')
+    const settings = getAppSettings()
+    const initialConfig: Record<string, unknown> = {
+      disableHidHide:
+        settings.nexusInput?.disableHidHide === true ||
+        justInstalledHidHide,
+    }
+    if (justInstalledHidHide) {
+      broadcastStatus({
+        event: 'log',
+        level: 'warn',
+        msg: "HidHide vient d'être installé — cloak skip pour cette session, redémarre ton PC puis Nexus Input pour activation complète.",
+      })
+    }
+    proc.stdin.write(
+      JSON.stringify({ cmd: 'config', config: initialConfig }) + '\n',
+    )
+  } catch (e) {
+    debugLog('controller-bridge', 'initial config push failed', {
+      err: (e as Error).message,
+    })
+    // Non-fatal — helper démarre avec ses defaults
+  }
   // Demande au helper de démarrer le bridge.
   try {
     proc.stdin.write(JSON.stringify({ cmd: 'start' }) + '\n')

@@ -319,7 +319,27 @@ internal static class Program
         // Sans ça, le jeu peut encore voir la DualSense via
         // Windows.Gaming.Input même si on a le HID exclusif lock.
         // C'est ce qui résout vraiment le bug "2 joueurs".
-        TryActivateHidHide(_hidDevice);
+        //
+        // SAFETY : skip si DisableHidHide config est true. Le HidHide
+        // driver a déclenché un BSOD sur certains systèmes user (cas
+        // signalé : Fahim, PC reboot instantané dès l'activation
+        // Nexus Input). Cause probable : driver kernel pas encore
+        // stable juste après install OU conflict avec un autre kernel
+        // filter (antivirus EDR corporate, etc.). Désactiver HidHide
+        // garde le bridge ViGEm fonctionnel mais expose le bug
+        // 2-joueurs sur certains jeux qui lisent Windows.Gaming.Input
+        // direct. Trade-off acceptable vs BSOD.
+        if (_config.DisableHidHide)
+        {
+            Emit("log", new {
+                level = "info",
+                msg = "HidHide cloak SKIPPED (DisableHidHide config flag set)"
+            });
+        }
+        else
+        {
+            TryActivateHidHide(_hidDevice);
+        }
 
         // Détecte le transport (USB vs Bluetooth) via la taille du
         // max input report. USB DualSense = 64 octets, BT = 78 octets.
@@ -973,6 +993,14 @@ internal sealed class BridgeConfig
     public bool InvertY { get; set; } = false;
     public bool RumbleEnabled { get; set; } = true;
     public bool GyroEnabled { get; set; } = false;
+    /// Skip HidHide cloak — safety pour les systèmes où le driver
+    /// HidHide cause un BSOD au moment du cloak (driver kernel pas
+    /// stable juste après install, ou conflict avec un autre filter).
+    /// Default false (cloak activé = expérience optimale "comme Steam").
+    /// Si activé, le ViGEm vpad marche toujours mais le jeu peut VOIR
+    /// la manette physique en plus du virtual pad → bug 2-joueurs sur
+    /// certains titres.
+    public bool DisableHidHide { get; set; } = false;
     public string GyroMode { get; set; } = "rightStick";
     public double GyroSensitivityX { get; set; } = 1.0;
     public double GyroSensitivityY { get; set; } = 1.0;
@@ -1008,6 +1036,8 @@ internal sealed class BridgeConfig
             c.InvertY = iv.ValueKind == JsonValueKind.True;
         if (el.TryGetProperty("rumbleEnabled", out var ru) && ru.ValueKind != JsonValueKind.Undefined)
             c.RumbleEnabled = ru.ValueKind == JsonValueKind.True;
+        if (el.TryGetProperty("disableHidHide", out var dh) && dh.ValueKind != JsonValueKind.Undefined)
+            c.DisableHidHide = dh.ValueKind == JsonValueKind.True;
         if (el.TryGetProperty("gyro", out var gy) && gy.ValueKind == JsonValueKind.Object)
         {
             if (gy.TryGetProperty("enabled", out var en))

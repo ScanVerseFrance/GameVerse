@@ -222,6 +222,15 @@ export function updateAppSettings(patch: Partial<AppSettings>): AppSettings {
   if (patch.themePreset !== undefined && typeof patch.themePreset === 'string') {
     settings.themePreset = patch.themePreset.slice(0, 80)
   }
+  if (patch.nexusInput) {
+    // Deep merge (comme notifications) — l'user envoie souvent un
+    // patch partiel `{ nexusInput: { disableHidHide: true } }` qui ne
+    // doit pas effacer les autres sous-champs futurs.
+    settings.nexusInput = {
+      ...(settings.nexusInput ?? {}),
+      ...patch.nexusInput,
+    }
+  }
   saveSettings()
   return getAppSettings()
 }
