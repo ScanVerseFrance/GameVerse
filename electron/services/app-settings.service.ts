@@ -65,6 +65,9 @@ function defaultSettings(): AppSettings {
       skipAntiCheat: true,
       showFps: false,
     },
+    library: {
+      autoImportSteamGames: true,
+    },
     remotePlay: {
       quality: 'medium',
       enableKbm: false,
@@ -145,6 +148,11 @@ function loadSettings(): void {
           : [],
         skipAntiCheat: parsed.overlay?.skipAntiCheat !== false,
         showFps: parsed.overlay?.showFps === true,
+      },
+      library: {
+        // Default ON when unspecified — covers existing installs that
+        // upgrade and never had this field in their JSON.
+        autoImportSteamGames: parsed.library?.autoImportSteamGames !== false,
       },
       remotePlay: {
         quality:
@@ -293,6 +301,12 @@ export function updateAppSettings(patch: Partial<AppSettings>): AppSettings {
     settings.remotePlay = {
       ...(settings.remotePlay ?? {}),
       ...patch.remotePlay,
+    }
+  }
+  if (patch.library) {
+    settings.library = {
+      ...(settings.library ?? {}),
+      ...patch.library,
     }
   }
   saveSettings()

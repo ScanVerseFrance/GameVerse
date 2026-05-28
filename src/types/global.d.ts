@@ -285,6 +285,18 @@ export interface NexusAPI {
   library: {
     list: (userId: string) => Promise<{ ok: boolean; error?: string; games: LibraryGame[] }>
     get: (id: string) => Promise<{ ok: true; game: LibraryGame } | { ok: false; error: string }>
+    /** v0.5.4 — silent Steam library auto-sync controls. */
+    startAutoSync: (userId: string) => Promise<{ ok: boolean; error?: string }>
+    stopAutoSync: () => Promise<{ ok: boolean; error?: string }>
+    syncSteamNow: (userId: string) => Promise<{
+      ok: boolean
+      seen?: number
+      added?: number
+      skipped?: 'in_flight' | 'no_steam' | 'disabled' | null
+      durationMs?: number
+      error?: string
+    }>
+    onAutoSync: (cb: (data: { userId: string; seen: number; added: number }) => void) => () => void
     add: (params: AddLibraryParams) => Promise<{ ok: true; game: LibraryGame } | { ok: false; error: string }>
     update: (
       id: string,

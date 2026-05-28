@@ -59,8 +59,32 @@ export default function App() {
       void loadDownloads(user.id)
       void loadLibrary(user.id)
       void loadFriends(user.id)
+      // v0.5.4 — arm silent Steam library sync. Polls the local
+      // Steam manifests every 15 min so games installed AFTER the
+      // last manual Resynchroniser appear automatically (the user
+      // reported : "le nouveau James Bond / Batman ne s'ajoutent pas
+      // tant que je ne resync pas"). Idempotent server-side, costs
+      // single-digit ms per pass.
+      void window.nexus.library.startAutoSync(user.id)
+    } else {
+      // No active user — release the timer so a stale auto-sync
+      // doesn't fire against the previous user after logout.
+      void window.nexus.library.stopAutoSync()
     }
   }, [user, loadDownloads, loadLibrary, loadFriends])
+
+  // Reload library when the auto-sync silently added new games so
+  // the freshly-imported tiles show up without the user having to
+  // navigate away + back.
+  useEffect(() => {
+    if (!user) return
+    const unsub = window.nexus.library.onAutoSync((evt) => {
+      if (evt.added > 0 && evt.userId === user.id) {
+        void loadLibrary(user.id)
+      }
+    })
+    return unsub
+  }, [user, loadLibrary])
 
   useEffect(() => {
     document.body.classList.toggle('no-animations', !animationsEnabled)

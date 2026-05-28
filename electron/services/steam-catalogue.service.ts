@@ -174,6 +174,170 @@ export async function ensureSteamCatalogue(force = false): Promise<{
   return { seeded: true, total: finalCount, durationMs: Date.now() - startedAt }
 }
 
+// ────────────────────────────────────────────────────────────────────
+// v0.5.4 — Steam "new releases" topping
+// ────────────────────────────────────────────────────────────────────
+//
+// SteamSpy (the seed source) only includes games that have already
+// accumulated significant ownership — typically weeks to months after
+// release. Brand-new AAAs (eg. 007 First Light, the latest Batman)
+// don't appear until they're owned by ~1000+ tracked users, which
+// makes them invisible in the Discover catalogue for the user during
+// the entire post-launch hype window.
+//
+// Steam's storefront publishes a `featuredcategories` JSON endpoint
+// that lists, among other things, the current "new releases" tiles
+// shown on the Steam home page. It's free, unauthenticated, and
+// updated continuously by Valve. We pull it on a daily cadence and
+// merge appid + name into `steam_catalogue` with a high pseudo-owner
+// rank so they surface near the top of the catalogue sort and don't
+// have to wait for SteamSpy to catch up.
+//
+// We deliberately give new releases a HIGH pseudo-owner rank rather
+// than respecting SteamSpy's empty data : the goal is to make them
+// discoverable, not to fake popularity. The downstream UI sorts the
+// catalogue by `owners_rank DESC` so a high rank just means "show me
+// near the top". An honest "new" badge would be better long-term but
+// that's a schema change we'll do in v0.5.5 ; for now elevated rank
+// is the cheap-and-pragmatic fix.
+
+const FEATURED_CATEGORIES_URL =
+  'https://store.steampowered.com/api/featuredcategories?cc=us&l=en'
+const NEW_RELEASES_REFRESH_MS = 6 * 60 * 60 * 1000 // 6h
+
+let lastNewReleasesFetchAt = 0
+
+interface FeaturedItem {
+  id?: number
+  name?: string
+  type?: number
+  /** Discount info, header image url, etc. — we ignore them. */
+}
+
+/**
+ * Fetch Steam's "new releases" page and merge into steam_catalogue.
+ * Best-effort : failures are logged + swallowed so a hiccup on
+ * Steam's CDN doesn't break the launcher.
+ *
+ * Returns the count of NEW rows actually inserted (existing appids
+ * are updated with a refreshed pseudo-owner rank but counted
+ * separately).
+ */
+export async function syncSteamNewReleases(): Promise<{
+  ok: boolean
+  inserted: number
+  refreshed: number
+  durationMs: number
+}> {
+  const startedAt = Date.now()
+  // Cheap rate-limit so a renderer doesn't trigger 100 fetches in a
+  // session : 6h between real fetches is plenty.
+  if (startedAt - lastNewReleasesFetchAt < NEW_RELEASES_REFRESH_MS) {
+    return { ok: true, inserted: 0, refreshed: 0, durationMs: 0 }
+  }
+  lastNewReleasesFetchAt = startedAt
+  type FeaturedBody = {
+    new_releases?: { items?: FeaturedItem[] }
+    coming_soon?: { items?: FeaturedItem[] }
+    top_sellers?: { items?: FeaturedItem[] }
+    specials?: { items?: FeaturedItem[] }
+  }
+  const ctrl = new AbortController()
+  const to = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS)
+  let body: FeaturedBody | null = null
+  try {
+    const res = await fetch(FEATURED_CATEGORIES_URL, {
+      signal: ctrl.signal,
+      headers: { 'User-Agent': 'Nexus-Launcher/0.5' },
+    })
+    if (!res.ok) {
+      debugLog('steam-catalogue', 'featuredcategories failed', { status: res.status })
+      return { ok: false, inserted: 0, refreshed: 0, durationMs: Date.now() - startedAt }
+    }
+    body = (await res.json()) as FeaturedBody
+  } catch (err) {
+    debugLog('steam-catalogue', 'featuredcategories threw', {
+      error: (err as Error).message,
+    })
+    return { ok: false, inserted: 0, refreshed: 0, durationMs: Date.now() - startedAt }
+  } finally {
+    clearTimeout(to)
+  }
+  if (!body) return { ok: false, inserted: 0, refreshed: 0, durationMs: Date.now() - startedAt }
+
+  // Pool every category's items. new_releases is the most relevant
+  // (Bond / Batman case), but top_sellers + coming_soon also surface
+  // current-window AAAs that SteamSpy may not yet track.
+  const buckets = [
+    ...(body.new_releases?.items ?? []),
+    ...(body.coming_soon?.items ?? []),
+    ...(body.top_sellers?.items ?? []),
+    ...(body.specials?.items ?? []),
+  ]
+  // Dedupe by appid — featuredcategories often surfaces the same hit
+  // in 2-3 buckets.
+  const seen = new Map<number, string>()
+  for (const it of buckets) {
+    if (
+      typeof it.id !== 'number' ||
+      typeof it.name !== 'string' ||
+      !it.name.trim() ||
+      (typeof it.type === 'number' && it.type !== 0)
+    ) {
+      // type 0 = game ; we skip type 1 (DLC), type 4 (demo), etc.
+      continue
+    }
+    seen.set(it.id, it.name.trim())
+  }
+  if (seen.size === 0) {
+    return { ok: true, inserted: 0, refreshed: 0, durationMs: Date.now() - startedAt }
+  }
+
+  // Pseudo-owner rank for new releases : we want them to appear above
+  // mid-tier SteamSpy entries but not above genuine hits like CS2 or
+  // GTA V. 50M is a reasonable middle ground — Elden Ring sits around
+  // 25M, Skyrim ~30M, so 50M flags "show me prominently" without
+  // dominating the lifetime-leaders list. The catalogue's sort by
+  // owners_rank DESC will float new releases into the top dozen which
+  // is the goal.
+  const NEW_RELEASE_RANK = 50_000_000
+
+  const db = getDatabase()
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO steam_catalogue (appid, name, normalized_name, owners_rank, score_rank, added_at) VALUES (?, ?, ?, ?, ?, ?)',
+  )
+  const refresh = db.prepare(
+    'UPDATE steam_catalogue SET owners_rank = MAX(owners_rank, ?), added_at = ? WHERE appid = ?',
+  )
+  const now = Date.now()
+  let inserted = 0
+  let refreshed = 0
+  const txn = db.transaction(() => {
+    for (const [appid, name] of seen) {
+      const norm = normaliseSteamName(name)
+      if (!norm) continue
+      const res = insert.run(appid, name, norm, NEW_RELEASE_RANK, 0, now)
+      if (res.changes > 0) {
+        inserted += 1
+      } else {
+        refresh.run(NEW_RELEASE_RANK, now, appid)
+        refreshed += 1
+      }
+    }
+  })
+  txn()
+
+  debugLog('steam-catalogue', 'new releases synced', {
+    pooled: seen.size, inserted, refreshed,
+  })
+  return {
+    ok: true,
+    inserted,
+    refreshed,
+    durationMs: Date.now() - startedAt,
+  }
+}
+
 /** Public read-side: paginated catalogue tile listing. */
 export interface SteamCatalogueTile {
   appid: number

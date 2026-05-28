@@ -2024,6 +2024,13 @@ function GameLaunchSection() {
       />
 
       <GameOptionCard
+        title="Auto-importer les nouveaux jeux Steam"
+        description="Nexus scanne les manifestes Steam locaux toutes les 15 min et ajoute les jeux installés dans la bibliothèque sans intervention. Désactive si tu préfères gérer ta bibliothèque à la main via le bouton « Resynchroniser »."
+        enabled={appSettings?.library?.autoImportSteamGames !== false}
+        onToggle={(v) => void updateApp({ library: { autoImportSteamGames: v } })}
+      />
+
+      <GameOptionCard
         title="Désactiver HidHide (mode sécurité)"
         description="Coche si Nexus Input fait crash / reboot ton PC à l'activation. HidHide est le driver kernel qui cache ta manette physique aux jeux pour éviter le bug 'P1+P2 contrôlent le même perso'. Sur certains systèmes (DualSense Bluetooth, antivirus EDR, drivers fraîchement installés), il déclenche un BSOD. Quand désactivé, Nexus Input reste fonctionnel mais le jeu peut voir ta manette physique en plus du virtual pad."
         enabled={disableHidHide}

@@ -93,6 +93,18 @@ const api = {
   library: {
     list: (userId: string) => ipcRenderer.invoke('library:list', userId),
     get: (id: string) => ipcRenderer.invoke('library:get', id),
+    /** v0.5.4 — arm/disarm silent Steam library auto-sync. */
+    startAutoSync: (userId: string) =>
+      ipcRenderer.invoke('library:startAutoSync', userId),
+    stopAutoSync: () => ipcRenderer.invoke('library:stopAutoSync'),
+    /** v0.5.4 — one-shot Steam-only sync pass for the user. */
+    syncSteamNow: (userId: string) =>
+      ipcRenderer.invoke('library:syncSteamNow', userId),
+    /** v0.5.4 — subscribe to silent auto-sync events so the library
+     *  page can refresh tiles when a new game gets added in the
+     *  background. */
+    onAutoSync: (cb: (data: { userId: string; seen: number; added: number }) => void) =>
+      subscribe('library:auto-sync', cb as (data: unknown) => void),
     add: (params: unknown) => ipcRenderer.invoke('library:add', params),
     update: (id: string, patch: unknown) => ipcRenderer.invoke('library:update', id, patch),
     remove: (id: string) => ipcRenderer.invoke('library:remove', id),

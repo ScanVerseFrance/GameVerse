@@ -100,6 +100,16 @@ export interface AppSettings {
      *  when the overlay menu is closed. Default: false. */
     showFps?: boolean
   }
+  /** Library auto-sync (v0.5.4 patch). Toggleable so power users who
+   *  curate manually can keep the auto-importer quiet. */
+  library?: {
+    /** When true, Nexus polls Steam's local manifests every ~15 min
+     *  and adds newly-installed games to the user's library silently.
+     *  Idempotent — re-inserting an existing row is a no-op. Default
+     *  true so newcomers see their fresh Steam installs without
+     *  hunting for the Resynchroniser button. */
+    autoImportSteamGames?: boolean
+  }
   /** Remote Play Together — quality preset + experimental flags. */
   remotePlay?: {
     /** Encoder preset applied to the host video track.

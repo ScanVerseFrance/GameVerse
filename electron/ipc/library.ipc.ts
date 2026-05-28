@@ -28,6 +28,46 @@ function validStatus(s: unknown): s is LibraryStatus {
 }
 
 export function registerLibraryIpc() {
+  // v0.5.4 — silent Steam library auto-sync. The renderer arms it
+  // after the user logs in (so we have a userId) and disarms on
+  // logout. Steam manifests are re-polled every 15 min.
+  ipcMain.handle('library:startAutoSync', async (_e, userId: unknown) => {
+    if (typeof userId !== 'string' || !userId) {
+      return { ok: false, error: 'userId required' }
+    }
+    try {
+      const { startAutoSync } = await import('../services/library-auto-sync.service')
+      startAutoSync(sanitizeString(userId, 64))
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+  ipcMain.handle('library:stopAutoSync', async () => {
+    try {
+      const { stopAutoSync } = await import('../services/library-auto-sync.service')
+      stopAutoSync()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+  /** Manually trigger one Steam sync pass — used by the
+   *  "Resynchroniser" button (Steam-only quick path, distinct from
+   *  the full wizard which also walks cracked-game roots). */
+  ipcMain.handle('library:syncSteamNow', async (_e, userId: unknown) => {
+    if (typeof userId !== 'string' || !userId) {
+      return { ok: false, error: 'userId required' }
+    }
+    try {
+      const { syncSteamLibrary } = await import('../services/library-auto-sync.service')
+      const res = await syncSteamLibrary(sanitizeString(userId, 64))
+      return res
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
+
   ipcMain.handle('library:list', async (_e, userId: string) => {
     try {
       return { ok: true, games: svc.listLibrary(sanitizeString(userId, 64)) }
